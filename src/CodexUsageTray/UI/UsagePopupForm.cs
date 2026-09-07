@@ -39,6 +39,13 @@ internal sealed class UsagePopupForm : Form
     internal bool InferenceDividerPaddingIsBalanced =>
         todayTitle.Top - limitsDivider.Bottom == inferenceDivider.Top - lifetimeTitle.Bottom;
 
+    internal bool CompactRefreshFooterIsCorrect =>
+        compactView
+        && refreshButton.Visible
+        && !updatedLabel.Visible
+        && ClientSize.Width - refreshButton.Right == 26
+        && ClientSize.Height - refreshButton.Bottom == 16;
+
     public UsagePopupForm()
     {
         Text = "Codex usage";
@@ -225,7 +232,7 @@ internal sealed class UsagePopupForm : Form
     private void ApplyViewMode(bool compact, bool preserveBottom)
     {
         var previousBottom = Bottom;
-        var targetHeight = compact ? 154 : 416;
+        var targetHeight = compact ? 194 : 416;
         compactView = compact;
 
         statusLabel.Visible = !compact;
@@ -238,7 +245,7 @@ internal sealed class UsagePopupForm : Form
         lifetimeTokens.Visible = !compact;
         inferenceDivider.Visible = !compact;
         updatedLabel.Visible = !compact;
-        refreshButton.Visible = !compact;
+        refreshButton.Visible = true;
 
         if (compact)
         {
@@ -253,6 +260,7 @@ internal sealed class UsagePopupForm : Form
             weeklyValue.Size = new Size(112, 24);
             weeklyReset.Location = new Point(270, 109);
             weeklyReset.Size = new Size(144, 22);
+            refreshButton.Location = new Point(380, 148);
         }
         else
         {
@@ -267,6 +275,7 @@ internal sealed class UsagePopupForm : Form
             weeklyValue.Size = new Size(150, 24);
             weeklyReset.Location = new Point(26, 216);
             weeklyReset.Size = new Size(388, 22);
+            refreshButton.Location = new Point(380, 370);
         }
 
         if (preserveBottom && Visible)

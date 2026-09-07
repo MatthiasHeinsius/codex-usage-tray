@@ -79,6 +79,17 @@ internal static class SelfTest
         using var popup = new UsagePopupForm();
         Assert(!popup.HeaderControlsOverlap, "usage link does not overlap title");
         Assert(popup.InferenceDividerPaddingIsBalanced, "inference divider padding is balanced");
+        popup.Location = new Point(-10_000, -10_000);
+        popup.Show();
+        try
+        {
+            popup.SetViewModeForScreenshot(compact: true);
+            Assert(popup.CompactRefreshFooterIsCorrect, "compact view has a refresh-only footer");
+        }
+        finally
+        {
+            popup.Hide();
+        }
 
         var expiredWindow = new UsageWindow(100, 300, DateTimeOffset.FromUnixTimeSeconds(100));
         Assert(WindowStartSettings.IsExpiredAndUnstarted(expiredWindow, DateTimeOffset.FromUnixTimeSeconds(101), null),
