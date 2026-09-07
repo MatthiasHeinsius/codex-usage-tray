@@ -84,7 +84,7 @@ internal static class SelfTest
         try
         {
             popup.SetViewModeForScreenshot(compact: true);
-            Assert(popup.CompactRefreshFooterIsCorrect, "compact view has a refresh-only footer");
+            Assert(popup.CompactRefreshLayoutIsCorrect, "compact refresh button fits without extra height");
         }
         finally
         {
