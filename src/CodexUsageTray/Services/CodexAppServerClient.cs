@@ -36,7 +36,7 @@ internal sealed class CodexAppServerClient
                 method = "initialize",
                 @params = new
                 {
-                    clientInfo = new { name = "codex-usage-tray", title = "Codex Usage Tray", version = "1.0.0" },
+                    clientInfo = new { name = "codex-usage-tray", title = "Codex Usage Tray", version = "1.1.0" },
                     capabilities = new { experimentalApi = true }
                 }
             });
