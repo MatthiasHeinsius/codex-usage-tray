@@ -36,6 +36,9 @@ internal sealed class UsagePopupForm : Form
         + 8
         > usagePageButton.Left;
 
+    internal bool InferenceDividerPaddingIsBalanced =>
+        todayTitle.Top - limitsDivider.Bottom == inferenceDivider.Top - lifetimeTitle.Bottom;
+
     public UsagePopupForm()
     {
         Text = "Codex usage";
@@ -133,7 +136,7 @@ internal sealed class UsagePopupForm : Form
             FlatStyle = FlatStyle.Flat,
             ForeColor = Color.FromArgb(203, 213, 225),
             BackColor = Color.FromArgb(36, 41, 51),
-            Location = new Point(380, 362),
+            Location = new Point(380, 370),
             Size = new Size(34, 30),
             Padding = new Padding(0),
             Cursor = Cursors.Hand
@@ -165,10 +168,10 @@ internal sealed class UsagePopupForm : Form
         inferenceDivider = new Panel
         {
             BackColor = Color.FromArgb(48, 54, 66),
-            Location = new Point(26, 350),
+            Location = new Point(26, 358),
             Size = new Size(388, 1)
         };
-        updatedLabel = MakeMutedLabel("Not updated yet", 366, 26, 338);
+        updatedLabel = MakeMutedLabel("Not updated yet", 374, 26, 338);
         updatedLabel.Font = new Font("Segoe UI", 8f);
         Controls.AddRange([
             title, usagePageButton, statusLabel, viewModeButton, pinButton, refreshButton,
