@@ -44,8 +44,10 @@ internal sealed class UsagePopupForm : Form
         && refreshButton.Visible
         && !updatedLabel.Visible
         && ClientSize.Width - refreshButton.Right == 26
-        && ClientSize.Height - refreshButton.Bottom == 20
+        && ClientSize.Height - refreshButton.Bottom == 16
         && weeklyReset.Right + 10 <= refreshButton.Left;
+
+    internal int RefreshButtonBottomInset => ClientSize.Height - refreshButton.Bottom;
 
     public UsagePopupForm()
     {
@@ -233,7 +235,7 @@ internal sealed class UsagePopupForm : Form
     private void ApplyViewMode(bool compact, bool preserveBottom)
     {
         var previousBottom = Bottom;
-        var targetHeight = compact ? 154 : 416;
+        var targetHeight = compact ? 150 : 416;
         compactView = compact;
 
         statusLabel.Visible = !compact;

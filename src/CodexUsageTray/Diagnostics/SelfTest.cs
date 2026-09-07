@@ -83,8 +83,12 @@ internal static class SelfTest
         popup.Show();
         try
         {
+            popup.SetViewModeForScreenshot(compact: false);
+            var extendedRefreshInset = popup.RefreshButtonBottomInset;
             popup.SetViewModeForScreenshot(compact: true);
             Assert(popup.CompactRefreshLayoutIsCorrect, "compact refresh button fits without extra height");
+            Assert(popup.RefreshButtonBottomInset == extendedRefreshInset,
+                "refresh button stays fixed when changing view mode");
         }
         finally
         {
