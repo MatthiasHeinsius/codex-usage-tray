@@ -1,6 +1,6 @@
 # Codex Usage Tray
 
-[![Build](https://github.com/MatthiasHeinsius/codexusage/actions/workflows/build.yml/badge.svg)](https://github.com/MatthiasHeinsius/codexusage/actions/workflows/build.yml)
+[![Build](https://github.com/MatthiasHeinsius/codex-usage-tray/actions/workflows/build.yml/badge.svg)](https://github.com/MatthiasHeinsius/codex-usage-tray/actions/workflows/build.yml)
 
 Codex Usage Tray is a small Windows notification-area app that shows the usage attached to your signed-in Codex subscription.
 
@@ -31,7 +31,7 @@ The portable release includes the .NET desktop runtime. The target computer does
 
 ## Install
 
-Download [`CodexUsageTray.exe`](https://github.com/MatthiasHeinsius/codexusage/releases/latest/download/CodexUsageTray.exe) from the [latest GitHub release](https://github.com/MatthiasHeinsius/codexusage/releases/latest), copy it to a permanent location, and run it. You can also build the same executable from source.
+Download [`CodexUsageTray.exe`](https://github.com/MatthiasHeinsius/codex-usage-tray/releases/latest/download/CodexUsageTray.exe) from the [latest GitHub release](https://github.com/MatthiasHeinsius/codex-usage-tray/releases/latest), copy it to a permanent location, and run it. You can also build the same executable from source.
 
 Left-click the tray icon to open or close the usage window. Right-click it to refresh, configure startup behavior, open the Codex usage page, or exit.
 

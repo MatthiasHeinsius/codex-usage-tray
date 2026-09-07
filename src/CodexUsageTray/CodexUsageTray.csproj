@@ -20,7 +20,7 @@
     <Authors>Matthias Heinsius</Authors>
     <Description>Windows tray meter for Codex subscription limits and inference usage.</Description>
     <Copyright>Copyright (c) 2026 Matthias Heinsius</Copyright>
-    <RepositoryUrl>https://github.com/MatthiasHeinsius/codexusage</RepositoryUrl>
+    <RepositoryUrl>https://github.com/MatthiasHeinsius/codex-usage-tray</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
 
