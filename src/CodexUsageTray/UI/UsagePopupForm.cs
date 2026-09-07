@@ -194,6 +194,12 @@ internal sealed class UsagePopupForm : Form
         RenderSnapshot(snapshot);
     }
 
+    internal void SetViewModeForScreenshot(bool compact)
+    {
+        viewModeButton.SetCompact(compact);
+        ApplyViewMode(compact, preserveBottom: false);
+    }
+
     private void RenderSnapshot(UsageSnapshot snapshot)
     {
         var now = DateTimeOffset.Now;

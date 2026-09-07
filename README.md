@@ -1,5 +1,7 @@
 # Codex Usage Tray
 
+[![Build](https://github.com/MatthiasHeinsius/codexusage/actions/workflows/build.yml/badge.svg)](https://github.com/MatthiasHeinsius/codexusage/actions/workflows/build.yml)
+
 Codex Usage Tray is a small Windows notification-area app that shows the usage attached to your signed-in Codex subscription.
 
 This is an unofficial community project. It is not affiliated with or endorsed by OpenAI.
@@ -14,6 +16,12 @@ This is an unofficial community project. It is not affiliated with or endorsed b
 
 The tray icon uses two rings. The inner ring shows the 5-hour allowance and the outer ring shows the weekly allowance. The app refreshes the usage figures and open-window countdowns every minute.
 
+## Screenshots
+
+| Extended view | Compact view |
+| --- | --- |
+| ![Extended Codex usage popup](docs/images/extended.png) | ![Compact Codex usage popup](docs/images/compact.png) |
+
 ## Requirements
 
 - 64-bit Windows 10 or Windows 11
@@ -23,7 +31,7 @@ The portable release includes the .NET desktop runtime. The target computer does
 
 ## Install
 
-Build the portable executable as described below, then copy `artifacts\win-x64\CodexUsageTray.exe` to a permanent location and run it.
+Download [`CodexUsageTray.exe`](https://github.com/MatthiasHeinsius/codexusage/releases/latest/download/CodexUsageTray.exe) from the [latest GitHub release](https://github.com/MatthiasHeinsius/codexusage/releases/latest), copy it to a permanent location, and run it. You can also build the same executable from source.
 
 Left-click the tray icon to open or close the usage window. Right-click it to refresh, configure startup behavior, open the Codex usage page, or exit.
 
@@ -68,6 +76,12 @@ dotnet publish .\src\CodexUsageTray\CodexUsageTray.csproj `
 ```
 
 If Codex is installed somewhere unusual, set `CODEX_USAGE_CODEX_PATH` to the full path of `codex.cmd` or `codex.exe` before starting the app.
+
+The repository includes a screenshot generator for maintainers. It uses synthetic usage figures and never reads account data:
+
+```powershell
+dotnet run --project .\tools\CodexUsageTray.ScreenshotGenerator -- .\docs\images
+```
 
 ## Current limitation
 

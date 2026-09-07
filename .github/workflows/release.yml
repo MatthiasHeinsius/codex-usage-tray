@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Check tag matches application version
+        shell: pwsh
+        run: |
+          $version = dotnet msbuild .\src\CodexUsageTray\CodexUsageTray.csproj -nologo -getProperty:Version
+          if ("v$version" -ne $env:GITHUB_REF_NAME) {
+            throw "Tag $env:GITHUB_REF_NAME does not match project version $version."
+          }
+
+      - name: Publish portable executable
+        run: >-
+          dotnet publish .\src\CodexUsageTray\CodexUsageTray.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:DebugType=None
+          -p:DebugSymbols=false
+          -o .\artifacts\win-x64
+
+      - name: Test release executable and write checksum
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path .\artifacts\win-x64\CodexUsageTray.exe
+          $process = Start-Process -FilePath $exe -ArgumentList "--self-test" -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Release self-test failed with exit code $($process.ExitCode)."
+          }
+
+          $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  CodexUsageTray.exe" | Set-Content -LiteralPath .\artifacts\win-x64\SHA256SUMS.txt -Encoding ascii
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: >-
+          gh release create $env:GITHUB_REF_NAME
+          .\artifacts\win-x64\CodexUsageTray.exe
+          .\artifacts\win-x64\SHA256SUMS.txt
+          --generate-notes
+          --title "Codex Usage Tray $env:GITHUB_REF_NAME"
+          --verify-tag
