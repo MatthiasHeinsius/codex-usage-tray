@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 
 namespace CodexUsageTray;
@@ -39,7 +40,16 @@ internal static class SelfTest
         Assert(snapshot.TodayTokens == 987654, "daily tokens");
         Assert(snapshot.LifetimeTokens == 123456789, "lifetime tokens");
         Assert(snapshot.Plan == "plus", "plan");
-        Assert(UsageText.Tokens(snapshot.LifetimeTokens) == "123.46M", "token formatting");
+
+        using var lengthAhead = new LengthAheadStream(length: 10, position: 3);
+        using var copiedBytes = new MemoryStream();
+        Assert(LocalTokenUsageReader.CopyUnreadBytes(lengthAhead, copiedBytes) == 3,
+            "local token reader advances by consumed bytes");
+
+        Assert(UsageText.TokensForCulture(snapshot.LifetimeTokens, CultureInfo.GetCultureInfo("en-US")) == "123.46M",
+            "English token formatting");
+        Assert(UsageText.TokensForCulture(snapshot.LifetimeTokens, CultureInfo.GetCultureInfo("de-DE")) == "123,46M",
+            "German token formatting");
         Assert(
             UsageText.CompactCountdown(snapshot.FiveHour, new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2)))
                 == "1h 20m",
@@ -129,5 +139,23 @@ internal static class SelfTest
         {
             throw new InvalidOperationException($"Self-test failed: {name}");
         }
+    }
+
+    private sealed class LengthAheadStream(long length, long position) : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => length;
+        public override long Position { get; set; } = position;
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => 0;
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }

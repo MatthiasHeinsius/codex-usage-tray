@@ -50,14 +50,19 @@ internal static class UsageText
                 : $"{Math.Max(1, remaining.Minutes)}m";
     }
 
-    public static string Tokens(long? tokens) => tokens switch
+    public static string Tokens(long? tokens) => TokensForCulture(tokens, CultureInfo.CurrentCulture);
+
+    internal static string TokensForCulture(long? tokens, IFormatProvider formatProvider)
     {
-        null => "Unavailable",
-        < 1_000 => tokens.Value.ToString("N0", CultureInfo.CurrentCulture),
-        < 1_000_000 => $"{tokens.Value / 1_000d:0.#}K",
-        < 1_000_000_000 => $"{tokens.Value / 1_000_000d:0.##}M",
-        _ => $"{tokens.Value / 1_000_000_000d:0.##}B"
-    };
+        return tokens switch
+        {
+            null => "Unavailable",
+            < 1_000 => tokens.Value.ToString("N0", formatProvider),
+            < 1_000_000 => $"{(tokens.Value / 1_000d).ToString("0.#", formatProvider)}K",
+            < 1_000_000_000 => $"{(tokens.Value / 1_000_000d).ToString("0.##", formatProvider)}M",
+            _ => $"{(tokens.Value / 1_000_000_000d).ToString("0.##", formatProvider)}B"
+        };
+    }
 
     public static string TokenLabel(long? tokens) => tokens is null ? "Unavailable" : $"{Tokens(tokens)} tokens";
 

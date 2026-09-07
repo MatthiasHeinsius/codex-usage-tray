@@ -9,8 +9,16 @@ internal static class Program
     {
         if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase))
         {
-            ApplicationConfiguration.Initialize();
-            return SelfTest.Run();
+            try
+            {
+                ApplicationConfiguration.Initialize();
+                return SelfTest.Run();
+            }
+            catch (Exception exception)
+            {
+                Console.Error.WriteLine(exception.Message);
+                return 1;
+            }
         }
 
         if (args.Contains("--once", StringComparer.OrdinalIgnoreCase))
