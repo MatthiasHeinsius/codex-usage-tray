@@ -12,14 +12,13 @@
 
     <AssemblyName>CodexUsageTray</AssemblyName>
     <RootNamespace>CodexUsageTray</RootNamespace>
-    <Version>1.1.0</Version>
-    <AssemblyVersion>1.1.0.0</AssemblyVersion>
-    <FileVersion>1.1.0.0</FileVersion>
+    <Version>1.1.4</Version>
     <AssemblyTitle>Codex Usage Tray</AssemblyTitle>
     <Product>Codex Usage Tray</Product>
     <Authors>Matthias Heinsius</Authors>
     <Description>Windows tray meter for Codex subscription limits and inference usage.</Description>
     <Copyright>Copyright (c) 2026 Matthias Heinsius</Copyright>
+    <ApplicationIcon>Assets\CodexUsageTray.ico</ApplicationIcon>
     <RepositoryUrl>https://github.com/MatthiasHeinsius/codex-usage-tray</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>

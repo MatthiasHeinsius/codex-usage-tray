@@ -8,6 +8,12 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (args is ["--app-icon", var iconPath])
+        {
+            SaveAppIcon(Path.GetFullPath(iconPath));
+            return 0;
+        }
+
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(defaultValue: false);
@@ -49,6 +55,13 @@ internal static class Program
         }
 
         return 0;
+    }
+
+    private static void SaveAppIcon(string path)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)
+            ?? throw new InvalidOperationException("The application icon directory is unavailable."));
+        File.WriteAllBytes(path, CodexUsageTray.TrayIconRenderer.CreateStaticIcoData());
     }
 
     private static void Save(Form form, string path)
