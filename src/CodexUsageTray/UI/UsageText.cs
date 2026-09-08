@@ -66,6 +66,9 @@ internal static class UsageText
 
     public static string TokenLabel(long? tokens) => tokens is null ? "Unavailable" : $"{Tokens(tokens)} tokens";
 
+    public static string TrayTooltip(UsageSnapshot snapshot) =>
+        $"Codex · 5h {snapshot.FiveHour?.RemainingPercent.ToString(CultureInfo.InvariantCulture) ?? "?"}% · week {snapshot.Weekly?.RemainingPercent.ToString(CultureInfo.InvariantCulture) ?? "?"}% · total {Tokens(snapshot.LifetimeTokens)}";
+
     public static string FormatConsole(UsageSnapshot snapshot)
     {
         var now = DateTimeOffset.Now;

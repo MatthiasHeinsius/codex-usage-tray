@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
-
 namespace CodexUsageTray;
 
 internal sealed class TrayApplicationContext : ApplicationContext
@@ -193,8 +191,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         currentIcon = replacement;
         old.Dispose();
 
-        notifyIcon.Text = TruncateTooltip(
-            $"Codex · 5h {usage.FiveHour?.RemainingPercent.ToString(CultureInfo.InvariantCulture) ?? "?"}% · week {usage.Weekly?.RemainingPercent.ToString(CultureInfo.InvariantCulture) ?? "?"}% · total {UsageText.Tokens(usage.LifetimeTokens)}");
+        notifyIcon.Text = TruncateTooltip(UsageText.TrayTooltip(usage));
     }
 
     private void StartupItemOnCheckedChanged(object? sender, EventArgs eventArgs)

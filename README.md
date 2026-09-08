@@ -22,6 +22,10 @@ The tray icon uses two rings. The inner ring shows the 5-hour allowance and the 
 | --- | --- |
 | ![Extended Codex usage popup](docs/images/extended.png) | ![Compact Codex usage popup](docs/images/compact.png) |
 
+Hover over the tray icon to see both remaining percentages and the total inference-token count.
+
+![Codex Usage Tray icon and hover text](docs/images/tray-tooltip.png)
+
 ## Requirements
 
 - 64-bit Windows 10 or Windows 11
