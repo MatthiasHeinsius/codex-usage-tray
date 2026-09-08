@@ -12,8 +12,10 @@ internal static class WindowStartSettings
     public static bool IsEnabled()
     {
         using var key = Registry.CurrentUser.OpenSubKey(RegistryPath, writable: false);
-        return key?.GetValue(EnabledName) is not int value || value != 0;
+        return IsEnabledValue(key?.GetValue(EnabledName));
     }
+
+    internal static bool IsEnabledValue(object? stored) => stored is int value && value != 0;
 
     public static void SetEnabled(bool enabled)
     {

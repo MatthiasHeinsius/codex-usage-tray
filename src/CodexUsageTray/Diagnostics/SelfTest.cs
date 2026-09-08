@@ -73,8 +73,22 @@ internal static class SelfTest
         Assert(selected.FiveHour?.RemainingPercent == 90, "multi-bucket 5-hour window");
         Assert(selected.Weekly?.RemainingPercent == 75, "multi-bucket weekly window");
 
+        Assert(
+            TrayIconRenderer.StaticFiveHourRemaining == 66
+                && TrayIconRenderer.StaticWeeklyRemaining == 75,
+            "static icon uses the requested ring positions");
         using var icon = TrayIconRenderer.Create(65, 7);
-        Assert(icon.Width == 32 && icon.Height == 32, "dual-ring tray icon");
+        var expectedIconSize = Math.Max(SystemInformation.SmallIconSize.Width, SystemInformation.SmallIconSize.Height);
+        Assert(icon.Width == expectedIconSize && icon.Height == expectedIconSize,
+            "dual-ring tray icon matches the system size");
+        var iconData = TrayIconRenderer.CreateIcoData(65, 7);
+        Assert(BitConverter.ToUInt16(iconData, 4) == 9, "tray icon has nine resolution variants");
+        Assert(iconData[6 + (8 * 16)] == 0, "tray icon includes a 256-pixel variant");
+        for (var index = 0; index < 9; index++)
+        {
+            Assert(BitConverter.ToUInt16(iconData, 6 + (index * 16) + 6) == 32,
+                $"tray icon variant {index + 1} uses 32-bit color");
+        }
 
         using var popup = new UsagePopupForm();
         Assert(!popup.HeaderControlsOverlap, "usage link does not overlap title");
@@ -102,6 +116,46 @@ internal static class SelfTest
             "completed window start is not repeated");
         Assert(!WindowStartSettings.IsExpiredAndUnstarted(expiredWindow, DateTimeOffset.FromUnixTimeSeconds(99), null),
             "future window is not started");
+        Assert(!WindowStartSettings.IsEnabledValue(null), "window auto-start defaults to off");
+        Assert(WindowStartSettings.IsEnabledValue(1), "window auto-start accepts enabled value");
+        Assert(!WindowStartSettings.IsEnabledValue(0), "window auto-start accepts disabled value");
+
+        var startupTestDirectory = Path.Combine(Path.GetTempPath(), $"CodexUsageTray-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(startupTestDirectory);
+        try
+        {
+            var shortcutPath = Path.Combine(startupTestDirectory, "Codex Usage Tray.lnk");
+            var executablePath = Environment.ProcessPath
+                ?? throw new InvalidOperationException("Self-test process path is unavailable.");
+            Assert(!StartupShortcut.TargetsExecutable(shortcutPath, executablePath),
+                "missing startup shortcut is disabled");
+            StartupShortcut.Create(shortcutPath, executablePath);
+            Assert(File.Exists(shortcutPath), "startup shortcut is created");
+            Assert(StartupShortcut.TargetsExecutable(shortcutPath, executablePath),
+                "startup shortcut targets this executable");
+            var shortcut = StartupShortcut.Read(shortcutPath);
+            Assert(shortcut is { IconIndex: 0 }
+                && string.Equals(shortcut.Value.IconPath, executablePath, StringComparison.OrdinalIgnoreCase),
+                "startup shortcut uses the executable icon");
+        }
+        finally
+        {
+            Directory.Delete(startupTestDirectory, recursive: true);
+        }
+
+        var shortcutRolledBack = false;
+        try
+        {
+            StartupRegistration.DeleteLegacyOrRollbackShortcut(
+                () => throw new UnauthorizedAccessException("Synthetic registry failure."),
+                () => shortcutRolledBack = true);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Expected test failure path.
+        }
+
+        Assert(shortcutRolledBack, "failed legacy cleanup rolls back the startup shortcut");
 
         var localUsageLines = new[]
         {

@@ -39,7 +39,7 @@ Download [`CodexUsageTray.exe`](https://github.com/MatthiasHeinsius/codex-usage-
 
 Left-click the tray icon to open or close the usage window. Right-click it to refresh, configure startup behavior, open the Codex usage page, or exit.
 
-If you enable `Start with Windows`, keep the executable at the same path. The startup entry points to that file.
+Both automation options are off on first launch. If you enable `Start with Windows`, keep the executable at the same path. The startup shortcut points to that file and appears in Windows Startup Apps.
 
 The executable is not code-signed. Windows SmartScreen or antivirus software may warn about a downloaded copy.
 
@@ -47,7 +47,7 @@ The executable is not code-signed. Windows SmartScreen or antivirus software may
 
 The popup has compact and extended views. Compact mode shows each allowance and its countdown. Extended mode adds reset timestamps, progress bars, and inference totals. The pin button keeps the popup open and above other windows.
 
-By default, the app starts a new expired 5-hour or weekly window by sending an ephemeral `Hi` request with GPT-5.6 Luna. You can turn this off in the tray menu. The request consumes Codex inference. The app verifies the live reset time before sending and records completed triggers so it does not repeat them after a restart.
+If you enable `Auto-start expired windows with "Hi"`, the app starts a new expired 5-hour or weekly window by sending an ephemeral `Hi` request with GPT-5.6 Luna. The request consumes Codex inference. The app verifies the live reset time before sending and records completed triggers so it does not repeat them after a restart.
 
 ## Usage data and privacy
 
@@ -55,7 +55,7 @@ The app starts the installed Codex CLI in app-server mode and calls its read-onl
 
 The account service can publish daily token buckets one day late. If today's account bucket is unavailable, the app totals `token_usage_record` entries in this computer's local Codex session history. If the account total ends at yesterday, the app adds the local current-day total to the displayed inference total. No usage data leaves the computer except through the Codex CLI request described above.
 
-The app stores its view and automation settings under `HKEY_CURRENT_USER\Software\CodexUsageTray`. The optional Windows startup entry uses `HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run`.
+The app stores its view and window-start setting under `HKEY_CURRENT_USER\Software\CodexUsageTray`. The optional Windows startup shortcut is stored in the current user's Startup folder.
 
 ## Build from source
 
@@ -81,10 +81,11 @@ dotnet publish .\src\CodexUsageTray\CodexUsageTray.csproj `
 
 If Codex is installed somewhere unusual, set `CODEX_USAGE_CODEX_PATH` to the full path of `codex.cmd` or `codex.exe` before starting the app.
 
-The repository includes a screenshot generator for maintainers. It uses synthetic usage figures and never reads account data:
+The repository includes an asset generator for maintainers. It uses synthetic usage figures and never reads account data:
 
 ```powershell
 dotnet run --project .\tools\CodexUsageTray.ScreenshotGenerator -- .\docs\images
+dotnet run --project .\tools\CodexUsageTray.ScreenshotGenerator -- --app-icon .\src\CodexUsageTray\Assets\CodexUsageTray.ico
 ```
 
 ## Current limitation

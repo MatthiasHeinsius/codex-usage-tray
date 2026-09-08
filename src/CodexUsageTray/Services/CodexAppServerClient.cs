@@ -6,6 +6,8 @@ namespace CodexUsageTray;
 internal sealed class CodexAppServerClient
 {
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(45);
+    private static readonly string ClientVersion = typeof(CodexAppServerClient).Assembly
+        .GetName().Version?.ToString(3) ?? "unknown";
     private readonly LocalTokenUsageReader localTokenUsage = new();
 
     public async Task<UsageSnapshot> ReadUsageAsync(CancellationToken cancellationToken)
@@ -36,7 +38,7 @@ internal sealed class CodexAppServerClient
                 method = "initialize",
                 @params = new
                 {
-                    clientInfo = new { name = "codex-usage-tray", title = "Codex Usage Tray", version = "1.1.0" },
+                    clientInfo = new { name = "codex-usage-tray", title = "Codex Usage Tray", version = ClientVersion },
                     capabilities = new { experimentalApi = true }
                 }
             });
