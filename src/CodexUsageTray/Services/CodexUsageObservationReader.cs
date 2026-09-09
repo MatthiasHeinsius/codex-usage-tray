@@ -3,18 +3,17 @@ using System.Text.Json;
 
 namespace CodexUsageTray;
 
-internal sealed class CodexAppServerClient
+internal sealed class CodexUsageObservationReader : IUsageObservationReader
 {
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(45);
-    private static readonly string ClientVersion = typeof(CodexAppServerClient).Assembly
+    private static readonly string ClientVersion = typeof(CodexUsageObservationReader).Assembly
         .GetName().Version?.ToString(3) ?? "unknown";
     private readonly LocalTokenUsageReader localTokenUsage = new();
 
-    public Task<UsageObservations> ReadUsageAsync(CancellationToken cancellationToken) =>
-        ReadUsageAsync(includeActivity: true, cancellationToken);
-
-    public Task<UsageObservations> ReadRateLimitsAsync(CancellationToken cancellationToken) =>
-        ReadUsageAsync(includeActivity: false, cancellationToken);
+    public Task<UsageObservations> ReadAsync(
+        UsageObservationRequest request,
+        CancellationToken cancellationToken) =>
+        ReadUsageAsync(request == UsageObservationRequest.AllowanceWindowsAndActivity, cancellationToken);
 
     private async Task<UsageObservations> ReadUsageAsync(bool includeActivity, CancellationToken cancellationToken)
     {
@@ -109,7 +108,11 @@ internal sealed class CodexAppServerClient
 
             return new UsageObservations(account, local);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
         {
             string detail;
             lock (errors)

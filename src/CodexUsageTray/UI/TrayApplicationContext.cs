@@ -3,7 +3,7 @@ namespace CodexUsageTray;
 
 internal sealed class TrayApplicationContext : ApplicationContext
 {
-    private readonly CodexAppServerClient client = new();
+    private readonly UsageSnapshots usageSnapshots;
     private readonly NotifyIcon notifyIcon;
     private readonly UsagePopupForm popup = new();
     private readonly System.Windows.Forms.Timer refreshTimer;
@@ -11,17 +11,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem startupItem;
     private readonly ToolStripMenuItem windowStartItem;
     private Icon currentIcon;
-    private bool refreshInProgress;
-    private bool refreshIncludesActivity;
-    private bool activityRefreshPending;
     private bool windowStartInProgress;
     private DateTimeOffset retryWindowStartAfter = DateTimeOffset.MinValue;
-    private UsageSnapshot? snapshot;
     private bool popupVisibleWhenTrayMousePressed;
     private long? lastHandledTrayClickTimestamp;
 
-    public TrayApplicationContext()
+    public TrayApplicationContext(UsageSnapshots usageSnapshots)
     {
+        this.usageSnapshots = usageSnapshots;
         currentIcon = TrayIconRenderer.Create(100, 100);
         startupItem = new ToolStripMenuItem("Start with Windows")
         {
@@ -97,6 +94,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         notifyIcon.Dispose();
         currentIcon.Dispose();
         popup.Dispose();
+        usageSnapshots.DisposeAsync().AsTask().GetAwaiter().GetResult();
         base.ExitThreadCore();
     }
 
@@ -104,15 +102,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         if (!windowStartItem.Checked
             || windowStartInProgress
-            || refreshInProgress
-            || snapshot is null
+            || usageSnapshots.Current is not { } latest
             || DateTimeOffset.Now < retryWindowStartAfter
-            || !HasExpiredWindow(snapshot, DateTimeOffset.Now))
+            || !HasExpiredWindow(latest, DateTimeOffset.Now))
         {
             return;
         }
 
-        var observed = snapshot;
+        var observed = latest;
         var observedAt = DateTimeOffset.Now;
         var startFiveHour = WindowStartSettings.ShouldStartFiveHour(observed.FiveHour, observedAt);
         var startWeekly = WindowStartSettings.ShouldStartWeekly(observed.Weekly, observedAt);
@@ -131,7 +128,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 return;
             }
 
-            if (snapshot is not { } current)
+            if (usageSnapshots.Current is not { } current)
             {
                 return;
             }
@@ -180,37 +177,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
             await CheckExpiredWindowsAsync();
         }
 
-        if (refreshInProgress)
-        {
-            if (includeActivity && !refreshIncludesActivity)
-            {
-                activityRefreshPending = true;
-            }
-
-            return false;
-        }
-
-        refreshInProgress = true;
         popup.SetLoading(true);
         try
         {
-            var refreshActivity = includeActivity;
-            do
-            {
-                activityRefreshPending = false;
-                refreshIncludesActivity = refreshActivity;
-                var observations = refreshActivity
-                    ? await client.ReadUsageAsync(CancellationToken.None)
-                    : await client.ReadRateLimitsAsync(CancellationToken.None);
-                snapshot = UsageSnapshot.Reconcile(
-                    snapshot,
-                    observations.Account,
-                    observations.Local);
-                popup.ShowSnapshot(snapshot);
-                UpdateTray(snapshot);
-                refreshActivity = activityRefreshPending;
-            }
-            while (refreshActivity);
+            var snapshot = includeActivity
+                ? await usageSnapshots.RefreshWithActivityAsync()
+                : await usageSnapshots.RefreshAsync();
+            popup.ShowSnapshot(snapshot);
+            UpdateTray(snapshot);
             return true;
         }
         catch (Exception exception)
@@ -223,8 +197,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
         finally
         {
             popup.SetLoading(false);
-            refreshIncludesActivity = false;
-            refreshInProgress = false;
         }
     }
 
@@ -236,7 +208,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
-        if (snapshot is not null)
+        if (usageSnapshots.Current is { } snapshot)
         {
             popup.ShowSnapshot(snapshot);
         }
