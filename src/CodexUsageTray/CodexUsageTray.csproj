@@ -12,7 +12,7 @@
 
     <AssemblyName>CodexUsageTray</AssemblyName>
     <RootNamespace>CodexUsageTray</RootNamespace>
-    <Version>1.1.5</Version>
+    <Version>1.2.0</Version>
     <AssemblyTitle>Codex Usage Tray</AssemblyTitle>
     <Product>Codex Usage Tray</Product>
     <Authors>Matthias Heinsius</Authors>
