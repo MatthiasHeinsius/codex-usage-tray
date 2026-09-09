@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace CodexUsageTray;
 
 internal sealed class UsagePopupForm : Form
@@ -251,21 +253,24 @@ internal sealed class UsagePopupForm : Form
 
     private void RenderSnapshot(UsageSnapshot snapshot)
     {
-        var now = DateTimeOffset.Now;
-        statusLabel.Text = BuildStatus(snapshot);
-        fiveHourValue.Text = UsageText.PercentLeft(snapshot.FiveHour);
+        var presentation = UsagePresentation.Create(
+            snapshot,
+            DateTimeOffset.Now,
+            CultureInfo.CurrentCulture).Popup;
+        statusLabel.Text = presentation.AccountStatus;
+        fiveHourValue.Text = presentation.FiveHour.RemainingText;
         fiveHourReset.Text = compactView
-            ? UsageText.CompactCountdown(snapshot.FiveHour, now)
-            : UsageText.ResetText(snapshot.FiveHour, now);
-        fiveHourBar.Value = snapshot.FiveHour?.RemainingPercent ?? 0;
-        weeklyValue.Text = UsageText.PercentLeft(snapshot.Weekly);
+            ? presentation.FiveHour.CompactResetText
+            : presentation.FiveHour.ResetText;
+        fiveHourBar.Value = presentation.FiveHour.ProgressValue;
+        weeklyValue.Text = presentation.Weekly.RemainingText;
         weeklyReset.Text = compactView
-            ? UsageText.CompactCountdown(snapshot.Weekly, now)
-            : UsageText.ResetText(snapshot.Weekly, now);
-        weeklyBar.Value = snapshot.Weekly?.RemainingPercent ?? 0;
-        todayTokens.Text = UsageText.TokenLabel(snapshot.TodayTokens);
-        lifetimeTokens.Text = UsageText.TokenLabel(snapshot.LifetimeTokens);
-        updatedLabel.Text = $"Updated {snapshot.RetrievedAt.LocalDateTime:t}";
+            ? presentation.Weekly.CompactResetText
+            : presentation.Weekly.ResetText;
+        weeklyBar.Value = presentation.Weekly.ProgressValue;
+        todayTokens.Text = presentation.TodayTokens;
+        lifetimeTokens.Text = presentation.LifetimeTokens;
+        updatedLabel.Text = presentation.UpdatedText;
     }
 
     private void ApplyViewMode(bool compact, bool preserveBottom)
@@ -488,17 +493,6 @@ internal sealed class UsagePopupForm : Form
         Location = new Point(x, y),
         Size = new Size(width, 22)
     };
-
-    private static string BuildStatus(UsageSnapshot snapshot)
-    {
-        if (string.IsNullOrWhiteSpace(snapshot.Plan) && string.IsNullOrWhiteSpace(snapshot.LimitName))
-        {
-            return "Signed in through Codex";
-        }
-
-        var plan = snapshot.Plan is null ? null : char.ToUpperInvariant(snapshot.Plan[0]) + snapshot.Plan[1..];
-        return string.Join(" · ", new[] { plan, snapshot.LimitName }.Where(value => !string.IsNullOrWhiteSpace(value)));
-    }
 
     private void AddDragHandlers(Control control)
     {

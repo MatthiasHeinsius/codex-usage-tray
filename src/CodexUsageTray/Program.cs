@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 
 namespace CodexUsageTray;
 
@@ -30,7 +31,11 @@ internal static class Program
                     previous: null,
                     observations.Account,
                     observations.Local);
-                Console.WriteLine(UsageText.FormatConsole(snapshot));
+                var presentation = UsagePresentation.Create(
+                    snapshot,
+                    DateTimeOffset.Now,
+                    CultureInfo.CurrentCulture);
+                Console.WriteLine(presentation.ConsoleText);
                 return 0;
             }
             catch (Exception exception)
