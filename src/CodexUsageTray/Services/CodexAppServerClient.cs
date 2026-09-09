@@ -10,7 +10,13 @@ internal sealed class CodexAppServerClient
         .GetName().Version?.ToString(3) ?? "unknown";
     private readonly LocalTokenUsageReader localTokenUsage = new();
 
-    public async Task<UsageSnapshot> ReadUsageAsync(CancellationToken cancellationToken)
+    public Task<UsageSnapshot> ReadUsageAsync(CancellationToken cancellationToken) =>
+        ReadUsageAsync(includeActivity: true, cancellationToken);
+
+    public Task<UsageSnapshot> ReadRateLimitsAsync(CancellationToken cancellationToken) =>
+        ReadUsageAsync(includeActivity: false, cancellationToken);
+
+    private async Task<UsageSnapshot> ReadUsageAsync(bool includeActivity, CancellationToken cancellationToken)
     {
         var codexPath = CodexCommandLocator.Find();
         using var process = StartAppServer(codexPath);
@@ -46,12 +52,15 @@ internal sealed class CodexAppServerClient
             await ReadResponseAsync(process, 1, timeout.Token);
             await SendAsync(process, new { method = "initialized" });
             await SendAsync(process, new { id = 2, method = "account/rateLimits/read", @params = (object?)null });
-            await SendAsync(process, new { id = 3, method = "account/usage/read", @params = (object?)null });
+            if (includeActivity)
+            {
+                await SendAsync(process, new { id = 3, method = "account/usage/read", @params = (object?)null });
+            }
 
             JsonElement? rateLimits = null;
             JsonElement? tokenUsage = null;
 
-            while (rateLimits is null || tokenUsage is null)
+            while (rateLimits is null || (includeActivity && tokenUsage is null))
             {
                 var response = await ReadNextMessageAsync(process, timeout.Token);
                 if (!response.TryGetProperty("id", out var idElement) || !idElement.TryGetInt32(out var id))
@@ -76,15 +85,15 @@ internal sealed class CodexAppServerClient
             }
 
             var now = DateTimeOffset.Now;
-            var snapshot = ParseSnapshot(rateLimits.Value, tokenUsage.Value, now);
-            if (snapshot.TodayTokens is null)
+            var snapshot = ParseSnapshot(rateLimits.Value, tokenUsage, now);
+            if (includeActivity && snapshot.TodayTokens is null && tokenUsage is { } usage)
             {
                 try
                 {
                     var localToday = localTokenUsage.ReadToday(now);
                     if (localToday is not null)
                     {
-                        snapshot = ApplyLocalTodayFallback(snapshot, tokenUsage.Value, localToday.Value, now);
+                        snapshot = ApplyLocalTodayFallback(snapshot, usage, localToday.Value, now);
                     }
                 }
                 catch (IOException)
@@ -125,7 +134,7 @@ internal sealed class CodexAppServerClient
         }
     }
 
-    internal static UsageSnapshot ParseSnapshot(JsonElement rateResponse, JsonElement usageResponse, DateTimeOffset now)
+    internal static UsageSnapshot ParseSnapshot(JsonElement rateResponse, JsonElement? usageResponse, DateTimeOffset now)
     {
         var limits = SelectCodexLimits(rateResponse);
         var windows = new List<UsageWindow>();
@@ -138,7 +147,8 @@ internal sealed class CodexAppServerClient
             ?? windows.OrderByDescending(window => window.WindowMinutes ?? int.MinValue).FirstOrDefault(window => window != fiveHour);
 
         long? lifetimeTokens = null;
-        if (usageResponse.TryGetProperty("summary", out var summary)
+        if (usageResponse is { } activity
+            && activity.TryGetProperty("summary", out var summary)
             && summary.TryGetProperty("lifetimeTokens", out var lifetime)
             && lifetime.ValueKind == JsonValueKind.Number
             && lifetime.TryGetInt64(out var lifetimeValue))
@@ -147,7 +157,9 @@ internal sealed class CodexAppServerClient
         }
 
         long? todayTokens = null;
-        if (usageResponse.TryGetProperty("dailyUsageBuckets", out var buckets) && buckets.ValueKind == JsonValueKind.Array)
+        if (usageResponse is { } dailyActivity
+            && dailyActivity.TryGetProperty("dailyUsageBuckets", out var buckets)
+            && buckets.ValueKind == JsonValueKind.Array)
         {
             var today = DateOnly.FromDateTime(now.LocalDateTime);
             foreach (var bucket in buckets.EnumerateArray())

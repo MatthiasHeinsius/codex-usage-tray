@@ -12,9 +12,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem windowStartItem;
     private Icon currentIcon;
     private bool refreshInProgress;
+    private bool refreshIncludesActivity;
+    private bool activityRefreshPending;
     private bool windowStartInProgress;
     private DateTimeOffset retryWindowStartAfter = DateTimeOffset.MinValue;
     private UsageSnapshot? snapshot;
+    private bool popupVisibleWhenTrayMousePressed;
+    private long? lastHandledTrayClickTimestamp;
 
     public TrayApplicationContext()
     {
@@ -32,15 +36,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         windowStartItem.CheckedChanged += WindowStartItemOnCheckedChanged;
 
-        var menu = new ContextMenuStrip();
-        menu.Items.Add("Open", null, (_, _) => ShowPopup());
-        menu.Items.Add("Refresh", null, async (_, _) => await RefreshAsync());
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(startupItem);
-        menu.Items.Add(windowStartItem);
-        menu.Items.Add("Open Codex usage page", null, (_, _) => OpenUsagePage());
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Exit", null, (_, _) => ExitThread());
+        var menu = CreateContextMenu(
+            startupItem,
+            windowStartItem,
+            (_, _) => ShowPopup(),
+            async (_, _) => await RefreshAsync(includeActivity: true),
+            (_, _) => OpenUsagePage(),
+            (_, _) => ExitThread());
 
         notifyIcon = new NotifyIcon
         {
@@ -49,16 +51,34 @@ internal sealed class TrayApplicationContext : ApplicationContext
             Visible = true,
             ContextMenuStrip = menu
         };
+        notifyIcon.MouseDown += (_, eventArgs) =>
+        {
+            if (eventArgs.Button == MouseButtons.Left)
+            {
+                popupVisibleWhenTrayMousePressed = popup.Visible;
+            }
+        };
         notifyIcon.MouseClick += (_, eventArgs) =>
         {
             if (eventArgs.Button == MouseButtons.Left)
             {
-                ShowPopup();
+                var currentTimestamp = Environment.TickCount64;
+                if (!ShouldHandleTrayClick(
+                    currentTimestamp,
+                    lastHandledTrayClickTimestamp,
+                    SystemInformation.DoubleClickTime))
+                {
+                    return;
+                }
+
+                lastHandledTrayClickTimestamp = currentTimestamp;
+                ShowPopup(popupVisibleWhenTrayMousePressed);
             }
         };
 
-        popup.RefreshRequested += async (_, _) => await RefreshAsync();
+        popup.RefreshRequested += async (_, _) => await RefreshAsync(includeActivity: true);
         popup.UsagePageRequested += (_, _) => OpenUsagePage();
+        popup.ExtendedViewActivated += async (_, _) => await RefreshAsync(includeActivity: true);
         refreshTimer = new System.Windows.Forms.Timer { Interval = 60 * 1000 };
         refreshTimer.Tick += async (_, _) => await RefreshAsync();
         refreshTimer.Start();
@@ -92,19 +112,35 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
+        var observed = snapshot;
+        var observedAt = DateTimeOffset.Now;
+        var startFiveHour = WindowStartSettings.ShouldStartFiveHour(observed.FiveHour, observedAt);
+        var startWeekly = WindowStartSettings.ShouldStartWeekly(observed.Weekly, observedAt);
+        if (!startFiveHour && !startWeekly)
+        {
+            return;
+        }
+
         windowStartInProgress = true;
         try
         {
             // Re-read first in case another Codex client already started the new window.
-            await RefreshAsync();
+            if (!await RefreshAsync(checkExpiredWindows: false))
+            {
+                retryWindowStartAfter = DateTimeOffset.Now.AddMinutes(1);
+                return;
+            }
+
             if (snapshot is not { } current)
             {
                 return;
             }
 
             var now = DateTimeOffset.Now;
-            var startFiveHour = WindowStartSettings.ShouldStartFiveHour(current.FiveHour, now);
-            var startWeekly = WindowStartSettings.ShouldStartWeekly(current.Weekly, now);
+            startFiveHour = startFiveHour
+                && WindowStartSettings.ShouldStartFiveHourAfterRefresh(observed.FiveHour, current.FiveHour, now);
+            startWeekly = startWeekly
+                && WindowStartSettings.ShouldStartWeeklyAfterRefresh(observed.Weekly, current.Weekly, now);
             if (!startFiveHour && !startWeekly)
             {
                 return;
@@ -114,7 +150,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 ? "5-hour and weekly windows"
                 : startFiveHour ? "5-hour window" : "weekly window";
             await CodexWindowStarter.SendHiAsync(CancellationToken.None);
-            WindowStartSettings.MarkStarted(startFiveHour, startWeekly, current);
+            WindowStartSettings.MarkStarted(startFiveHour, startWeekly, observed);
             retryWindowStartAfter = DateTimeOffset.MinValue;
             notifyIcon.ShowBalloonTip(
                 5000,
@@ -123,7 +159,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 ToolTipIcon.Info);
 
             await Task.Delay(1000);
-            await RefreshAsync();
+            await RefreshAsync(checkExpiredWindows: false);
         }
         catch (Exception exception)
         {
@@ -137,37 +173,61 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private async Task RefreshAsync()
+    private async Task<bool> RefreshAsync(bool includeActivity = false, bool checkExpiredWindows = true)
     {
+        if (checkExpiredWindows)
+        {
+            await CheckExpiredWindowsAsync();
+        }
+
         if (refreshInProgress)
         {
-            return;
+            if (includeActivity && !refreshIncludesActivity)
+            {
+                activityRefreshPending = true;
+            }
+
+            return false;
         }
 
         refreshInProgress = true;
         popup.SetLoading(true);
         try
         {
-            snapshot = await client.ReadUsageAsync(CancellationToken.None);
-            popup.ShowSnapshot(snapshot);
-            UpdateTray(snapshot);
+            var refreshActivity = includeActivity;
+            do
+            {
+                activityRefreshPending = false;
+                refreshIncludesActivity = refreshActivity;
+                var refreshed = refreshActivity
+                    ? await client.ReadUsageAsync(CancellationToken.None)
+                    : await client.ReadRateLimitsAsync(CancellationToken.None);
+                snapshot = MergeRefresh(snapshot, refreshed, refreshActivity);
+                popup.ShowSnapshot(snapshot);
+                UpdateTray(snapshot);
+                refreshActivity = activityRefreshPending;
+            }
+            while (refreshActivity);
+            return true;
         }
         catch (Exception exception)
         {
             var message = OneLine(exception.Message);
             popup.ShowError(message);
             notifyIcon.Text = TruncateTooltip($"Codex usage · {message}");
+            return false;
         }
         finally
         {
             popup.SetLoading(false);
+            refreshIncludesActivity = false;
             refreshInProgress = false;
         }
     }
 
-    private void ShowPopup()
+    private void ShowPopup(bool? visibleWhenMousePressed = null)
     {
-        if (popup.Visible)
+        if (!ShouldShowAfterTrayClick(visibleWhenMousePressed ?? popup.Visible))
         {
             popup.Hide();
             return;
@@ -179,6 +239,54 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
 
         popup.ShowNearTray();
+        if (popup.IsExtendedView)
+        {
+            _ = RefreshAsync(includeActivity: true);
+        }
+    }
+
+    internal static UsageSnapshot MergeRefresh(
+        UsageSnapshot? previous,
+        UsageSnapshot refreshed,
+        bool activityIncluded)
+    {
+        if (previous is null || activityIncluded)
+        {
+            return refreshed;
+        }
+
+        return refreshed with
+        {
+            LifetimeTokens = previous.LifetimeTokens,
+            TodayTokens = previous.TodayTokens,
+            TodayTokensAreLocal = previous.TodayTokensAreLocal,
+            LifetimeIncludesLocalToday = previous.LifetimeIncludesLocalToday
+        };
+    }
+
+    internal static bool ShouldShowAfterTrayClick(bool visibleWhenMousePressed) => !visibleWhenMousePressed;
+
+    internal static bool ShouldHandleTrayClick(long currentTimestamp, long? previousTimestamp, int doubleClickTime) =>
+        previousTimestamp is null || currentTimestamp - previousTimestamp > doubleClickTime;
+
+    internal static ContextMenuStrip CreateContextMenu(
+        ToolStripMenuItem startupMenuItem,
+        ToolStripMenuItem windowStartMenuItem,
+        EventHandler open,
+        EventHandler refresh,
+        EventHandler openUsagePage,
+        EventHandler exit)
+    {
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Open", null, open);
+        menu.Items.Add("Refresh", null, refresh);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(startupMenuItem);
+        menu.Items.Add(windowStartMenuItem);
+        menu.Items.Add("Open Codex usage page", null, openUsagePage);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Exit", null, exit);
+        return menu;
     }
 
     private void UpdateTray(UsageSnapshot usage)
