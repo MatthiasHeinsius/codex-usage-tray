@@ -112,19 +112,35 @@ internal sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
+        var observed = snapshot;
+        var observedAt = DateTimeOffset.Now;
+        var startFiveHour = WindowStartSettings.ShouldStartFiveHour(observed.FiveHour, observedAt);
+        var startWeekly = WindowStartSettings.ShouldStartWeekly(observed.Weekly, observedAt);
+        if (!startFiveHour && !startWeekly)
+        {
+            return;
+        }
+
         windowStartInProgress = true;
         try
         {
             // Re-read first in case another Codex client already started the new window.
-            await RefreshAsync();
+            if (!await RefreshAsync(checkExpiredWindows: false))
+            {
+                retryWindowStartAfter = DateTimeOffset.Now.AddMinutes(1);
+                return;
+            }
+
             if (snapshot is not { } current)
             {
                 return;
             }
 
             var now = DateTimeOffset.Now;
-            var startFiveHour = WindowStartSettings.ShouldStartFiveHour(current.FiveHour, now);
-            var startWeekly = WindowStartSettings.ShouldStartWeekly(current.Weekly, now);
+            startFiveHour = startFiveHour
+                && WindowStartSettings.ShouldStartFiveHourAfterRefresh(observed.FiveHour, current.FiveHour, now);
+            startWeekly = startWeekly
+                && WindowStartSettings.ShouldStartWeeklyAfterRefresh(observed.Weekly, current.Weekly, now);
             if (!startFiveHour && !startWeekly)
             {
                 return;
@@ -134,7 +150,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 ? "5-hour and weekly windows"
                 : startFiveHour ? "5-hour window" : "weekly window";
             await CodexWindowStarter.SendHiAsync(CancellationToken.None);
-            WindowStartSettings.MarkStarted(startFiveHour, startWeekly, current);
+            WindowStartSettings.MarkStarted(startFiveHour, startWeekly, observed);
             retryWindowStartAfter = DateTimeOffset.MinValue;
             notifyIcon.ShowBalloonTip(
                 5000,
@@ -143,7 +159,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 ToolTipIcon.Info);
 
             await Task.Delay(1000);
-            await RefreshAsync();
+            await RefreshAsync(checkExpiredWindows: false);
         }
         catch (Exception exception)
         {
@@ -157,8 +173,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private async Task RefreshAsync(bool includeActivity = false)
+    private async Task<bool> RefreshAsync(bool includeActivity = false, bool checkExpiredWindows = true)
     {
+        if (checkExpiredWindows)
+        {
+            await CheckExpiredWindowsAsync();
+        }
+
         if (refreshInProgress)
         {
             if (includeActivity && !refreshIncludesActivity)
@@ -166,7 +187,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 activityRefreshPending = true;
             }
 
-            return;
+            return false;
         }
 
         refreshInProgress = true;
@@ -187,12 +208,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 refreshActivity = activityRefreshPending;
             }
             while (refreshActivity);
+            return true;
         }
         catch (Exception exception)
         {
             var message = OneLine(exception.Message);
             popup.ShowError(message);
             notifyIcon.Text = TruncateTooltip($"Codex usage · {message}");
+            return false;
         }
         finally
         {

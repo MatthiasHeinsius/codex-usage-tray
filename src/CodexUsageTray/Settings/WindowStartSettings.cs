@@ -29,6 +29,18 @@ internal static class WindowStartSettings
     public static bool ShouldStartWeekly(UsageWindow? window, DateTimeOffset now) =>
         ShouldStart(window, now, WeeklyResetName);
 
+    public static bool ShouldStartFiveHourAfterRefresh(
+        UsageWindow? observedWindow,
+        UsageWindow? refreshedWindow,
+        DateTimeOffset now) =>
+        ShouldStartAfterRefresh(observedWindow, refreshedWindow, now, ReadLastStartedReset(FiveHourResetName));
+
+    public static bool ShouldStartWeeklyAfterRefresh(
+        UsageWindow? observedWindow,
+        UsageWindow? refreshedWindow,
+        DateTimeOffset now) =>
+        ShouldStartAfterRefresh(observedWindow, refreshedWindow, now, ReadLastStartedReset(WeeklyResetName));
+
     public static void MarkStarted(bool fiveHour, bool weekly, UsageSnapshot snapshot)
     {
         using var key = Registry.CurrentUser.CreateSubKey(RegistryPath, writable: true);
@@ -53,16 +65,34 @@ internal static class WindowStartSettings
         return lastStartedReset != reset.ToUnixTimeSeconds();
     }
 
+    internal static bool ShouldStartAfterRefresh(
+        UsageWindow? observedWindow,
+        UsageWindow? refreshedWindow,
+        DateTimeOffset now,
+        long? lastStartedReset)
+    {
+        if (!IsExpiredAndUnstarted(observedWindow, now, lastStartedReset))
+        {
+            return false;
+        }
+
+        return refreshedWindow?.ResetsAt is not { } refreshedReset
+            || refreshedReset <= now
+            || refreshedWindow.UsedPercent <= 0;
+    }
+
     private static bool ShouldStart(UsageWindow? window, DateTimeOffset now, string registryName)
+        => IsExpiredAndUnstarted(window, now, ReadLastStartedReset(registryName));
+
+    private static long? ReadLastStartedReset(string registryName)
     {
         using var key = Registry.CurrentUser.OpenSubKey(RegistryPath, writable: false);
         var stored = key?.GetValue(registryName);
-        long? lastStarted = stored switch
+        return stored switch
         {
             long value => value,
             int value => value,
             _ => null
         };
-        return IsExpiredAndUnstarted(window, now, lastStarted);
     }
 }

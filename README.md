@@ -61,7 +61,7 @@ Use the view button to switch between compact and extended modes. Compact mode s
 
 The pin button keeps the popup open and above other windows. While pinned, drag the background or text to move it. The popup snaps either flush with the screen and taskbar edges or with an eight-pixel gap. A pinned popup keeps its position when hidden. An unpinned popup opens next to the tray.
 
-`Auto-start expired windows with "Hi"` starts a new expired 5-hour or weekly window by sending an ephemeral `Hi` request with GPT-5.6 Luna. This request consumes Codex inference. Before sending it, the app checks the live reset time. It records completed triggers so a restart does not send the same request again.
+`Auto-start expired windows with "Hi"` starts a new expired 5-hour or weekly window by sending an ephemeral `Hi` request with GPT-5.6 Luna. This request consumes Codex inference. Before sending it, the app refreshes the limits and skips the request if the new window already has usage. It records completed triggers so a restart does not send the same request again.
 
 ## Usage data and privacy
 
