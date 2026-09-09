@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace CodexUsageTray.Tests;
 
-public sealed class CodexAppServerClientTests
+public sealed class CodexUsageObservationReaderTests
 {
     [Fact]
     public void ParseAccountObservationSelectsAndNormalizesCodexAllowanceWindows()
@@ -22,7 +22,7 @@ public sealed class CodexAppServerClientTests
         using var response = JsonDocument.Parse(json);
         var observedAt = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
 
-        var observation = CodexAppServerClient.ParseAccountObservation(
+        var observation = CodexUsageObservationReader.ParseAccountObservation(
             response.RootElement,
             usageResponse: null,
             observedAt);
@@ -68,7 +68,7 @@ public sealed class CodexAppServerClientTests
         using var usage = JsonDocument.Parse(usageJson);
         var observedAt = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
 
-        var observation = CodexAppServerClient.ParseAccountObservation(
+        var observation = CodexUsageObservationReader.ParseAccountObservation(
             limits.RootElement,
             usage.RootElement,
             observedAt);

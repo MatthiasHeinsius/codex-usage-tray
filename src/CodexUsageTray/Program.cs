@@ -26,11 +26,8 @@ internal static class Program
         {
             try
             {
-                var observations = await new CodexAppServerClient().ReadUsageAsync(CancellationToken.None);
-                var snapshot = UsageSnapshot.Reconcile(
-                    previous: null,
-                    observations.Account,
-                    observations.Local);
+                await using var onceSnapshots = new UsageSnapshots(new CodexUsageObservationReader());
+                var snapshot = await onceSnapshots.RefreshWithActivityAsync();
                 var presentation = UsagePresentation.Create(
                     snapshot,
                     DateTimeOffset.Now,
@@ -52,7 +49,8 @@ internal static class Program
         }
 
         ApplicationConfiguration.Initialize();
-        Application.Run(new TrayApplicationContext());
+        var traySnapshots = new UsageSnapshots(new CodexUsageObservationReader());
+        Application.Run(new TrayApplicationContext(traySnapshots));
         GC.KeepAlive(singleInstance);
         return 0;
     }
