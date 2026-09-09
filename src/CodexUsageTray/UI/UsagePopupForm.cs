@@ -61,6 +61,8 @@ internal sealed class UsagePopupForm : Form
 
     internal int RefreshButtonBottomInset => ClientSize.Height - refreshButton.Bottom;
 
+    internal int StatusTextBottomClearance => statusLabel.Height - statusLabel.PreferredHeight;
+
     public UsagePopupForm()
     {
         Text = "Codex usage";
@@ -127,7 +129,7 @@ internal sealed class UsagePopupForm : Form
             ForeColor = Color.FromArgb(148, 163, 184),
             AutoEllipsis = true,
             Location = new Point(27, 46),
-            Size = new Size(261, 22)
+            Size = new Size(261, 28)
         };
 
         pinButton = new PinIconButton
@@ -605,4 +607,5 @@ internal sealed class UsagePopupForm : Form
             Math.Clamp(location.X, bounds.Left, maximumX),
             Math.Clamp(location.Y, bounds.Top, maximumY));
     }
+
 }

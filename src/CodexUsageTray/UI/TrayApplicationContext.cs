@@ -204,7 +204,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void ShowPopup(bool? visibleWhenMousePressed = null)
     {
-        if (!ShouldShowAfterTrayClick(visibleWhenMousePressed ?? popup.Visible, popup.Visible))
+        if (!ShouldShowAfterTrayClick(visibleWhenMousePressed ?? popup.Visible))
         {
             popup.Hide();
             return;
@@ -241,11 +241,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
     }
 
-    internal static bool ShouldShowAfterTrayClick(bool visibleWhenMousePressed, bool visibleAfterDeactivation)
-    {
-        _ = visibleAfterDeactivation;
-        return !visibleWhenMousePressed;
-    }
+    internal static bool ShouldShowAfterTrayClick(bool visibleWhenMousePressed) => !visibleWhenMousePressed;
 
     internal static bool ShouldHandleTrayClick(long currentTimestamp, long? previousTimestamp, int doubleClickTime) =>
         previousTimestamp is null || currentTimestamp - previousTimestamp > doubleClickTime;

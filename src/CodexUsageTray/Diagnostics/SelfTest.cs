@@ -160,9 +160,7 @@ internal static class SelfTest
                 == new Point(480, 592),
             "unpinned popup returns to its tray position when reopened");
         Assert(
-            !TrayApplicationContext.ShouldShowAfterTrayClick(
-                visibleWhenMousePressed: true,
-                visibleAfterDeactivation: false),
+            !TrayApplicationContext.ShouldShowAfterTrayClick(visibleWhenMousePressed: true),
             "tray click closes a popup that deactivated during the click");
         Assert(
             !TrayApplicationContext.ShouldHandleTrayClick(
@@ -181,6 +179,10 @@ internal static class SelfTest
         try
         {
             popup.SetViewModeForScreenshot(compact: false);
+            popup.SetLoading(loading: true);
+            Assert(
+                popup.StatusTextBottomClearance >= 2,
+                $"loading status keeps descender clearance ({popup.StatusTextBottomClearance}px)");
             var extendedRefreshInset = popup.RefreshButtonBottomInset;
             popup.SetViewModeForScreenshot(compact: true);
             Assert(popup.CompactRefreshLayoutIsCorrect, "compact refresh button fits without extra height");
