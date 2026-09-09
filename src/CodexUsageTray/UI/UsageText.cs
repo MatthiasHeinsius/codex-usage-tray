@@ -4,10 +4,10 @@ namespace CodexUsageTray;
 
 internal static class UsageText
 {
-    public static string PercentLeft(UsageWindow? window) =>
+    public static string PercentLeft(AllowanceWindow? window) =>
         window is null ? "Unavailable" : $"{window.RemainingPercent}% left";
 
-    public static string ResetText(UsageWindow? window, DateTimeOffset now)
+    public static string ResetText(AllowanceWindow? window, DateTimeOffset now)
     {
         if (window?.ResetsAt is not { } reset)
         {
@@ -30,7 +30,7 @@ internal static class UsageText
         return $"Resets in {countdown} · {local:g}";
     }
 
-    public static string CompactCountdown(UsageWindow? window, DateTimeOffset now)
+    public static string CompactCountdown(AllowanceWindow? window, DateTimeOffset now)
     {
         if (window?.ResetsAt is not { } reset)
         {

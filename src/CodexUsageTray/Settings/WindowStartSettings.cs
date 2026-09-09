@@ -23,21 +23,21 @@ internal static class WindowStartSettings
         key.SetValue(EnabledName, enabled ? 1 : 0, RegistryValueKind.DWord);
     }
 
-    public static bool ShouldStartFiveHour(UsageWindow? window, DateTimeOffset now) =>
+    public static bool ShouldStartFiveHour(AllowanceWindow? window, DateTimeOffset now) =>
         ShouldStart(window, now, FiveHourResetName);
 
-    public static bool ShouldStartWeekly(UsageWindow? window, DateTimeOffset now) =>
+    public static bool ShouldStartWeekly(AllowanceWindow? window, DateTimeOffset now) =>
         ShouldStart(window, now, WeeklyResetName);
 
     public static bool ShouldStartFiveHourAfterRefresh(
-        UsageWindow? observedWindow,
-        UsageWindow? refreshedWindow,
+        AllowanceWindow? observedWindow,
+        AllowanceWindow? refreshedWindow,
         DateTimeOffset now) =>
         ShouldStartAfterRefresh(observedWindow, refreshedWindow, now, ReadLastStartedReset(FiveHourResetName));
 
     public static bool ShouldStartWeeklyAfterRefresh(
-        UsageWindow? observedWindow,
-        UsageWindow? refreshedWindow,
+        AllowanceWindow? observedWindow,
+        AllowanceWindow? refreshedWindow,
         DateTimeOffset now) =>
         ShouldStartAfterRefresh(observedWindow, refreshedWindow, now, ReadLastStartedReset(WeeklyResetName));
 
@@ -55,7 +55,7 @@ internal static class WindowStartSettings
         }
     }
 
-    internal static bool IsExpiredAndUnstarted(UsageWindow? window, DateTimeOffset now, long? lastStartedReset)
+    internal static bool IsExpiredAndUnstarted(AllowanceWindow? window, DateTimeOffset now, long? lastStartedReset)
     {
         if (window?.ResetsAt is not { } reset || reset > now)
         {
@@ -66,8 +66,8 @@ internal static class WindowStartSettings
     }
 
     internal static bool ShouldStartAfterRefresh(
-        UsageWindow? observedWindow,
-        UsageWindow? refreshedWindow,
+        AllowanceWindow? observedWindow,
+        AllowanceWindow? refreshedWindow,
         DateTimeOffset now,
         long? lastStartedReset)
     {
@@ -81,7 +81,7 @@ internal static class WindowStartSettings
             || refreshedWindow.UsedPercent <= 0;
     }
 
-    private static bool ShouldStart(UsageWindow? window, DateTimeOffset now, string registryName)
+    private static bool ShouldStart(AllowanceWindow? window, DateTimeOffset now, string registryName)
         => IsExpiredAndUnstarted(window, now, ReadLastStartedReset(registryName));
 
     private static long? ReadLastStartedReset(string registryName)

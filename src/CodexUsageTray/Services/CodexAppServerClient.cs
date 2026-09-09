@@ -10,13 +10,13 @@ internal sealed class CodexAppServerClient
         .GetName().Version?.ToString(3) ?? "unknown";
     private readonly LocalTokenUsageReader localTokenUsage = new();
 
-    public Task<UsageSnapshot> ReadUsageAsync(CancellationToken cancellationToken) =>
+    public Task<UsageObservations> ReadUsageAsync(CancellationToken cancellationToken) =>
         ReadUsageAsync(includeActivity: true, cancellationToken);
 
-    public Task<UsageSnapshot> ReadRateLimitsAsync(CancellationToken cancellationToken) =>
+    public Task<UsageObservations> ReadRateLimitsAsync(CancellationToken cancellationToken) =>
         ReadUsageAsync(includeActivity: false, cancellationToken);
 
-    private async Task<UsageSnapshot> ReadUsageAsync(bool includeActivity, CancellationToken cancellationToken)
+    private async Task<UsageObservations> ReadUsageAsync(bool includeActivity, CancellationToken cancellationToken)
     {
         var codexPath = CodexCommandLocator.Find();
         using var process = StartAppServer(codexPath);
@@ -85,15 +85,16 @@ internal sealed class CodexAppServerClient
             }
 
             var now = DateTimeOffset.Now;
-            var snapshot = ParseSnapshot(rateLimits.Value, tokenUsage, now);
-            if (includeActivity && snapshot.TodayTokens is null && tokenUsage is { } usage)
+            var account = ParseAccountObservation(rateLimits.Value, tokenUsage, now);
+            LocalUsageObservation? local = null;
+            if (account.Activity is AccountActivityObservation.Observed { TodayTokens: null })
             {
                 try
                 {
                     var localToday = localTokenUsage.ReadToday(now);
-                    if (localToday is not null)
+                    if (localToday is { } tokens)
                     {
-                        snapshot = ApplyLocalTodayFallback(snapshot, usage, localToday.Value, now);
+                        local = new LocalUsageObservation(DateOnly.FromDateTime(now.LocalDateTime), tokens);
                     }
                 }
                 catch (IOException)
@@ -106,7 +107,7 @@ internal sealed class CodexAppServerClient
                 }
             }
 
-            return snapshot;
+            return new UsageObservations(account, local);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -134,17 +135,15 @@ internal sealed class CodexAppServerClient
         }
     }
 
-    internal static UsageSnapshot ParseSnapshot(JsonElement rateResponse, JsonElement? usageResponse, DateTimeOffset now)
+    internal static AccountUsageObservation ParseAccountObservation(
+        JsonElement rateResponse,
+        JsonElement? usageResponse,
+        DateTimeOffset now)
     {
         var limits = SelectCodexLimits(rateResponse);
-        var windows = new List<UsageWindow>();
+        var windows = new List<AllowanceWindow>();
         AddWindow(limits, "primary", windows);
         AddWindow(limits, "secondary", windows);
-
-        var fiveHour = windows.FirstOrDefault(window => window.WindowMinutes is >= 240 and <= 360)
-            ?? windows.OrderBy(window => window.WindowMinutes ?? int.MaxValue).FirstOrDefault();
-        var weekly = windows.FirstOrDefault(window => window.WindowMinutes is >= 9_000 and <= 11_000)
-            ?? windows.OrderByDescending(window => window.WindowMinutes ?? int.MinValue).FirstOrDefault(window => window != fiveHour);
 
         long? lifetimeTokens = null;
         if (usageResponse is { } activity
@@ -176,51 +175,19 @@ internal sealed class CodexAppServerClient
             }
         }
 
-        return new UsageSnapshot(
+        var activityObservation = usageResponse is null
+            ? (AccountActivityObservation)new AccountActivityObservation.NotRequested()
+            : new AccountActivityObservation.Observed(
+                lifetimeTokens,
+                todayTokens,
+                LatestDailyBucketDate(usageResponse.Value));
+
+        return new AccountUsageObservation(
             now,
-            fiveHour,
-            weekly,
-            lifetimeTokens,
-            todayTokens,
+            windows,
             GetString(limits, "planType"),
-            GetString(limits, "limitName"));
-    }
-
-    internal static UsageSnapshot ApplyLocalTodayFallback(
-        UsageSnapshot snapshot,
-        JsonElement usageResponse,
-        long localTodayTokens,
-        DateTimeOffset now)
-    {
-        var result = snapshot with
-        {
-            TodayTokens = localTodayTokens,
-            TodayTokensAreLocal = true
-        };
-
-        if (snapshot.LifetimeTokens is not { } serverLifetime)
-        {
-            return result;
-        }
-
-        var today = DateOnly.FromDateTime(now.LocalDateTime);
-        if (LatestDailyBucketDate(usageResponse) != today.AddDays(-1))
-        {
-            return result;
-        }
-
-        try
-        {
-            return result with
-            {
-                LifetimeTokens = checked(serverLifetime + localTodayTokens),
-                LifetimeIncludesLocalToday = true
-            };
-        }
-        catch (OverflowException)
-        {
-            return result;
-        }
+            GetString(limits, "limitName"),
+            activityObservation);
     }
 
     private static DateOnly? LatestDailyBucketDate(JsonElement usageResponse)
@@ -271,7 +238,7 @@ internal sealed class CodexAppServerClient
         return limits;
     }
 
-    private static void AddWindow(JsonElement limits, string name, List<UsageWindow> destination)
+    private static void AddWindow(JsonElement limits, string name, List<AllowanceWindow> destination)
     {
         if (!limits.TryGetProperty(name, out var element) || element.ValueKind != JsonValueKind.Object)
         {
@@ -283,10 +250,10 @@ internal sealed class CodexAppServerClient
             return;
         }
 
-        int? minutes = null;
-        if (element.TryGetProperty("windowDurationMins", out var duration) && duration.TryGetInt32(out var durationValue))
+        TimeSpan? durationValue = null;
+        if (element.TryGetProperty("windowDurationMins", out var duration) && duration.TryGetInt32(out var durationMinutes))
         {
-            minutes = durationValue;
+            durationValue = TimeSpan.FromMinutes(durationMinutes);
         }
 
         DateTimeOffset? reset = null;
@@ -295,7 +262,7 @@ internal sealed class CodexAppServerClient
             reset = DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
         }
 
-        destination.Add(new UsageWindow(Math.Clamp(used, 0, 100), minutes, reset));
+        destination.Add(new AllowanceWindow(Math.Clamp(used, 0, 100), durationValue, reset));
     }
 
     private static string? GetString(JsonElement element, string name) =>

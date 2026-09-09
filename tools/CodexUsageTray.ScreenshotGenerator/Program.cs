@@ -24,14 +24,21 @@ internal static class Program
         Directory.CreateDirectory(outputDirectory);
 
         var now = DateTimeOffset.Now;
-        var snapshot = new CodexUsageTray.UsageSnapshot(
-            now,
-            new CodexUsageTray.UsageWindow(36, 300, now.AddHours(3).AddMinutes(12)),
-            new CodexUsageTray.UsageWindow(58, 10_080, now.AddDays(3).AddHours(8)),
-            128_440_800,
-            784_200,
-            "plus",
-            "Codex");
+        var snapshot = CodexUsageTray.UsageSnapshot.Reconcile(
+            previous: null,
+            new CodexUsageTray.AccountUsageObservation(
+                now,
+                [
+                    new CodexUsageTray.AllowanceWindow(36, TimeSpan.FromHours(5), now.AddHours(3).AddMinutes(12)),
+                    new CodexUsageTray.AllowanceWindow(58, TimeSpan.FromDays(7), now.AddDays(3).AddHours(8))
+                ],
+                "plus",
+                "Codex",
+                new CodexUsageTray.AccountActivityObservation.Observed(
+                    LifetimeTokens: 128_440_800,
+                    TodayTokens: 784_200,
+                    LatestDailyBucketDate: DateOnly.FromDateTime(now.LocalDateTime))),
+            local: null);
 
         using var popup = new CodexUsageTray.UsagePopupForm();
         popup.ShowSnapshot(snapshot);
