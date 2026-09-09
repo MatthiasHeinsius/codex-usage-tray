@@ -29,5 +29,6 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="CodexUsageTray.ScreenshotGenerator" />
+    <InternalsVisibleTo Include="CodexUsageTray.Tests" />
   </ItemGroup>
 </Project>

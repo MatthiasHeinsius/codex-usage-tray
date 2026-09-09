@@ -79,6 +79,7 @@ Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), th
 
 ```powershell
 dotnet build .\CodexUsageTray.slnx -c Release
+dotnet test .\tests\CodexUsageTray.Tests\CodexUsageTray.Tests.csproj -c Release --no-build
 dotnet run --project .\src\CodexUsageTray\CodexUsageTray.csproj -c Release --no-build -- --self-test
 ```
 

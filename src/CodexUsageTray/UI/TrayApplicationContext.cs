@@ -199,10 +199,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
             {
                 activityRefreshPending = false;
                 refreshIncludesActivity = refreshActivity;
-                var refreshed = refreshActivity
+                var observations = refreshActivity
                     ? await client.ReadUsageAsync(CancellationToken.None)
                     : await client.ReadRateLimitsAsync(CancellationToken.None);
-                snapshot = MergeRefresh(snapshot, refreshed, refreshActivity);
+                snapshot = UsageSnapshot.Reconcile(
+                    snapshot,
+                    observations.Account,
+                    observations.Local);
                 popup.ShowSnapshot(snapshot);
                 UpdateTray(snapshot);
                 refreshActivity = activityRefreshPending;
@@ -243,25 +246,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             _ = RefreshAsync(includeActivity: true);
         }
-    }
-
-    internal static UsageSnapshot MergeRefresh(
-        UsageSnapshot? previous,
-        UsageSnapshot refreshed,
-        bool activityIncluded)
-    {
-        if (previous is null || activityIncluded)
-        {
-            return refreshed;
-        }
-
-        return refreshed with
-        {
-            LifetimeTokens = previous.LifetimeTokens,
-            TodayTokens = previous.TodayTokens,
-            TodayTokensAreLocal = previous.TodayTokensAreLocal,
-            LifetimeIncludesLocalToday = previous.LifetimeIncludesLocalToday
-        };
     }
 
     internal static bool ShouldShowAfterTrayClick(bool visibleWhenMousePressed) => !visibleWhenMousePressed;

@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text.Json;
 
 namespace CodexUsageTray;
 
@@ -7,39 +6,20 @@ internal static class SelfTest
 {
     public static int Run()
     {
-        const string limitsJson = """
-            {
-              "rateLimits": {
-                "limitName": "Codex",
-                "planType": "plus",
-                "primary": { "usedPercent": 24, "windowDurationMins": 300, "resetsAt": 1788780000 },
-                "secondary": { "usedPercent": 61, "windowDurationMins": 10080, "resetsAt": 1789200000 }
-              },
-              "rateLimitsByLimitId": null
-            }
-            """;
-        const string usageJson = """
-            {
-              "summary": { "lifetimeTokens": 123456789 },
-              "dailyUsageBuckets": [
-                { "startDate": "2026-09-06", "tokens": 10 },
-                { "startDate": "2026-09-07", "tokens": 987654 }
-              ]
-            }
-            """;
-
-        using var limits = JsonDocument.Parse(limitsJson);
-        using var usage = JsonDocument.Parse(usageJson);
-        var snapshot = CodexAppServerClient.ParseSnapshot(
-            limits.RootElement,
-            usage.RootElement,
-            new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2)));
-
-        Assert(snapshot.FiveHour?.RemainingPercent == 76, "5-hour window");
-        Assert(snapshot.Weekly?.RemainingPercent == 39, "weekly window");
-        Assert(snapshot.TodayTokens == 987654, "daily tokens");
-        Assert(snapshot.LifetimeTokens == 123456789, "lifetime tokens");
-        Assert(snapshot.Plan == "plus", "plan");
+        var observedAt = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
+        var account = new AccountUsageObservation(
+            observedAt,
+            [
+                new AllowanceWindow(24, TimeSpan.FromHours(5), DateTimeOffset.FromUnixTimeSeconds(1788780000)),
+                new AllowanceWindow(61, TimeSpan.FromDays(7), DateTimeOffset.FromUnixTimeSeconds(1789200000))
+            ],
+            "plus",
+            "Codex",
+            new AccountActivityObservation.Observed(
+                LifetimeTokens: 123_456_789,
+                TodayTokens: 987_654,
+                LatestDailyBucketDate: new DateOnly(2026, 9, 7)));
+        var snapshot = UsageSnapshot.Reconcile(previous: null, account, local: null);
 
         using var lengthAhead = new LengthAheadStream(length: 10, position: 3);
         using var copiedBytes = new MemoryStream();
@@ -56,34 +36,6 @@ internal static class SelfTest
             UsageText.CompactCountdown(snapshot.FiveHour, new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2)))
                 == "1h 20m",
             "compact countdown");
-
-        const string multiBucketJson = """
-            {
-              "rateLimits": { "primary": { "usedPercent": 99, "windowDurationMins": 300 } },
-              "rateLimitsByLimitId": {
-                "other": { "primary": { "usedPercent": 80, "windowDurationMins": 60 } },
-                "codex": {
-                  "primary": { "usedPercent": 25, "windowDurationMins": 10080 },
-                  "secondary": { "usedPercent": 10, "windowDurationMins": 300 }
-                }
-              }
-            }
-            """;
-        using var multiBucket = JsonDocument.Parse(multiBucketJson);
-        var selected = CodexAppServerClient.ParseSnapshot(multiBucket.RootElement, usage.RootElement,
-            new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2)));
-        Assert(selected.FiveHour?.RemainingPercent == 90, "multi-bucket 5-hour window");
-        Assert(selected.Weekly?.RemainingPercent == 75, "multi-bucket weekly window");
-
-        var limitsOnly = CodexAppServerClient.ParseSnapshot(
-            multiBucket.RootElement,
-            usageResponse: null,
-            new DateTimeOffset(2026, 9, 7, 12, 1, 0, TimeSpan.FromHours(2)));
-        var merged = TrayApplicationContext.MergeRefresh(snapshot, limitsOnly, activityIncluded: false);
-        Assert(merged.TodayTokens == snapshot.TodayTokens && merged.LifetimeTokens == snapshot.LifetimeTokens,
-            "rate-limit refresh preserves account activity");
-        Assert(merged.FiveHour == limitsOnly.FiveHour && merged.Weekly == limitsOnly.Weekly,
-            "rate-limit refresh updates allowance windows");
 
         Assert(
             TrayIconRenderer.StaticFiveHourRemaining == 66
@@ -194,14 +146,14 @@ internal static class SelfTest
             popup.Hide();
         }
 
-        var expiredWindow = new UsageWindow(100, 300, DateTimeOffset.FromUnixTimeSeconds(100));
+        var expiredWindow = new AllowanceWindow(100, TimeSpan.FromHours(5), DateTimeOffset.FromUnixTimeSeconds(100));
         Assert(WindowStartSettings.IsExpiredAndUnstarted(expiredWindow, DateTimeOffset.FromUnixTimeSeconds(101), null),
             "expired window needs start");
         Assert(!WindowStartSettings.IsExpiredAndUnstarted(expiredWindow, DateTimeOffset.FromUnixTimeSeconds(101), 100),
             "completed window start is not repeated");
         Assert(!WindowStartSettings.IsExpiredAndUnstarted(expiredWindow, DateTimeOffset.FromUnixTimeSeconds(99), null),
             "future window is not started");
-        var freshUnusedWindow = new UsageWindow(0, 300, DateTimeOffset.FromUnixTimeSeconds(500));
+        var freshUnusedWindow = new AllowanceWindow(0, TimeSpan.FromHours(5), DateTimeOffset.FromUnixTimeSeconds(500));
         Assert(
             WindowStartSettings.ShouldStartAfterRefresh(
                 expiredWindow,
@@ -274,38 +226,6 @@ internal static class SelfTest
         };
         var localUsage = LocalTokenUsageReader.SumLinesForDate(localUsageLines, new DateOnly(2026, 9, 7));
         Assert(localUsage.Found && localUsage.Tokens == 2000, "local daily inference fallback");
-
-        const string delayedUsageJson = """
-            {
-              "summary": { "lifetimeTokens": 10000 },
-              "dailyUsageBuckets": [
-                { "startDate": "2026-09-05", "tokens": 400 },
-                { "startDate": "2026-09-06", "tokens": 600 }
-              ]
-            }
-            """;
-        using var delayedUsage = JsonDocument.Parse(delayedUsageJson);
-        var delayedSnapshot = CodexAppServerClient.ParseSnapshot(
-            limits.RootElement,
-            delayedUsage.RootElement,
-            new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2)));
-        var combinedSnapshot = CodexAppServerClient.ApplyLocalTodayFallback(
-            delayedSnapshot,
-            delayedUsage.RootElement,
-            2000,
-            new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2)));
-        Assert(combinedSnapshot.TodayTokens == 2000 && combinedSnapshot.TodayTokensAreLocal,
-            "local daily inference is displayed");
-        Assert(combinedSnapshot.LifetimeTokens == 12000 && combinedSnapshot.LifetimeIncludesLocalToday,
-            "yesterday lifetime includes local today");
-
-        var currentSnapshot = CodexAppServerClient.ApplyLocalTodayFallback(
-            snapshot,
-            usage.RootElement,
-            2000,
-            new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2)));
-        Assert(currentSnapshot.LifetimeTokens == 123456789 && !currentSnapshot.LifetimeIncludesLocalToday,
-            "current lifetime is not double counted");
 
         Console.WriteLine("All self-tests passed.");
         return 0;

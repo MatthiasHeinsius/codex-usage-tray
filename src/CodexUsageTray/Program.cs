@@ -25,7 +25,11 @@ internal static class Program
         {
             try
             {
-                var snapshot = await new CodexAppServerClient().ReadUsageAsync(CancellationToken.None);
+                var observations = await new CodexAppServerClient().ReadUsageAsync(CancellationToken.None);
+                var snapshot = UsageSnapshot.Reconcile(
+                    previous: null,
+                    observations.Account,
+                    observations.Local);
                 Console.WriteLine(UsageText.FormatConsole(snapshot));
                 return 0;
             }
