@@ -47,6 +47,7 @@ internal sealed class UsageSnapshots : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         Task? running;
+        RefreshWave? wave;
         lock (sync)
         {
             if (disposed)
@@ -55,7 +56,9 @@ internal sealed class UsageSnapshots : IAsyncDisposable
             }
 
             disposed = true;
-            running = activeWave?.Runner;
+            wave = activeWave;
+            running = wave?.Runner;
+            wave?.Completion.TrySetCanceled(new CancellationToken(canceled: true));
         }
 
         lifetime.Cancel();
@@ -123,18 +126,24 @@ internal sealed class UsageSnapshots : IAsyncDisposable
             }
             catch (Exception exception)
             {
-                if (request == UsageObservationRequest.AllowanceWindows && ActivityWasRequested(wave))
+                if (ContinueWithActivityOrCompleteFailed(wave, request, exception))
                 {
                     request = UsageObservationRequest.AllowanceWindowsAndActivity;
                     continue;
                 }
 
-                CompleteFailed(wave, exception);
                 return;
             }
 
             lock (sync)
             {
+                if (disposed)
+                {
+                    activeWave = null;
+                    wave.Completion.TrySetCanceled(new CancellationToken(canceled: true));
+                    return;
+                }
+
                 if (request == UsageObservationRequest.AllowanceWindows && wave.ActivityRequested)
                 {
                     request = UsageObservationRequest.AllowanceWindowsAndActivity;
@@ -149,11 +158,38 @@ internal sealed class UsageSnapshots : IAsyncDisposable
         }
     }
 
-    private bool ActivityWasRequested(RefreshWave wave)
+    private bool ContinueWithActivityOrCompleteFailed(
+        RefreshWave wave,
+        UsageObservationRequest request,
+        Exception exception)
     {
+        var failure = exception as UsageSnapshotRefreshException
+            ?? new UsageSnapshotRefreshException(exception.Message, exception);
+
         lock (sync)
         {
-            return wave.ActivityRequested;
+            if (!disposed
+                && request == UsageObservationRequest.AllowanceWindows
+                && wave.ActivityRequested)
+            {
+                return true;
+            }
+
+            if (ReferenceEquals(activeWave, wave))
+            {
+                activeWave = null;
+            }
+
+            if (disposed)
+            {
+                wave.Completion.TrySetCanceled(new CancellationToken(canceled: true));
+            }
+            else
+            {
+                wave.Completion.TrySetException(failure);
+            }
+
+            return false;
         }
     }
 
@@ -167,22 +203,6 @@ internal sealed class UsageSnapshots : IAsyncDisposable
             }
 
             wave.Completion.TrySetCanceled(lifetime.Token);
-        }
-    }
-
-    private void CompleteFailed(RefreshWave wave, Exception exception)
-    {
-        var failure = exception as UsageSnapshotRefreshException
-            ?? new UsageSnapshotRefreshException(exception.Message, exception);
-
-        lock (sync)
-        {
-            if (ReferenceEquals(activeWave, wave))
-            {
-                activeWave = null;
-            }
-
-            wave.Completion.TrySetException(failure);
         }
     }
 

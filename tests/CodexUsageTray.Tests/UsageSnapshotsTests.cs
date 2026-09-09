@@ -143,6 +143,29 @@ public sealed class UsageSnapshotsTests
         await Assert.ThrowsAsync<ObjectDisposedException>(() => snapshots.RefreshAsync());
     }
 
+    [Fact]
+    public async Task DisposalCancelsWaitersBeforeAdapterCleanupCompletes()
+    {
+        var observedAt = new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.FromHours(2));
+        var observations = new CancellationIgnoringUsageObservationReader();
+        var snapshots = new UsageSnapshots(observations);
+
+        var refresh = snapshots.RefreshAsync();
+        await observations.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var disposal = snapshots.DisposeAsync().AsTask();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => refresh.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.True(observations.AdapterCancellation.IsCancellationRequested);
+        Assert.False(disposal.IsCompleted);
+        Assert.Null(snapshots.Current);
+
+        observations.Completion.TrySetResult(Observe(observedAt, usedPercent: 20, includeActivity: false));
+        await disposal;
+
+        Assert.Null(snapshots.Current);
+    }
+
     private static UsageObservations Observe(
         DateTimeOffset observedAt,
         int usedPercent,
@@ -232,5 +255,24 @@ public sealed class UsageSnapshotsTests
         public void Succeed(UsageObservations observations) => Completion.TrySetResult(observations);
 
         public void Fail(Exception exception) => Completion.TrySetException(exception);
+    }
+
+    private sealed class CancellationIgnoringUsageObservationReader : IUsageObservationReader
+    {
+        public TaskCompletionSource Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<UsageObservations> Completion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public CancellationToken AdapterCancellation { get; private set; }
+
+        public Task<UsageObservations> ReadAsync(
+            UsageObservationRequest request,
+            CancellationToken cancellationToken)
+        {
+            Assert.Equal(UsageObservationRequest.AllowanceWindows, request);
+            AdapterCancellation = cancellationToken;
+            Started.TrySetResult();
+            return Completion.Task;
+        }
     }
 }
