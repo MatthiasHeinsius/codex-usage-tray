@@ -1,5 +1,6 @@
 using System.Drawing.Imaging;
 using System.Drawing.Text;
+using System.Globalization;
 
 namespace CodexUsageTrayDocs;
 
@@ -39,6 +40,10 @@ internal static class Program
                     TodayTokens: 784_200,
                     LatestDailyBucketDate: DateOnly.FromDateTime(now.LocalDateTime))),
             local: null);
+        var presentation = CodexUsageTray.UsagePresentation.Create(
+            snapshot,
+            now,
+            CultureInfo.CurrentCulture);
 
         using var popup = new CodexUsageTray.UsagePopupForm();
         popup.ShowSnapshot(snapshot);
@@ -54,8 +59,8 @@ internal static class Program
             Application.DoEvents();
             Save(popup, Path.Combine(outputDirectory, "compact.png"));
 
-            SaveTrayTooltip(snapshot, Path.Combine(outputDirectory, "tray-tooltip.png"));
-            SaveContextMenu(snapshot, Path.Combine(outputDirectory, "context-menu.png"));
+            SaveTrayTooltip(presentation.Tray, Path.Combine(outputDirectory, "tray-tooltip.png"));
+            SaveContextMenu(presentation.Tray, Path.Combine(outputDirectory, "context-menu.png"));
         }
         finally
         {
@@ -82,7 +87,7 @@ internal static class Program
         bitmap.Save(path, ImageFormat.Png);
     }
 
-    private static void SaveContextMenu(CodexUsageTray.UsageSnapshot snapshot, string path)
+    private static void SaveContextMenu(CodexUsageTray.UsagePresentation.TrayPresentation presentation, string path)
     {
         using var startupItem = new ToolStripMenuItem("Start with Windows")
         {
@@ -113,11 +118,11 @@ internal static class Program
         using var graphics = Graphics.FromImage(bitmap);
         graphics.Clear(Color.FromArgb(24, 28, 36));
         graphics.DrawImageUnscaled(menuBitmap, (width - menu.Width) / 2, 0);
-        DrawTrayArea(graphics, width, height, snapshot);
+        DrawTrayArea(graphics, width, height, presentation);
         bitmap.Save(path, ImageFormat.Png);
     }
 
-    private static void SaveTrayTooltip(CodexUsageTray.UsageSnapshot snapshot, string path)
+    private static void SaveTrayTooltip(CodexUsageTray.UsagePresentation.TrayPresentation presentation, string path)
     {
         const int width = 440;
         const int height = 120;
@@ -128,7 +133,7 @@ internal static class Program
         graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         graphics.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
         graphics.Clear(Color.FromArgb(24, 28, 36));
-        DrawTrayArea(graphics, width, height, snapshot);
+        DrawTrayArea(graphics, width, height, presentation);
 
         using (var tooltipBrush = new SolidBrush(Color.FromArgb(43, 43, 43)))
         using (var tooltipBorder = new Pen(Color.FromArgb(91, 91, 91)))
@@ -145,7 +150,7 @@ internal static class Program
             graphics.FillRectangle(tooltipBrush, tooltipBounds);
             graphics.DrawRectangle(tooltipBorder, tooltipBounds);
             graphics.DrawString(
-                CodexUsageTray.UsageText.TrayTooltip(snapshot),
+                presentation.Tooltip,
                 tooltipFont,
                 textBrush,
                 tooltipBounds,
@@ -159,7 +164,7 @@ internal static class Program
         Graphics graphics,
         int width,
         int height,
-        CodexUsageTray.UsageSnapshot snapshot)
+        CodexUsageTray.UsagePresentation.TrayPresentation presentation)
     {
         const int taskbarHeight = 52;
         using (var taskbarBrush = new SolidBrush(Color.FromArgb(31, 31, 31)))
@@ -168,8 +173,8 @@ internal static class Program
         }
 
         using var icon = CodexUsageTray.TrayIconRenderer.Create(
-            snapshot.FiveHour?.RemainingPercent ?? 100,
-            snapshot.Weekly?.RemainingPercent ?? 100);
+            presentation.FiveHourRemaining,
+            presentation.WeeklyRemaining);
         using var iconBitmap = icon.ToBitmap();
         graphics.DrawImage(
             iconBitmap,

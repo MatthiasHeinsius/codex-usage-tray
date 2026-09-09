@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 
 namespace CodexUsageTray;
 
@@ -27,7 +28,11 @@ internal static class Program
             {
                 await using var onceSnapshots = new UsageSnapshots(new CodexUsageObservationReader());
                 var snapshot = await onceSnapshots.RefreshWithActivityAsync();
-                Console.WriteLine(UsageText.FormatConsole(snapshot));
+                var presentation = UsagePresentation.Create(
+                    snapshot,
+                    DateTimeOffset.Now,
+                    CultureInfo.CurrentCulture);
+                Console.WriteLine(presentation.ConsoleText);
                 return 0;
             }
             catch (Exception exception)
