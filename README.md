@@ -2,60 +2,76 @@
 
 [![Build](https://github.com/MatthiasHeinsius/codex-usage-tray/actions/workflows/build.yml/badge.svg)](https://github.com/MatthiasHeinsius/codex-usage-tray/actions/workflows/build.yml)
 
-Codex Usage Tray is a small Windows notification-area app that shows the usage attached to your signed-in Codex subscription.
+Codex Usage Tray is a small Windows tray app. It displays Codex usage for the ChatGPT account signed in through the Codex CLI.
 
-This is an unofficial community project. It is not affiliated with or endorsed by OpenAI.
+This is an unofficial community project. It is not affiliated with OpenAI.
 
 ## What it shows
 
-- Remaining 5-hour allowance and reset time
-- Remaining weekly allowance and reset time
+- Remaining 5-hour allowance and its reset time
+- Remaining weekly allowance and its reset time
 - Inference tokens used today
-- Total inference tokens reported by the account
+- Total inference tokens reported for the account
 - Live countdowns in a compact view
 
-The tray icon uses two rings. The inner ring shows the 5-hour allowance and the outer ring shows the weekly allowance. The app refreshes the usage figures and open-window countdowns every minute.
+The tray icon has two rings. The inner ring shows the 5-hour allowance. The outer ring shows the weekly allowance. The app refreshes the limits and countdowns once a minute. It refreshes daily and lifetime activity when you open or switch to the extended view.
 
 ## Screenshots
 
-| Extended view | Compact view |
-| --- | --- |
-| ![Extended Codex usage popup](docs/images/extended.png) | ![Compact Codex usage popup](docs/images/compact.png) |
+### Extended view
 
-Hover over the tray icon to see both remaining percentages and the total inference-token count.
+![Extended Codex usage popup](docs/images/extended.png)
+
+### Compact view
+
+![Compact Codex usage popup](docs/images/compact.png)
+
+Pin either view to move it. Drag the popup by its background or text. It can cross the taskbar and snaps flush or with an eight-pixel gap to every screen edge and the top of the taskbar.
+
+### Tray icon
+
+Hover over the tray icon to see both remaining percentages.
 
 ![Codex Usage Tray icon and hover text](docs/images/tray-tooltip.png)
+
+Right-click the tray icon to open the app menu.
+
+![Codex Usage Tray context menu](docs/images/context-menu.png)
 
 ## Requirements
 
 - 64-bit Windows 10 or Windows 11
 - Codex CLI installed and signed in with your ChatGPT account
 
-The portable release includes the .NET desktop runtime. The target computer does not need a separate .NET installation or administrator access.
+The portable release includes the .NET desktop runtime. It does not require a separate .NET installation or administrator access.
 
 ## Install
 
-Download [`CodexUsageTray.exe`](https://github.com/MatthiasHeinsius/codex-usage-tray/releases/latest/download/CodexUsageTray.exe) from the [latest GitHub release](https://github.com/MatthiasHeinsius/codex-usage-tray/releases/latest), copy it to a permanent location, and run it. You can also build the same executable from source.
+Download [`CodexUsageTray.exe`](https://github.com/MatthiasHeinsius/codex-usage-tray/releases/latest/download/CodexUsageTray.exe) from the [latest GitHub release](https://github.com/MatthiasHeinsius/codex-usage-tray/releases/latest). Move it to a permanent location, then run it. You can also build the executable from source.
 
-Left-click the tray icon to open or close the usage window. Right-click it to refresh, configure startup behavior, open the Codex usage page, or exit.
+Left-click the tray icon to open or close the usage window. A double-click performs the same toggle once. Right-click the icon to refresh the data, change startup settings, open the Codex usage page, or exit.
 
-Both automation options are off on first launch. If you enable `Start with Windows`, keep the executable at the same path. The startup shortcut points to that file and appears in Windows Startup Apps.
+Both automation options are off on first launch. `Start with Windows` creates a shortcut that appears in Windows Startup Apps. Keep the executable at the same path after enabling this setting because the shortcut points to that file.
 
-The executable is not code-signed. Windows SmartScreen or antivirus software may warn about a downloaded copy.
+The executable is not code-signed, so Windows SmartScreen or antivirus software may warn about it.
 
 ## Features
 
-The popup has compact and extended views. Compact mode shows each allowance and its countdown. Extended mode adds reset timestamps, progress bars, and inference totals. The pin button keeps the popup open and above other windows.
+Use the view button to switch between compact and extended modes. Compact mode shows each allowance and its countdown. Extended mode adds reset times, progress bars, and inference totals.
 
-If you enable `Auto-start expired windows with "Hi"`, the app starts a new expired 5-hour or weekly window by sending an ephemeral `Hi` request with GPT-5.6 Luna. The request consumes Codex inference. The app verifies the live reset time before sending and records completed triggers so it does not repeat them after a restart.
+The pin button keeps the popup open and above other windows. While pinned, drag the background or text to move it. The popup snaps either flush with the screen and taskbar edges or with an eight-pixel gap. A pinned popup keeps its position when hidden. An unpinned popup opens next to the tray.
+
+`Auto-start expired windows with "Hi"` starts a new expired 5-hour or weekly window by sending an ephemeral `Hi` request with GPT-5.6 Luna. This request consumes Codex inference. Before sending it, the app checks the live reset time. It records completed triggers so a restart does not send the same request again.
 
 ## Usage data and privacy
 
-The app starts the installed Codex CLI in app-server mode and calls its read-only account methods. It does not read, copy, or store the credentials in `%USERPROFILE%\.codex\auth.json`.
+The app runs the installed Codex CLI in app-server mode and calls its read-only account methods. It does not directly read, copy, or store credentials from `%USERPROFILE%\.codex\auth.json`.
 
-The account service can publish daily token buckets one day late. If today's account bucket is unavailable, the app totals `token_usage_record` entries in this computer's local Codex session history. If the account total ends at yesterday, the app adds the local current-day total to the displayed inference total. No usage data leaves the computer except through the Codex CLI request described above.
+The account service may publish daily token buckets a day late. If today's bucket is missing, the app totals `token_usage_record` entries from the local Codex session history. If the account total ends with yesterday's data, the app adds today's local total to the displayed inference total.
 
-The app stores its view and window-start setting under `HKEY_CURRENT_USER\Software\CodexUsageTray`. The optional Windows startup shortcut is stored in the current user's Startup folder.
+The app does not upload the usage data it reads from the account or local history. The optional auto-start feature only sends the `Hi` request described above.
+
+The app stores its view and window-start settings under `HKEY_CURRENT_USER\Software\CodexUsageTray`. The optional Windows startup shortcut is in the current user's Startup folder.
 
 ## Build from source
 
@@ -81,7 +97,7 @@ dotnet publish .\src\CodexUsageTray\CodexUsageTray.csproj `
 
 If Codex is installed somewhere unusual, set `CODEX_USAGE_CODEX_PATH` to the full path of `codex.cmd` or `codex.exe` before starting the app.
 
-The repository includes an asset generator for maintainers. It uses synthetic usage figures and never reads account data:
+The repository includes an asset generator for maintainers. It uses synthetic figures and does not read account data:
 
 ```powershell
 dotnet run --project .\tools\CodexUsageTray.ScreenshotGenerator -- .\docs\images
@@ -90,7 +106,7 @@ dotnet run --project .\tools\CodexUsageTray.ScreenshotGenerator -- --app-icon .\
 
 ## Current limitation
 
-The account usage method is marked experimental by the Codex app-server. A future Codex CLI release may change it. If that happens, the app reports the error instead of inventing a usage figure.
+The Codex app-server marks the account usage method as experimental. A future Codex CLI release may change it. If that happens, the app reports the error instead of estimating the missing figure.
 
 ## License
 

@@ -50,6 +50,8 @@ internal static class SelfTest
             "English token formatting");
         Assert(UsageText.TokensForCulture(snapshot.LifetimeTokens, CultureInfo.GetCultureInfo("de-DE")) == "123,46M",
             "German token formatting");
+        Assert(UsageText.TrayTooltip(snapshot) == "Codex · 5h 76% · week 39%",
+            "tray tooltip excludes account activity");
         Assert(
             UsageText.CompactCountdown(snapshot.FiveHour, new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2)))
                 == "1h 20m",
@@ -73,6 +75,16 @@ internal static class SelfTest
         Assert(selected.FiveHour?.RemainingPercent == 90, "multi-bucket 5-hour window");
         Assert(selected.Weekly?.RemainingPercent == 75, "multi-bucket weekly window");
 
+        var limitsOnly = CodexAppServerClient.ParseSnapshot(
+            multiBucket.RootElement,
+            usageResponse: null,
+            new DateTimeOffset(2026, 9, 7, 12, 1, 0, TimeSpan.FromHours(2)));
+        var merged = TrayApplicationContext.MergeRefresh(snapshot, limitsOnly, activityIncluded: false);
+        Assert(merged.TodayTokens == snapshot.TodayTokens && merged.LifetimeTokens == snapshot.LifetimeTokens,
+            "rate-limit refresh preserves account activity");
+        Assert(merged.FiveHour == limitsOnly.FiveHour && merged.Weekly == limitsOnly.Weekly,
+            "rate-limit refresh updates allowance windows");
+
         Assert(
             TrayIconRenderer.StaticFiveHourRemaining == 66
                 && TrayIconRenderer.StaticWeeklyRemaining == 75,
@@ -91,8 +103,79 @@ internal static class SelfTest
         }
 
         using var popup = new UsagePopupForm();
-        Assert(!popup.HeaderControlsOverlap, "usage link does not overlap title");
+        Assert(popup.IsExtendedView == !PopupViewSettings.IsCompact(), "popup exposes its current view mode");
+        Assert(!popup.HeaderControlsOverlap, "header controls do not overlap");
         Assert(popup.InferenceDividerPaddingIsBalanced, "inference divider padding is balanced");
+        var screenBounds = new Rectangle(100, 50, 1_000, 750);
+        var workingArea = new Rectangle(100, 50, 1_000, 700);
+        var popupSize = new Size(440, 150);
+        Assert(
+            UsagePopupForm.SnapToScreen(new Point(109, 59), popupSize, screenBounds, workingArea)
+                == new Point(108, 58),
+            "popup snaps eight pixels inside its left and top borders");
+        Assert(
+            UsagePopupForm.SnapToScreen(new Point(101, 51), popupSize, screenBounds, workingArea)
+                == new Point(100, 50),
+            "popup also snaps flush with its left and top borders");
+        Assert(
+            UsagePopupForm.SnapToScreen(new Point(651, 591), popupSize, screenBounds, workingArea)
+                == new Point(652, 592),
+            "popup snaps eight pixels above the taskbar");
+        Assert(
+            UsagePopupForm.SnapToScreen(new Point(300, 599), popupSize, screenBounds, workingArea)
+                == new Point(300, 600),
+            "popup also snaps flush with the taskbar");
+        Assert(
+            UsagePopupForm.SnapToScreen(new Point(300, 620), popupSize, screenBounds, workingArea)
+                == new Point(300, 620),
+            "popup can move across the taskbar");
+        Assert(
+            UsagePopupForm.SnapToScreen(new Point(300, 641), popupSize, screenBounds, workingArea)
+                == new Point(300, 642),
+            "popup snaps eight pixels above the physical screen bottom");
+        Assert(
+            UsagePopupForm.SnapToScreen(new Point(300, 649), popupSize, screenBounds, workingArea)
+                == new Point(300, 650),
+            "popup also snaps flush with the physical screen bottom");
+        Assert(
+            UsagePopupForm.SnapToScreen(new Point(130, 90), popupSize, screenBounds, workingArea)
+                == new Point(130, 90),
+            "popup remains unsnapped away from screen borders");
+        Assert(
+            UsagePopupForm.GetLocationWhenShown(
+                new Point(300, 620),
+                pinned: true,
+                new Point(900, 700),
+                popupSize,
+                workingArea)
+                == new Point(300, 620),
+            "pinned popup keeps its position when reopened");
+        Assert(
+            UsagePopupForm.GetLocationWhenShown(
+                new Point(300, 620),
+                pinned: false,
+                new Point(900, 700),
+                popupSize,
+                workingArea)
+                == new Point(480, 592),
+            "unpinned popup returns to its tray position when reopened");
+        Assert(
+            !TrayApplicationContext.ShouldShowAfterTrayClick(
+                visibleWhenMousePressed: true,
+                visibleAfterDeactivation: false),
+            "tray click closes a popup that deactivated during the click");
+        Assert(
+            !TrayApplicationContext.ShouldHandleTrayClick(
+                currentTimestamp: 1_100,
+                previousTimestamp: 1_000,
+                doubleClickTime: 500),
+            "second click of a tray double-click does not toggle again");
+        Assert(
+            TrayApplicationContext.ShouldHandleTrayClick(
+                currentTimestamp: 1_501,
+                previousTimestamp: 1_000,
+                doubleClickTime: 500),
+            "later tray click toggles normally");
         popup.Location = new Point(-10_000, -10_000);
         popup.Show();
         try
