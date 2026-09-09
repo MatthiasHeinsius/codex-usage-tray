@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Globalization;
+
 namespace CodexUsageTray;
 
 internal sealed class TrayApplicationContext : ApplicationContext
@@ -275,15 +277,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void UpdateTray(UsageSnapshot usage)
     {
-        var fiveHourRemaining = usage.FiveHour?.RemainingPercent ?? 100;
-        var weeklyRemaining = usage.Weekly?.RemainingPercent ?? 100;
-        var replacement = TrayIconRenderer.Create(fiveHourRemaining, weeklyRemaining);
+        var presentation = UsagePresentation.Create(
+            usage,
+            DateTimeOffset.Now,
+            CultureInfo.CurrentCulture).Tray;
+        var replacement = TrayIconRenderer.Create(
+            presentation.FiveHourRemaining,
+            presentation.WeeklyRemaining);
         notifyIcon.Icon = replacement;
         var old = currentIcon;
         currentIcon = replacement;
         old.Dispose();
 
-        notifyIcon.Text = TruncateTooltip(UsageText.TrayTooltip(usage));
+        notifyIcon.Text = TruncateTooltip(presentation.Tooltip);
     }
 
     private void StartupItemOnCheckedChanged(object? sender, EventArgs eventArgs)

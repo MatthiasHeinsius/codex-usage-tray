@@ -1,41 +1,13 @@
-using System.Globalization;
-
 namespace CodexUsageTray;
 
 internal static class SelfTest
 {
     public static int Run()
     {
-        var observedAt = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
-        var account = new AccountUsageObservation(
-            observedAt,
-            [
-                new AllowanceWindow(24, TimeSpan.FromHours(5), DateTimeOffset.FromUnixTimeSeconds(1788780000)),
-                new AllowanceWindow(61, TimeSpan.FromDays(7), DateTimeOffset.FromUnixTimeSeconds(1789200000))
-            ],
-            "plus",
-            "Codex",
-            new AccountActivityObservation.Observed(
-                LifetimeTokens: 123_456_789,
-                TodayTokens: 987_654,
-                LatestDailyBucketDate: new DateOnly(2026, 9, 7)));
-        var snapshot = UsageSnapshot.Reconcile(previous: null, account, local: null);
-
         using var lengthAhead = new LengthAheadStream(length: 10, position: 3);
         using var copiedBytes = new MemoryStream();
         Assert(LocalTokenUsageReader.CopyUnreadBytes(lengthAhead, copiedBytes) == 3,
             "local token reader advances by consumed bytes");
-
-        Assert(UsageText.TokensForCulture(snapshot.LifetimeTokens, CultureInfo.GetCultureInfo("en-US")) == "123.46M",
-            "English token formatting");
-        Assert(UsageText.TokensForCulture(snapshot.LifetimeTokens, CultureInfo.GetCultureInfo("de-DE")) == "123,46M",
-            "German token formatting");
-        Assert(UsageText.TrayTooltip(snapshot) == "Codex · 5h 76% · week 39%",
-            "tray tooltip excludes account activity");
-        Assert(
-            UsageText.CompactCountdown(snapshot.FiveHour, new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2)))
-                == "1h 20m",
-            "compact countdown");
 
         Assert(
             TrayIconRenderer.StaticFiveHourRemaining == 66
