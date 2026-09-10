@@ -71,7 +71,8 @@ public sealed class UsageSnapshotTests
     [Fact]
     public void ReconcileClearsRetainedTodayAcrossLocalDates()
     {
-        var firstObservationAt = new DateTimeOffset(2026, 9, 7, 23, 59, 0, TimeSpan.FromHours(2));
+        var firstObservationAt = new DateTimeOffset(
+            new DateTime(2026, 9, 7, 23, 59, 0, DateTimeKind.Local));
         var previous = UsageSnapshot.Reconcile(
             previous: null,
             new AccountUsageObservation(
