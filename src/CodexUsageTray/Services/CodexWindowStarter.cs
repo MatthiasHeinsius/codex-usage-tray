@@ -2,11 +2,11 @@ using System.Diagnostics;
 
 namespace CodexUsageTray;
 
-internal sealed class CodexWindowStarter
+internal sealed class CodexWindowStarter : IAllowanceWindowActivationCommand
 {
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(2);
 
-    public static async Task SendHiAsync(CancellationToken cancellationToken)
+    public async Task SendHiAsync(CancellationToken cancellationToken)
     {
         var codexPath = CodexCommandLocator.Find();
         var commandInterpreter = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";

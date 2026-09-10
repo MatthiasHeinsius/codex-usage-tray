@@ -13,7 +13,7 @@ internal interface IUsageObservationReader
         CancellationToken cancellationToken);
 }
 
-internal sealed class UsageSnapshots : IAsyncDisposable
+internal sealed class UsageSnapshots : IAsyncDisposable, IUsageSnapshotRefresher
 {
     private readonly object sync = new();
     private readonly IUsageObservationReader observations;

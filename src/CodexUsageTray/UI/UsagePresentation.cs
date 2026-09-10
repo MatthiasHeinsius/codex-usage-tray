@@ -25,27 +25,56 @@ internal sealed record UsagePresentation
     {
         var fiveHour = PresentAllowance(snapshot.FiveHour, now, formatProvider);
         var weekly = PresentAllowance(snapshot.Weekly, now, formatProvider);
+        var observationText = PresentObservationTimes(snapshot, formatProvider);
         var popup = new PopupPresentation(
             AccountStatus(snapshot),
             fiveHour,
             weekly,
             TokenLabel(snapshot.TodayTokens, formatProvider),
             TokenLabel(snapshot.LifetimeTokens, formatProvider),
-            $"Updated {snapshot.RetrievedAt.LocalDateTime.ToString("t", formatProvider)}");
+            observationText.Popup);
         var tray = new TrayPresentation(
             snapshot.FiveHour?.RemainingPercent ?? 100,
             snapshot.Weekly?.RemainingPercent ?? 100,
             $"Codex · 5h {PercentOrUnknown(snapshot.FiveHour)}% · week {PercentOrUnknown(snapshot.Weekly)}%");
-        var consoleText = string.Join(
-            Environment.NewLine,
+        var consoleLines = new List<string>
+        {
             $"5-hour: {fiveHour.RemainingText} ({fiveHour.ResetText})",
             $"Weekly: {weekly.RemainingText} ({weekly.ResetText})",
             $"Inference today{(snapshot.TodayTokensAreLocal ? " on this PC" : string.Empty)}: {ConsoleTokens(snapshot.TodayTokens)}",
-            $"Inference lifetime{(snapshot.LifetimeIncludesLocalToday ? " including this PC today" : string.Empty)}: {ConsoleTokens(snapshot.LifetimeTokens)}",
-            $"Plan: {snapshot.Plan ?? "unknown"}",
-            $"Updated: {snapshot.RetrievedAt.LocalDateTime.ToString("G", formatProvider)}");
+            $"Inference lifetime{(snapshot.LifetimeIncludesLocalActivity ? " including local activity" : string.Empty)}: {ConsoleTokens(snapshot.LifetimeTokens)}",
+            $"Plan: {snapshot.Plan ?? "unknown"}"
+        };
+        consoleLines.AddRange(observationText.Console);
+        var consoleText = string.Join(Environment.NewLine, consoleLines);
 
         return new UsagePresentation(popup, tray, consoleText);
+    }
+
+    private static (string Popup, IReadOnlyList<string> Console) PresentObservationTimes(
+        UsageSnapshot snapshot,
+        IFormatProvider formatProvider)
+    {
+        var allowanceTime = snapshot.AllowanceObservedAt.LocalDateTime;
+        if (snapshot.ActivityObservedAt == snapshot.AllowanceObservedAt)
+        {
+            return (
+                $"Updated {allowanceTime.ToString("t", formatProvider)}",
+                [$"Updated: {allowanceTime.ToString("G", formatProvider)}"]);
+        }
+
+        var activityPopup = snapshot.ActivityObservedAt is { } activityObservedAt
+            ? $"Activity updated {activityObservedAt.LocalDateTime.ToString("t", formatProvider)}"
+            : "Activity not updated";
+        var activityConsole = snapshot.ActivityObservedAt is { } consoleActivityObservedAt
+            ? consoleActivityObservedAt.LocalDateTime.ToString("G", formatProvider)
+            : "unavailable";
+        return (
+            $"Limits updated {allowanceTime.ToString("t", formatProvider)} · {activityPopup}",
+            [
+                $"Allowances updated: {allowanceTime.ToString("G", formatProvider)}",
+                $"Activity updated: {activityConsole}"
+            ]);
     }
 
     private static AllowancePresentation PresentAllowance(

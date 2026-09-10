@@ -8,7 +8,8 @@ internal sealed record UsageSnapshot
     private static readonly TimeSpan MaximumWeeklyDuration = TimeSpan.FromMinutes(11_000);
 
     private UsageSnapshot(
-        DateTimeOffset retrievedAt,
+        DateTimeOffset allowanceObservedAt,
+        DateTimeOffset? activityObservedAt,
         AllowanceWindow? fiveHour,
         AllowanceWindow? weekly,
         long? lifetimeTokens,
@@ -16,9 +17,10 @@ internal sealed record UsageSnapshot
         string? plan,
         string? limitName,
         bool todayTokensAreLocal = false,
-        bool lifetimeIncludesLocalToday = false)
+        bool lifetimeIncludesLocalActivity = false)
     {
-        RetrievedAt = retrievedAt;
+        AllowanceObservedAt = allowanceObservedAt;
+        ActivityObservedAt = activityObservedAt;
         FiveHour = fiveHour;
         Weekly = weekly;
         LifetimeTokens = lifetimeTokens;
@@ -26,10 +28,11 @@ internal sealed record UsageSnapshot
         Plan = plan;
         LimitName = limitName;
         TodayTokensAreLocal = todayTokensAreLocal;
-        LifetimeIncludesLocalToday = lifetimeIncludesLocalToday;
+        LifetimeIncludesLocalActivity = lifetimeIncludesLocalActivity;
     }
 
-    public DateTimeOffset RetrievedAt { get; }
+    public DateTimeOffset AllowanceObservedAt { get; }
+    public DateTimeOffset? ActivityObservedAt { get; }
     public AllowanceWindow? FiveHour { get; }
     public AllowanceWindow? Weekly { get; }
     public long? LifetimeTokens { get; }
@@ -37,7 +40,7 @@ internal sealed record UsageSnapshot
     public string? Plan { get; }
     public string? LimitName { get; }
     public bool TodayTokensAreLocal { get; }
-    public bool LifetimeIncludesLocalToday { get; }
+    public bool LifetimeIncludesLocalActivity { get; }
 
     public static UsageSnapshot Reconcile(
         UsageSnapshot? previous,
@@ -59,16 +62,20 @@ internal sealed record UsageSnapshot
 
         if (account.Activity is AccountActivityObservation.NotRequested)
         {
+            var retainsToday = previous?.ActivityObservedAt is { } activityObservedAt
+                && DateOnly.FromDateTime(activityObservedAt.LocalDateTime)
+                    == DateOnly.FromDateTime(account.ObservedAt.LocalDateTime);
             return new UsageSnapshot(
                 account.ObservedAt,
+                previous?.ActivityObservedAt,
                 fiveHour,
                 weekly,
                 previous?.LifetimeTokens,
-                previous?.TodayTokens,
+                retainsToday ? previous?.TodayTokens : null,
                 account.Plan,
                 account.LimitName,
-                previous?.TodayTokensAreLocal ?? false,
-                previous?.LifetimeIncludesLocalToday ?? false);
+                retainsToday && (previous?.TodayTokensAreLocal ?? false),
+                previous?.LifetimeIncludesLocalActivity ?? false);
         }
 
         var activity = (AccountActivityObservation.Observed)account.Activity;
@@ -93,6 +100,7 @@ internal sealed record UsageSnapshot
         }
 
         return new UsageSnapshot(
+            account.ObservedAt,
             account.ObservedAt,
             fiveHour,
             weekly,
