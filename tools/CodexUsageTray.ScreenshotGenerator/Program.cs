@@ -93,13 +93,18 @@ internal static class Program
         {
             CheckOnClick = true
         };
-        using var windowStartItem = new ToolStripMenuItem("Auto-start expired windows with \"Hi\"")
+        using var windowStartItem = new ToolStripMenuItem("Auto-activate unused windows with \"Hi\"")
+        {
+            CheckOnClick = true
+        };
+        using var allowanceNotificationsItem = new ToolStripMenuItem("Allowance notifications")
         {
             CheckOnClick = true
         };
         using var menu = CodexUsageTray.TrayApplicationContext.CreateContextMenu(
             startupItem,
             windowStartItem,
+            allowanceNotificationsItem,
             (_, _) => { },
             (_, _) => { },
             (_, _) => { },

@@ -50,7 +50,12 @@ internal static class Program
 
         ApplicationConfiguration.Initialize();
         var traySnapshots = new UsageSnapshots(new CodexUsageObservationReader());
-        Application.Run(new TrayApplicationContext(traySnapshots));
+        using var activation = new AllowanceWindowActivation(
+            new CodexWindowStarter(),
+            traySnapshots,
+            new RegistryAllowanceWindowActivationSettings(),
+            TimeProvider.System);
+        Application.Run(new TrayApplicationContext(traySnapshots, activation));
         GC.KeepAlive(singleInstance);
         return 0;
     }

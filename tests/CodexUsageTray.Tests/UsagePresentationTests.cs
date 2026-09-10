@@ -50,6 +50,46 @@ public sealed class UsagePresentationTests
     }
 
     [Fact]
+    public void CreateShowsSeparateObservationTimesForRetainedActivity()
+    {
+        var activityObservedAt = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
+        var previous = CreateSnapshot(
+            activityObservedAt,
+            new AllowanceWindow(36, TimeSpan.FromHours(5), activityObservedAt.AddHours(3)),
+            weekly: null,
+            lifetimeTokens: 123_456,
+            todayTokens: 7_890,
+            plan: "plus",
+            limitName: "Codex");
+        var allowanceObservedAt = activityObservedAt.AddMinutes(1);
+        var snapshot = UsageSnapshot.Reconcile(
+            previous,
+            new AccountUsageObservation(
+                allowanceObservedAt,
+                [new AllowanceWindow(37, TimeSpan.FromHours(5), allowanceObservedAt.AddHours(3))],
+                "plus",
+                "Codex",
+                new AccountActivityObservation.NotRequested()),
+            local: null);
+        var culture = CultureInfo.GetCultureInfo("en-US");
+
+        var presentation = UsagePresentation.Create(snapshot, allowanceObservedAt, culture);
+
+        Assert.Equal(
+            $"Limits updated {allowanceObservedAt.LocalDateTime.ToString("t", culture)} · "
+                + $"Activity updated {activityObservedAt.LocalDateTime.ToString("t", culture)}",
+            presentation.Popup.UpdatedText);
+        Assert.Contains(
+            $"Allowances updated: {allowanceObservedAt.LocalDateTime.ToString("G", culture)}",
+            presentation.ConsoleText,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            $"Activity updated: {activityObservedAt.LocalDateTime.ToString("G", culture)}",
+            presentation.ConsoleText,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CreateHandlesUnavailableValuesAndAnEmptyPlan()
     {
         var now = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
@@ -145,7 +185,7 @@ public sealed class UsagePresentationTests
 
         Assert.Contains("Inference today on this PC: 2,000 tokens", presentation.ConsoleText, StringComparison.Ordinal);
         Assert.Contains(
-            "Inference lifetime including this PC today: 12,000 tokens",
+            "Inference lifetime including local activity: 12,000 tokens",
             presentation.ConsoleText,
             StringComparison.Ordinal);
     }

@@ -20,7 +20,8 @@ public sealed class UsageSnapshotTests
 
         var snapshot = UsageSnapshot.Reconcile(previous: null, account, local: null);
 
-        Assert.Equal(observedAt, snapshot.RetrievedAt);
+        Assert.Equal(observedAt, snapshot.AllowanceObservedAt);
+        Assert.Equal(observedAt, snapshot.ActivityObservedAt);
         Assert.Equal(fiveHour, snapshot.FiveHour);
         Assert.Equal(weekly, snapshot.Weekly);
         Assert.Equal(123_456_789, snapshot.LifetimeTokens);
@@ -28,7 +29,7 @@ public sealed class UsageSnapshotTests
         Assert.Equal("plus", snapshot.Plan);
         Assert.Equal("Codex", snapshot.LimitName);
         Assert.False(snapshot.TodayTokensAreLocal);
-        Assert.False(snapshot.LifetimeIncludesLocalToday);
+        Assert.False(snapshot.LifetimeIncludesLocalActivity);
     }
 
     [Fact]
@@ -57,13 +58,46 @@ public sealed class UsageSnapshotTests
 
         var snapshot = UsageSnapshot.Reconcile(previous, rateOnly, local: null);
 
-        Assert.Equal(secondObservationAt, snapshot.RetrievedAt);
+        Assert.Equal(secondObservationAt, snapshot.AllowanceObservedAt);
+        Assert.Equal(firstObservationAt, snapshot.ActivityObservedAt);
         Assert.Equal(75, snapshot.FiveHour?.RemainingPercent);
         Assert.Equal("team", snapshot.Plan);
         Assert.Equal(previous.LifetimeTokens, snapshot.LifetimeTokens);
         Assert.Equal(previous.TodayTokens, snapshot.TodayTokens);
         Assert.Equal(previous.TodayTokensAreLocal, snapshot.TodayTokensAreLocal);
-        Assert.Equal(previous.LifetimeIncludesLocalToday, snapshot.LifetimeIncludesLocalToday);
+        Assert.Equal(previous.LifetimeIncludesLocalActivity, snapshot.LifetimeIncludesLocalActivity);
+    }
+
+    [Fact]
+    public void ReconcileClearsRetainedTodayAcrossLocalDates()
+    {
+        var firstObservationAt = new DateTimeOffset(2026, 9, 7, 23, 59, 0, TimeSpan.FromHours(2));
+        var previous = UsageSnapshot.Reconcile(
+            previous: null,
+            new AccountUsageObservation(
+                firstObservationAt,
+                [],
+                "plus",
+                "Codex",
+                new AccountActivityObservation.Observed(
+                    LifetimeTokens: 10_000,
+                    TodayTokens: null,
+                    LatestDailyBucketDate: new DateOnly(2026, 9, 6))),
+            new LocalUsageObservation(new DateOnly(2026, 9, 7), 2_000));
+        var nextDateObservation = new AccountUsageObservation(
+            firstObservationAt.AddMinutes(2),
+            [],
+            "plus",
+            "Codex",
+            new AccountActivityObservation.NotRequested());
+
+        var snapshot = UsageSnapshot.Reconcile(previous, nextDateObservation, local: null);
+
+        Assert.Equal(12_000, snapshot.LifetimeTokens);
+        Assert.True(snapshot.LifetimeIncludesLocalActivity);
+        Assert.Null(snapshot.TodayTokens);
+        Assert.False(snapshot.TodayTokensAreLocal);
+        Assert.Equal(firstObservationAt, snapshot.ActivityObservedAt);
     }
 
     [Fact]
@@ -86,7 +120,7 @@ public sealed class UsageSnapshotTests
         Assert.Equal(2_000, snapshot.TodayTokens);
         Assert.True(snapshot.TodayTokensAreLocal);
         Assert.Equal(12_000, snapshot.LifetimeTokens);
-        Assert.True(snapshot.LifetimeIncludesLocalToday);
+        Assert.True(snapshot.LifetimeIncludesLocalActivity);
     }
 
     [Fact]
@@ -109,7 +143,7 @@ public sealed class UsageSnapshotTests
         Assert.Equal(500, snapshot.TodayTokens);
         Assert.Equal(10_000, snapshot.LifetimeTokens);
         Assert.False(snapshot.TodayTokensAreLocal);
-        Assert.False(snapshot.LifetimeIncludesLocalToday);
+        Assert.False(snapshot.LifetimeIncludesLocalActivity);
     }
 
     [Fact]
@@ -132,7 +166,7 @@ public sealed class UsageSnapshotTests
         Assert.Null(snapshot.TodayTokens);
         Assert.Equal(10_000, snapshot.LifetimeTokens);
         Assert.False(snapshot.TodayTokensAreLocal);
-        Assert.False(snapshot.LifetimeIncludesLocalToday);
+        Assert.False(snapshot.LifetimeIncludesLocalActivity);
     }
 
     [Fact]
@@ -155,7 +189,7 @@ public sealed class UsageSnapshotTests
         Assert.Equal(2_000, snapshot.TodayTokens);
         Assert.Equal(10_000, snapshot.LifetimeTokens);
         Assert.True(snapshot.TodayTokensAreLocal);
-        Assert.False(snapshot.LifetimeIncludesLocalToday);
+        Assert.False(snapshot.LifetimeIncludesLocalActivity);
     }
 
     [Fact]
@@ -178,7 +212,7 @@ public sealed class UsageSnapshotTests
         Assert.Equal(1, snapshot.TodayTokens);
         Assert.Equal(long.MaxValue, snapshot.LifetimeTokens);
         Assert.True(snapshot.TodayTokensAreLocal);
-        Assert.False(snapshot.LifetimeIncludesLocalToday);
+        Assert.False(snapshot.LifetimeIncludesLocalActivity);
     }
 
     [Fact]
@@ -212,7 +246,7 @@ public sealed class UsageSnapshotTests
         Assert.Null(snapshot.LifetimeTokens);
         Assert.Null(snapshot.TodayTokens);
         Assert.False(snapshot.TodayTokensAreLocal);
-        Assert.False(snapshot.LifetimeIncludesLocalToday);
+        Assert.False(snapshot.LifetimeIncludesLocalActivity);
     }
 
     [Fact]
@@ -256,6 +290,6 @@ public sealed class UsageSnapshotTests
         Assert.Null(snapshot.LifetimeTokens);
         Assert.Null(snapshot.TodayTokens);
         Assert.False(snapshot.TodayTokensAreLocal);
-        Assert.False(snapshot.LifetimeIncludesLocalToday);
+        Assert.False(snapshot.LifetimeIncludesLocalActivity);
     }
 }

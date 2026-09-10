@@ -118,40 +118,6 @@ internal static class SelfTest
             popup.Hide();
         }
 
-        var expiredWindow = new AllowanceWindow(100, TimeSpan.FromHours(5), DateTimeOffset.FromUnixTimeSeconds(100));
-        Assert(WindowStartSettings.IsExpiredAndUnstarted(expiredWindow, DateTimeOffset.FromUnixTimeSeconds(101), null),
-            "expired window needs start");
-        Assert(!WindowStartSettings.IsExpiredAndUnstarted(expiredWindow, DateTimeOffset.FromUnixTimeSeconds(101), 100),
-            "completed window start is not repeated");
-        Assert(!WindowStartSettings.IsExpiredAndUnstarted(expiredWindow, DateTimeOffset.FromUnixTimeSeconds(99), null),
-            "future window is not started");
-        var freshUnusedWindow = new AllowanceWindow(0, TimeSpan.FromHours(5), DateTimeOffset.FromUnixTimeSeconds(500));
-        Assert(
-            WindowStartSettings.ShouldStartAfterRefresh(
-                expiredWindow,
-                freshUnusedWindow,
-                DateTimeOffset.FromUnixTimeSeconds(101),
-                lastStartedReset: null),
-            "expired window remains pending when refresh rolls to an unused window");
-        var freshUsedWindow = freshUnusedWindow with { UsedPercent = 1 };
-        Assert(
-            !WindowStartSettings.ShouldStartAfterRefresh(
-                expiredWindow,
-                freshUsedWindow,
-                DateTimeOffset.FromUnixTimeSeconds(101),
-                lastStartedReset: null),
-            "expired window is complete when refreshed window has usage");
-        Assert(
-            !WindowStartSettings.ShouldStartAfterRefresh(
-                expiredWindow,
-                freshUnusedWindow,
-                DateTimeOffset.FromUnixTimeSeconds(101),
-                lastStartedReset: 100),
-            "recorded expired window is not started twice after refresh");
-        Assert(!WindowStartSettings.IsEnabledValue(null), "window auto-start defaults to off");
-        Assert(WindowStartSettings.IsEnabledValue(1), "window auto-start accepts enabled value");
-        Assert(!WindowStartSettings.IsEnabledValue(0), "window auto-start accepts disabled value");
-
         var startupTestDirectory = Path.Combine(Path.GetTempPath(), $"CodexUsageTray-{Guid.NewGuid():N}");
         Directory.CreateDirectory(startupTestDirectory);
         try

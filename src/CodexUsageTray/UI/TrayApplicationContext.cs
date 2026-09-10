@@ -6,21 +6,23 @@ namespace CodexUsageTray;
 internal sealed class TrayApplicationContext : ApplicationContext
 {
     private readonly UsageSnapshots usageSnapshots;
+    private readonly AllowanceWindowActivation activation;
     private readonly NotifyIcon notifyIcon;
     private readonly UsagePopupForm popup = new();
     private readonly System.Windows.Forms.Timer refreshTimer;
-    private readonly System.Windows.Forms.Timer expiryTimer;
     private readonly ToolStripMenuItem startupItem;
     private readonly ToolStripMenuItem windowStartItem;
+    private readonly ToolStripMenuItem allowanceNotificationsItem;
     private Icon currentIcon;
-    private bool windowStartInProgress;
-    private DateTimeOffset retryWindowStartAfter = DateTimeOffset.MinValue;
     private bool popupVisibleWhenTrayMousePressed;
     private long? lastHandledTrayClickTimestamp;
 
-    public TrayApplicationContext(UsageSnapshots usageSnapshots)
+    public TrayApplicationContext(
+        UsageSnapshots usageSnapshots,
+        AllowanceWindowActivation activation)
     {
         this.usageSnapshots = usageSnapshots;
+        this.activation = activation;
         currentIcon = TrayIconRenderer.Create(100, 100);
         startupItem = new ToolStripMenuItem("Start with Windows")
         {
@@ -28,16 +30,23 @@ internal sealed class TrayApplicationContext : ApplicationContext
             CheckOnClick = true
         };
         startupItem.CheckedChanged += StartupItemOnCheckedChanged;
-        windowStartItem = new ToolStripMenuItem("Auto-start expired windows with \"Hi\"")
+        windowStartItem = new ToolStripMenuItem("Auto-activate unused windows with \"Hi\"")
         {
-            Checked = WindowStartSettings.IsEnabled(),
+            Checked = activation.ActivationEnabled,
             CheckOnClick = true
         };
         windowStartItem.CheckedChanged += WindowStartItemOnCheckedChanged;
+        allowanceNotificationsItem = new ToolStripMenuItem("Allowance notifications")
+        {
+            Checked = activation.NotificationsEnabled,
+            CheckOnClick = true
+        };
+        allowanceNotificationsItem.CheckedChanged += AllowanceNotificationsItemOnCheckedChanged;
 
         var menu = CreateContextMenu(
             startupItem,
             windowStartItem,
+            allowanceNotificationsItem,
             (_, _) => ShowPopup(),
             async (_, _) => await RefreshAsync(includeActivity: true),
             (_, _) => OpenUsagePage(),
@@ -81,9 +90,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
         refreshTimer = new System.Windows.Forms.Timer { Interval = 60 * 1000 };
         refreshTimer.Tick += async (_, _) => await RefreshAsync();
         refreshTimer.Start();
-        expiryTimer = new System.Windows.Forms.Timer { Interval = 15 * 1000 };
-        expiryTimer.Tick += async (_, _) => await CheckExpiredWindowsAsync();
-        expiryTimer.Start();
 
         _ = RefreshAsync();
     }
@@ -91,7 +97,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
     protected override void ExitThreadCore()
     {
         refreshTimer.Stop();
-        expiryTimer.Stop();
         notifyIcon.Visible = false;
         notifyIcon.Dispose();
         currentIcon.Dispose();
@@ -100,85 +105,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         base.ExitThreadCore();
     }
 
-    private async Task CheckExpiredWindowsAsync()
+    private async Task<bool> RefreshAsync(bool includeActivity = false)
     {
-        if (!windowStartItem.Checked
-            || windowStartInProgress
-            || usageSnapshots.Current is not { } latest
-            || DateTimeOffset.Now < retryWindowStartAfter
-            || !HasExpiredWindow(latest, DateTimeOffset.Now))
-        {
-            return;
-        }
-
-        var observed = latest;
-        var observedAt = DateTimeOffset.Now;
-        var startFiveHour = WindowStartSettings.ShouldStartFiveHour(observed.FiveHour, observedAt);
-        var startWeekly = WindowStartSettings.ShouldStartWeekly(observed.Weekly, observedAt);
-        if (!startFiveHour && !startWeekly)
-        {
-            return;
-        }
-
-        windowStartInProgress = true;
-        try
-        {
-            // Re-read first in case another Codex client already started the new window.
-            if (!await RefreshAsync(checkExpiredWindows: false))
-            {
-                retryWindowStartAfter = DateTimeOffset.Now.AddMinutes(1);
-                return;
-            }
-
-            if (usageSnapshots.Current is not { } current)
-            {
-                return;
-            }
-
-            var now = DateTimeOffset.Now;
-            startFiveHour = startFiveHour
-                && WindowStartSettings.ShouldStartFiveHourAfterRefresh(observed.FiveHour, current.FiveHour, now);
-            startWeekly = startWeekly
-                && WindowStartSettings.ShouldStartWeeklyAfterRefresh(observed.Weekly, current.Weekly, now);
-            if (!startFiveHour && !startWeekly)
-            {
-                return;
-            }
-
-            var windowNames = startFiveHour && startWeekly
-                ? "5-hour and weekly windows"
-                : startFiveHour ? "5-hour window" : "weekly window";
-            await CodexWindowStarter.SendHiAsync(CancellationToken.None);
-            WindowStartSettings.MarkStarted(startFiveHour, startWeekly, observed);
-            retryWindowStartAfter = DateTimeOffset.MinValue;
-            notifyIcon.ShowBalloonTip(
-                5000,
-                "Codex usage",
-                $"Started new {windowNames} with \"Hi\".",
-                ToolTipIcon.Info);
-
-            await Task.Delay(1000);
-            await RefreshAsync(checkExpiredWindows: false);
-        }
-        catch (Exception exception)
-        {
-            retryWindowStartAfter = DateTimeOffset.Now.AddMinutes(5);
-            var message = OneLine(exception.Message);
-            notifyIcon.ShowBalloonTip(7000, "Codex usage", message, ToolTipIcon.Warning);
-        }
-        finally
-        {
-            windowStartInProgress = false;
-        }
-    }
-
-    private async Task<bool> RefreshAsync(bool includeActivity = false, bool checkExpiredWindows = true)
-    {
-        if (checkExpiredWindows)
-        {
-            await CheckExpiredWindowsAsync();
-        }
-
         popup.SetLoading(true);
         try
         {
@@ -187,6 +115,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 : await usageSnapshots.RefreshAsync();
             popup.ShowSnapshot(snapshot);
             UpdateTray(snapshot);
+            var activationResult = await activation.ObserveAsync(snapshot);
+            ShowAllowanceEvents(activationResult);
             return true;
         }
         catch (Exception exception)
@@ -230,6 +160,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     internal static ContextMenuStrip CreateContextMenu(
         ToolStripMenuItem startupMenuItem,
         ToolStripMenuItem windowStartMenuItem,
+        ToolStripMenuItem allowanceNotificationsMenuItem,
         EventHandler open,
         EventHandler refresh,
         EventHandler openUsagePage,
@@ -241,6 +172,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(startupMenuItem);
         menu.Items.Add(windowStartMenuItem);
+        menu.Items.Add(allowanceNotificationsMenuItem);
         menu.Items.Add("Open Codex usage page", null, openUsagePage);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, exit);
@@ -283,10 +215,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         try
         {
-            WindowStartSettings.SetEnabled(windowStartItem.Checked);
+            activation.ActivationEnabled = windowStartItem.Checked;
             if (windowStartItem.Checked)
             {
-                _ = CheckExpiredWindowsAsync();
+                _ = RefreshAsync();
             }
         }
         catch (Exception exception)
@@ -298,6 +230,62 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
+    private void AllowanceNotificationsItemOnCheckedChanged(object? sender, EventArgs eventArgs)
+    {
+        try
+        {
+            activation.NotificationsEnabled = allowanceNotificationsItem.Checked;
+        }
+        catch (Exception exception)
+        {
+            allowanceNotificationsItem.CheckedChanged -= AllowanceNotificationsItemOnCheckedChanged;
+            allowanceNotificationsItem.Checked = !allowanceNotificationsItem.Checked;
+            allowanceNotificationsItem.CheckedChanged += AllowanceNotificationsItemOnCheckedChanged;
+            MessageBox.Show(exception.Message, "Codex usage", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private void ShowAllowanceEvents(AllowanceWindowActivationResult result)
+    {
+        if (allowanceNotificationsItem.Checked)
+        {
+            if (result.UsedUp != AllowanceWindows.None)
+            {
+                notifyIcon.ShowBalloonTip(
+                    5000,
+                    "Codex usage",
+                    $"{AllowanceNames(result.UsedUp)} allowance used up.",
+                    ToolTipIcon.Warning);
+            }
+
+            if (result.Reset != AllowanceWindows.None)
+            {
+                notifyIcon.ShowBalloonTip(
+                    5000,
+                    "Codex usage",
+                    $"{AllowanceNames(result.Reset)} allowance reset.",
+                    ToolTipIcon.Info);
+            }
+        }
+
+        if (result.Unconfirmed != AllowanceWindows.None)
+        {
+            notifyIcon.ShowBalloonTip(
+                7000,
+                "Codex usage",
+                $"Could not confirm {AllowanceNames(result.Unconfirmed).ToLowerInvariant()} allowance activation after four requests.",
+                ToolTipIcon.Warning);
+        }
+    }
+
+    private static string AllowanceNames(AllowanceWindows windows) => windows switch
+    {
+        AllowanceWindows.FiveHour => "5-hour",
+        AllowanceWindows.Weekly => "Weekly",
+        AllowanceWindows.FiveHour | AllowanceWindows.Weekly => "5-hour and weekly",
+        _ => "Codex"
+    };
+
     private static void OpenUsagePage()
     {
         Process.Start(new ProcessStartInfo
@@ -308,9 +296,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
     }
 
     private static string TruncateTooltip(string value) => value.Length <= 63 ? value : value[..63];
-
-    private static bool HasExpiredWindow(UsageSnapshot usage, DateTimeOffset now) =>
-        usage.FiveHour?.ResetsAt <= now || usage.Weekly?.ResetsAt <= now;
 
     private static string OneLine(string value) =>
         value.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);

@@ -61,13 +61,15 @@ Use the view button to switch between compact and extended modes. Compact mode s
 
 The pin button keeps the popup open and above other windows. While pinned, drag the background or text to move it. The popup snaps either flush with the screen and taskbar edges or with an eight-pixel gap. A pinned popup keeps its position when hidden. An unpinned popup opens next to the tray.
 
-`Auto-start expired windows with "Hi"` starts a new expired 5-hour or weekly window by sending an ephemeral `Hi` request with GPT-5.6 Luna. This request consumes Codex inference. Before sending it, the app refreshes the limits and skips the request if the new window already has usage. It records completed triggers so a restart does not send the same request again.
+`Auto-activate unused windows with "Hi"` activates a 5-hour or weekly allowance that has 100% remaining by sending an ephemeral `Hi` request with GPT-5.6 Luna. This request consumes Codex inference. The app confirms activation when the allowance reset time changes on a later one-minute refresh. It makes one initial request and up to three retries for each activation. A used-up allowance waits for its reset; other command failures retry after five minutes. Retry counts reset when the application restarts.
+
+`Allowance notifications` reports when an allowance becomes used up and when it resets. Notifications are off by default, combine simultaneous 5-hour and weekly events, and do not repeat when the application starts or retries an activation.
 
 ## Usage data and privacy
 
 The app runs the installed Codex CLI in app-server mode and calls its read-only account methods. It does not directly read, copy, or store credentials from `%USERPROFILE%\.codex\auth.json`.
 
-The account service may publish daily token buckets a day late. If today's bucket is missing, the app totals `token_usage_record` entries from the local Codex session history. If the account total ends with yesterday's data, the app adds today's local total to the displayed inference total.
+The account service may publish daily token buckets a day late. If today's bucket is missing, the app totals `token_usage_record` entries from the local Codex session history. If the account total ends with yesterday's data, the app adds today's local total to the displayed inference total. Routine allowance refreshes retain same-day activity and its original observation time. On a new local date, today's retained activity clears while the lifetime total remains available with its observation time.
 
 The app does not upload the usage data it reads from the account or local history. The optional auto-start feature only sends the `Hi` request described above.
 
