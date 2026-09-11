@@ -2,10 +2,10 @@ using System.Globalization;
 
 namespace CodexUsageTray;
 
-internal sealed class UsageUpdates : IAsyncDisposable
+internal sealed partial class UsageUpdates : IAsyncDisposable
 {
-    private readonly UsageSnapshots snapshots;
-    private readonly AllowanceWindowActivation activation;
+    private readonly IUsageObservationReader observations;
+    private readonly IAllowanceWindowActivationCommand activationCommand;
     private readonly IAllowanceWindowActivationSettings settings;
     private readonly TimeProvider timeProvider;
     private readonly IFormatProvider formatProvider;
@@ -23,12 +23,8 @@ internal sealed class UsageUpdates : IAsyncDisposable
         TimeProvider timeProvider,
         IFormatProvider formatProvider)
     {
-        snapshots = new UsageSnapshots(observations);
-        activation = new AllowanceWindowActivation(
-            activationCommand,
-            snapshots,
-            settings,
-            timeProvider);
+        this.observations = observations;
+        this.activationCommand = activationCommand;
         this.settings = settings;
         this.timeProvider = timeProvider;
         this.formatProvider = formatProvider;
@@ -95,9 +91,20 @@ internal sealed class UsageUpdates : IAsyncDisposable
         }
 
         lifetime.Cancel();
-        await snapshots.DisposeAsync().ConfigureAwait(false);
+        var runningRefresh = CancelActiveRefresh();
+        if (runningRefresh is not null)
+        {
+            try
+            {
+                await runningRefresh.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Disposal owns cancellation of the shared observation read.
+            }
+        }
+
         await updateGate.WaitAsync().ConfigureAwait(false);
-        activation.Dispose();
         updateGate.Dispose();
         lifetime.Dispose();
     }
@@ -123,13 +130,12 @@ internal sealed class UsageUpdates : IAsyncDisposable
         try
         {
             cancellation.Token.ThrowIfCancellationRequested();
-            var snapshot = includeActivity
-                ? await snapshots.RefreshWithActivityAsync(cancellation.Token).ConfigureAwait(false)
-                : await snapshots.RefreshAsync(cancellation.Token).ConfigureAwait(false);
-            var allowanceEvents = await activation
-                .ObserveAsync(preferences.ActivationEnabled, snapshot, cancellation.Token)
+            var snapshot = await RefreshSnapshotAsync(includeActivity, cancellation.Token).ConfigureAwait(false);
+            var (finalSnapshot, allowanceEvents) = await ObserveAllowanceWindowsAsync(
+                    preferences.ActivationEnabled,
+                    snapshot,
+                    cancellation.Token)
                 .ConfigureAwait(false);
-            var finalSnapshot = snapshots.Current ?? snapshot;
             return UsagePresentation.Create(
                 finalSnapshot,
                 allowanceEvents,
