@@ -350,8 +350,7 @@ public sealed class AllowanceWindowActivationTests
         DateTimeOffset? fiveHourReset,
         int? weeklyUsedPercent = null,
         DateTimeOffset? weeklyReset = null) =>
-        UsageSnapshot.Reconcile(
-            previous: null,
+        UsageSnapshotFixture.Create(
             new AccountUsageObservation(
                 observedAt,
                 new[]
@@ -363,8 +362,7 @@ public sealed class AllowanceWindowActivationTests
                 }.OfType<AllowanceWindow>().ToArray(),
                 "plus",
                 "Codex",
-                new AccountActivityObservation.NotRequested()),
-            local: null);
+                new AccountActivityObservation.NotRequested()));
 
     private sealed class RecordingActivationCommand : IAllowanceWindowActivationCommand
     {

@@ -1,6 +1,6 @@
 namespace CodexUsageTray.Tests;
 
-public sealed class UsageSnapshotsTests
+public sealed partial class UsageSnapshotsTests
 {
     [Fact]
     public async Task RefreshPublishesUsageSnapshot()
