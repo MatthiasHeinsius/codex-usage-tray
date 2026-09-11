@@ -32,11 +32,6 @@ internal interface IAllowanceWindowActivationCommand
     Task SendHiAsync(CancellationToken cancellationToken);
 }
 
-internal interface IUsageSnapshotRefresher
-{
-    Task<UsageSnapshot> RefreshAsync(CancellationToken cancellationToken = default);
-}
-
 internal interface IAllowanceWindowActivationSettings
 {
     bool ActivationEnabled { get; set; }
@@ -45,71 +40,40 @@ internal interface IAllowanceWindowActivationSettings
     void WriteActivatedReset(AllowanceWindowKind window, DateTimeOffset reset);
 }
 
-internal sealed class AllowanceWindowActivation : IDisposable
+internal sealed partial class UsageUpdates
 {
-    private readonly IAllowanceWindowActivationCommand command;
-    private readonly IUsageSnapshotRefresher snapshots;
-    private readonly IAllowanceWindowActivationSettings settings;
-    private readonly TimeProvider timeProvider;
-    private readonly Dictionary<AllowanceWindowKind, PendingActivation> pending = [];
+    private readonly Dictionary<AllowanceWindowKind, PendingActivation> pendingActivations = [];
     private readonly Dictionary<AllowanceWindowKind, AllowanceWindow?> previousWindows = [];
-    private readonly SemaphoreSlim observationGate = new(1, 1);
 
-    public AllowanceWindowActivation(
-        IAllowanceWindowActivationCommand command,
-        IUsageSnapshotRefresher snapshots,
-        IAllowanceWindowActivationSettings settings,
-        TimeProvider timeProvider)
+    private async Task<(UsageSnapshot Snapshot, AllowanceWindowActivationResult Events)>
+        ObserveAllowanceWindowsAsync(
+            bool activationEnabled,
+            UsageSnapshot snapshot,
+            CancellationToken cancellationToken)
     {
-        this.command = command;
-        this.snapshots = snapshots;
-        this.settings = settings;
-        this.timeProvider = timeProvider;
-    }
-
-    public void Dispose() => observationGate.Dispose();
-
-    public async Task<AllowanceWindowActivationResult> ObserveAsync(
-        bool activationEnabled,
-        UsageSnapshot snapshot,
-        CancellationToken cancellationToken = default)
-    {
-        await observationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            return await ObserveCoreAsync(snapshot, activationEnabled, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            observationGate.Release();
-        }
-    }
-
-    private async Task<AllowanceWindowActivationResult> ObserveCoreAsync(
-        UsageSnapshot snapshot,
-        bool activationEnabled,
-        CancellationToken cancellationToken)
-    {
-        var (reset, usedUp) = DetectTransitions(snapshot);
+        var finalSnapshot = snapshot;
+        var (reset, usedUp) = DetectAllowanceWindowTransitions(snapshot);
         var confirmed = ConfirmChangedResets(snapshot);
         if (!activationEnabled)
         {
-            return AllowanceWindowActivationResult.Empty with
-            {
-                Reset = reset,
-                UsedUp = usedUp,
-                Confirmed = confirmed
-            };
+            return (
+                finalSnapshot,
+                AllowanceWindowActivationResult.Empty with
+                {
+                    Reset = reset,
+                    UsedUp = usedUp,
+                    Confirmed = confirmed
+                });
         }
 
         var now = timeProvider.GetUtcNow();
         var targets = new List<AllowanceWindowKind>();
         var unconfirmed = AllowanceWindows.None;
-        foreach (var (kind, activation) in pending.ToArray())
+        foreach (var (kind, activation) in pendingActivations.ToArray())
         {
             if (Window(snapshot, kind) is { UsedPercent: >= 100 })
             {
-                pending.Remove(kind);
+                pendingActivations.Remove(kind);
                 continue;
             }
 
@@ -130,14 +94,14 @@ internal sealed class AllowanceWindowActivation : IDisposable
         }
 
         targets.AddRange(new[] { AllowanceWindowKind.FiveHour, AllowanceWindowKind.Weekly }
-            .Where(kind => !pending.ContainsKey(kind)
+            .Where(kind => !pendingActivations.ContainsKey(kind)
                 && IsUnusedAndUnconfirmed(kind, Window(snapshot, kind)))
             .ToArray());
         if (targets.Count > 0)
         {
             try
             {
-                await command.SendHiAsync(cancellationToken).ConfigureAwait(false);
+                await activationCommand.SendHiAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -148,8 +112,10 @@ internal sealed class AllowanceWindowActivation : IDisposable
                 UsageSnapshot? fresh = null;
                 try
                 {
-                    fresh = await snapshots.RefreshAsync(cancellationToken).ConfigureAwait(false);
-                    var freshTransitions = DetectTransitions(fresh);
+                    fresh = await RefreshSnapshotAsync(includeActivity: false, cancellationToken)
+                        .ConfigureAwait(false);
+                    finalSnapshot = fresh;
+                    var freshTransitions = DetectAllowanceWindowTransitions(fresh);
                     reset |= freshTransitions.Reset;
                     usedUp |= freshTransitions.UsedUp;
                     confirmed |= ConfirmChangedResets(fresh);
@@ -160,7 +126,7 @@ internal sealed class AllowanceWindowActivation : IDisposable
                 }
                 catch
                 {
-                    // The normal refresh cycle will try again after the command failure backoff.
+                    // The normal Usage Update will try again after the command failure backoff.
                 }
 
                 foreach (var target in targets)
@@ -171,55 +137,57 @@ internal sealed class AllowanceWindowActivation : IDisposable
                     }
 
                     var window = fresh is null ? null : Window(fresh, target);
-                    var originalReset = pending.TryGetValue(target, out var attempted)
+                    var originalReset = pendingActivations.TryGetValue(target, out var attempted)
                         ? attempted.OriginalReset
                         : Window(snapshot, target)!.ResetsAt!.Value;
                     if (window?.ResetsAt is { } changedReset && changedReset != originalReset)
                     {
                         settings.WriteActivatedReset(target, changedReset);
-                        pending.Remove(target);
+                        pendingActivations.Remove(target);
                         confirmed |= Selection(target);
                         continue;
                     }
 
                     if (window is { UsedPercent: >= 100 })
                     {
-                        pending.Remove(target);
+                        pendingActivations.Remove(target);
                         continue;
                     }
 
-                    if (pending.TryGetValue(target, out var failedExisting))
+                    if (pendingActivations.TryGetValue(target, out var failedExisting))
                     {
                         failedExisting.NextAttemptAt = now.AddMinutes(5);
                     }
                     else
                     {
-                        pending[target] = new PendingActivation(
+                        pendingActivations[target] = new PendingActivation(
                             originalReset,
                             attempts: 0,
                             now.AddMinutes(5));
                     }
                 }
 
-                return AllowanceWindowActivationResult.Empty with
-                {
-                    Reset = reset,
-                    UsedUp = usedUp,
-                    Confirmed = confirmed,
-                    Unconfirmed = unconfirmed
-                };
+                return (
+                    finalSnapshot,
+                    AllowanceWindowActivationResult.Empty with
+                    {
+                        Reset = reset,
+                        UsedUp = usedUp,
+                        Confirmed = confirmed,
+                        Unconfirmed = unconfirmed
+                    });
             }
 
             foreach (var target in targets)
             {
-                if (pending.TryGetValue(target, out var existing))
+                if (pendingActivations.TryGetValue(target, out var existing))
                 {
                     existing.Attempts++;
                     existing.NextAttemptAt = now.AddMinutes(1);
                 }
                 else
                 {
-                    pending[target] = new PendingActivation(
+                    pendingActivations[target] = new PendingActivation(
                         Window(snapshot, target)!.ResetsAt!.Value,
                         attempts: 1,
                         now.AddMinutes(1));
@@ -227,16 +195,19 @@ internal sealed class AllowanceWindowActivation : IDisposable
             }
         }
 
-        return AllowanceWindowActivationResult.Empty with
-        {
-            Reset = reset,
-            UsedUp = usedUp,
-            Confirmed = confirmed,
-            Unconfirmed = unconfirmed
-        };
+        return (
+            finalSnapshot,
+            AllowanceWindowActivationResult.Empty with
+            {
+                Reset = reset,
+                UsedUp = usedUp,
+                Confirmed = confirmed,
+                Unconfirmed = unconfirmed
+            });
     }
 
-    private (AllowanceWindows Reset, AllowanceWindows UsedUp) DetectTransitions(UsageSnapshot snapshot)
+    private (AllowanceWindows Reset, AllowanceWindows UsedUp)
+        DetectAllowanceWindowTransitions(UsageSnapshot snapshot)
     {
         var reset = AllowanceWindows.None;
         var usedUp = AllowanceWindows.None;
@@ -268,7 +239,7 @@ internal sealed class AllowanceWindowActivation : IDisposable
     private AllowanceWindows ConfirmChangedResets(UsageSnapshot snapshot)
     {
         var confirmed = AllowanceWindows.None;
-        foreach (var (kind, activation) in pending.ToArray())
+        foreach (var (kind, activation) in pendingActivations.ToArray())
         {
             if (Window(snapshot, kind)?.ResetsAt is not { } currentReset
                 || currentReset == activation.OriginalReset)
@@ -277,7 +248,7 @@ internal sealed class AllowanceWindowActivation : IDisposable
             }
 
             settings.WriteActivatedReset(kind, currentReset);
-            pending.Remove(kind);
+            pendingActivations.Remove(kind);
             confirmed |= Selection(kind);
         }
 

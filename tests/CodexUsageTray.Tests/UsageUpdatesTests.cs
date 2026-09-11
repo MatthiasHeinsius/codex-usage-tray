@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace CodexUsageTray.Tests;
 
-public sealed class UsageUpdatesTests
+public sealed partial class UsageUpdatesTests
 {
     [Fact]
     public async Task RefreshPublishesSnapshotFromActivationRecoveryRefresh()
@@ -31,7 +31,7 @@ public sealed class UsageUpdatesTests
     }
 
     [Fact]
-    public async Task ConcurrentRefreshesPublishInRequestOrder()
+    public async Task ConcurrentRefreshesDoNotOverlap()
     {
         var now = new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero);
         var reset = now.AddHours(5);

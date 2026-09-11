@@ -45,26 +45,15 @@ public sealed class UsagePresentationTests
     {
         var activityObservedAt = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
         var allowanceObservedAt = activityObservedAt.AddMinutes(1);
-        var snapshot = UsageSnapshotFixture.Create(
-            new UsageObservations(
-                new AccountUsageObservation(
-                    activityObservedAt,
-                    [new AllowanceWindow(36, TimeSpan.FromHours(5), activityObservedAt.AddHours(3))],
-                    "plus",
-                    "Codex",
-                    new AccountActivityObservation.Observed(
-                        LifetimeTokens: 123_456,
-                        TodayTokens: 7_890,
-                        LatestDailyBucketDate: DateOnly.FromDateTime(activityObservedAt.LocalDateTime))),
-                Local: null),
-            new UsageObservations(
-                new AccountUsageObservation(
-                    allowanceObservedAt,
-                    [new AllowanceWindow(37, TimeSpan.FromHours(5), allowanceObservedAt.AddHours(3))],
-                    "plus",
-                    "Codex",
-                    new AccountActivityObservation.NotRequested()),
-                Local: null));
+        var snapshot = new UsageSnapshot(
+            allowanceObservedAt,
+            activityObservedAt,
+            new AllowanceWindow(37, TimeSpan.FromHours(5), allowanceObservedAt.AddHours(3)),
+            weekly: null,
+            lifetimeTokens: 123_456,
+            todayTokens: 7_890,
+            plan: "plus",
+            limitName: "Codex");
         var culture = CultureInfo.GetCultureInfo("en-US");
 
         var presentation = UsagePresentation.Create(snapshot, allowanceObservedAt, culture);
@@ -235,17 +224,15 @@ public sealed class UsagePresentationTests
         string? plan,
         string? limitName)
     {
-        var windows = new[] { fiveHour, weekly }.OfType<AllowanceWindow>().ToArray();
-        return UsageSnapshotFixture.Create(
-            new AccountUsageObservation(
-                observedAt,
-                windows,
-                plan,
-                limitName,
-                new AccountActivityObservation.Observed(
-                    lifetimeTokens,
-                    todayTokens,
-                    LatestDailyBucketDate: DateOnly.FromDateTime(observedAt.LocalDateTime))));
+        return new UsageSnapshot(
+            observedAt,
+            observedAt,
+            fiveHour,
+            weekly,
+            lifetimeTokens,
+            todayTokens,
+            plan,
+            limitName);
     }
 
     private sealed class MarkedIntegerFormatProvider : IFormatProvider, ICustomFormatter

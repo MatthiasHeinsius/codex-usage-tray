@@ -13,97 +13,48 @@ internal interface IUsageObservationReader
         CancellationToken cancellationToken);
 }
 
-internal sealed class UsageSnapshots : IAsyncDisposable, IUsageSnapshotRefresher
+internal sealed partial class UsageUpdates
 {
     private static readonly TimeSpan MinimumFiveHourDuration = TimeSpan.FromHours(4);
     private static readonly TimeSpan MaximumFiveHourDuration = TimeSpan.FromHours(6);
     private static readonly TimeSpan MinimumWeeklyDuration = TimeSpan.FromMinutes(9_000);
     private static readonly TimeSpan MaximumWeeklyDuration = TimeSpan.FromMinutes(11_000);
-    private readonly object sync = new();
-    private readonly IUsageObservationReader observations;
-    private readonly CancellationTokenSource lifetime = new();
-    private UsageSnapshot? current;
-    private RefreshWave? activeWave;
-    private bool disposed;
+    private readonly object snapshotSync = new();
+    private UsageSnapshot? currentSnapshot;
+    private RefreshWave? activeRefreshWave;
 
-    internal UsageSnapshots(IUsageObservationReader observations)
-    {
-        this.observations = observations;
-    }
+    private Task<UsageSnapshot> RefreshSnapshotAsync(
+        bool includeActivity,
+        CancellationToken cancellationToken) =>
+        RequestSnapshotAsync(
+            includeActivity
+                ? UsageObservationRequest.AllowanceWindowsAndActivity
+                : UsageObservationRequest.AllowanceWindows,
+            cancellationToken);
 
-    public UsageSnapshot? Current
-    {
-        get
-        {
-            lock (sync)
-            {
-                return current;
-            }
-        }
-    }
-
-    public Task<UsageSnapshot> RefreshAsync(CancellationToken cancellationToken = default) =>
-        RequestAsync(UsageObservationRequest.AllowanceWindows, cancellationToken);
-
-    public Task<UsageSnapshot> RefreshWithActivityAsync(CancellationToken cancellationToken = default) =>
-        RequestAsync(UsageObservationRequest.AllowanceWindowsAndActivity, cancellationToken);
-
-    public async ValueTask DisposeAsync()
-    {
-        Task? running;
-        RefreshWave? wave;
-        lock (sync)
-        {
-            if (disposed)
-            {
-                return;
-            }
-
-            disposed = true;
-            wave = activeWave;
-            running = wave?.Runner;
-            wave?.Completion.TrySetCanceled(new CancellationToken(canceled: true));
-        }
-
-        lifetime.Cancel();
-        if (running is not null)
-        {
-            try
-            {
-                await running.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                // Disposal owns cancellation of the shared adapter read.
-            }
-        }
-
-        lifetime.Dispose();
-    }
-
-    private Task<UsageSnapshot> RequestAsync(
+    private Task<UsageSnapshot> RequestSnapshotAsync(
         UsageObservationRequest request,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         Task<UsageSnapshot> shared;
-        lock (sync)
+        lock (snapshotSync)
         {
-            ObjectDisposedException.ThrowIf(disposed, this);
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
 
-            if (activeWave is null)
+            if (activeRefreshWave is null)
             {
-                activeWave = new RefreshWave(request, current);
-                var wave = activeWave;
-                wave.Runner = Task.Run(() => RunWaveAsync(wave), CancellationToken.None);
+                activeRefreshWave = new RefreshWave(request, currentSnapshot);
+                var wave = activeRefreshWave;
+                wave.Runner = Task.Run(() => RunRefreshWaveAsync(wave), CancellationToken.None);
             }
             else if (request == UsageObservationRequest.AllowanceWindowsAndActivity)
             {
-                activeWave.ActivityRequested = true;
+                activeRefreshWave.ActivityRequested = true;
             }
 
-            shared = activeWave.Completion.Task;
+            shared = activeRefreshWave.Completion.Task;
         }
 
         return cancellationToken.CanBeCanceled
@@ -111,7 +62,7 @@ internal sealed class UsageSnapshots : IAsyncDisposable, IUsageSnapshotRefresher
             : shared;
     }
 
-    private async Task RunWaveAsync(RefreshWave wave)
+    private async Task RunRefreshWaveAsync(RefreshWave wave)
     {
         var request = wave.InitialRequest;
         var candidate = wave.Previous;
@@ -121,16 +72,16 @@ internal sealed class UsageSnapshots : IAsyncDisposable, IUsageSnapshotRefresher
             try
             {
                 var observed = await observations.ReadAsync(request, lifetime.Token).ConfigureAwait(false);
-                candidate = Reconcile(candidate, observed.Account, observed.Local);
+                candidate = ReconcileSnapshot(candidate, observed.Account, observed.Local);
             }
             catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
             {
-                CompleteCanceled(wave);
+                CompleteCanceledRefresh(wave);
                 return;
             }
             catch (Exception exception)
             {
-                if (ContinueWithActivityOrCompleteFailed(wave, request, exception))
+                if (ContinueWithActivityOrCompleteFailedRefresh(wave, request, exception))
                 {
                     request = UsageObservationRequest.AllowanceWindowsAndActivity;
                     continue;
@@ -139,11 +90,11 @@ internal sealed class UsageSnapshots : IAsyncDisposable, IUsageSnapshotRefresher
                 return;
             }
 
-            lock (sync)
+            lock (snapshotSync)
             {
-                if (disposed)
+                if (Volatile.Read(ref disposed) != 0)
                 {
-                    activeWave = null;
+                    activeRefreshWave = null;
                     wave.Completion.TrySetCanceled(new CancellationToken(canceled: true));
                     return;
                 }
@@ -154,15 +105,15 @@ internal sealed class UsageSnapshots : IAsyncDisposable, IUsageSnapshotRefresher
                     continue;
                 }
 
-                current = candidate;
-                activeWave = null;
+                currentSnapshot = candidate;
+                activeRefreshWave = null;
                 wave.Completion.TrySetResult(candidate);
                 return;
             }
         }
     }
 
-    private bool ContinueWithActivityOrCompleteFailed(
+    private bool ContinueWithActivityOrCompleteFailedRefresh(
         RefreshWave wave,
         UsageObservationRequest request,
         Exception exception)
@@ -170,21 +121,21 @@ internal sealed class UsageSnapshots : IAsyncDisposable, IUsageSnapshotRefresher
         var failure = exception as UsageSnapshotRefreshException
             ?? new UsageSnapshotRefreshException(exception.Message, exception);
 
-        lock (sync)
+        lock (snapshotSync)
         {
-            if (!disposed
+            if (Volatile.Read(ref disposed) == 0
                 && request == UsageObservationRequest.AllowanceWindows
                 && wave.ActivityRequested)
             {
                 return true;
             }
 
-            if (ReferenceEquals(activeWave, wave))
+            if (ReferenceEquals(activeRefreshWave, wave))
             {
-                activeWave = null;
+                activeRefreshWave = null;
             }
 
-            if (disposed)
+            if (Volatile.Read(ref disposed) != 0)
             {
                 wave.Completion.TrySetCanceled(new CancellationToken(canceled: true));
             }
@@ -197,20 +148,30 @@ internal sealed class UsageSnapshots : IAsyncDisposable, IUsageSnapshotRefresher
         }
     }
 
-    private void CompleteCanceled(RefreshWave wave)
+    private void CompleteCanceledRefresh(RefreshWave wave)
     {
-        lock (sync)
+        lock (snapshotSync)
         {
-            if (ReferenceEquals(activeWave, wave))
+            if (ReferenceEquals(activeRefreshWave, wave))
             {
-                activeWave = null;
+                activeRefreshWave = null;
             }
 
             wave.Completion.TrySetCanceled(lifetime.Token);
         }
     }
 
-    private static UsageSnapshot Reconcile(
+    private Task? CancelActiveRefresh()
+    {
+        lock (snapshotSync)
+        {
+            var wave = activeRefreshWave;
+            wave?.Completion.TrySetCanceled(new CancellationToken(canceled: true));
+            return wave?.Runner;
+        }
+    }
+
+    private static UsageSnapshot ReconcileSnapshot(
         UsageSnapshot? previous,
         AccountUsageObservation account,
         LocalUsageObservation? local)
