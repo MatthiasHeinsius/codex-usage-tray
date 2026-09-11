@@ -5,7 +5,7 @@ namespace CodexUsageTray.Tests;
 public sealed class UsagePresentationTests
 {
     [Fact]
-    public void CreateDerivesPopupTrayAndConsolePresentation()
+    public void CreateDerivesPopupAndTrayPresentation()
     {
         var now = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
         var fiveHourReset = now.AddHours(3).AddMinutes(12);
@@ -37,16 +37,7 @@ public sealed class UsagePresentationTests
         Assert.Equal(64, presentation.Tray.FiveHourRemaining);
         Assert.Equal(42, presentation.Tray.WeeklyRemaining);
         Assert.Equal("Codex · 5h 64% · week 42%", presentation.Tray.Tooltip);
-        Assert.Equal(
-            string.Join(
-                Environment.NewLine,
-                $"5-hour: 64% left (Resets in 3h 12m · {fiveHourReset.ToLocalTime().ToString("g", culture)})",
-                $"Weekly: 42% left (Resets in 3d 8h · {weeklyReset.ToLocalTime().ToString("g", culture)})",
-                "Inference today: 784,200 tokens",
-                "Inference lifetime: 123,456,789 tokens",
-                "Plan: plus",
-                $"Updated: {now.LocalDateTime.ToString("G", culture)}"),
-            presentation.ConsoleText);
+        Assert.Empty(presentation.Notices);
     }
 
     [Fact]
@@ -82,14 +73,6 @@ public sealed class UsagePresentationTests
             $"Limits updated {allowanceObservedAt.LocalDateTime.ToString("t", culture)} · "
                 + $"Activity updated {activityObservedAt.LocalDateTime.ToString("t", culture)}",
             presentation.Popup.UpdatedText);
-        Assert.Contains(
-            $"Allowances updated: {allowanceObservedAt.LocalDateTime.ToString("G", culture)}",
-            presentation.ConsoleText,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            $"Activity updated: {activityObservedAt.LocalDateTime.ToString("G", culture)}",
-            presentation.ConsoleText,
-            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -119,7 +102,6 @@ public sealed class UsagePresentationTests
         Assert.Equal(100, presentation.Tray.FiveHourRemaining);
         Assert.Equal(100, presentation.Tray.WeeklyRemaining);
         Assert.Equal("Codex · 5h ?% · week ?%", presentation.Tray.Tooltip);
-        Assert.Contains("Inference today: unavailable", presentation.ConsoleText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -165,31 +147,36 @@ public sealed class UsagePresentationTests
     }
 
     [Fact]
-    public void CreateIncludesLocalActivityProvenanceInConsolePresentation()
+    public void CreateAlwaysPresentsUnconfirmedActivationWarnings()
     {
         var now = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
-        var snapshot = UsageSnapshotFixture.Create(
-            new AccountUsageObservation(
-                now,
-                [],
-                "plus",
-                "Codex",
-                new AccountActivityObservation.Observed(
-                    LifetimeTokens: 10_000,
-                    TodayTokens: null,
-                    LatestDailyBucketDate: new DateOnly(2026, 9, 6))),
-            new LocalUsageObservation(new DateOnly(2026, 9, 7), 2_000));
+        var snapshot = CreateSnapshot(
+            now,
+            new AllowanceWindow(100, TimeSpan.FromHours(5), now.AddHours(5)),
+            new AllowanceWindow(0, TimeSpan.FromDays(7), now.AddDays(7)),
+            lifetimeTokens: null,
+            todayTokens: null,
+            plan: "plus",
+            limitName: "Codex");
+        var events = AllowanceWindowActivationResult.Empty with
+        {
+            UsedUp = AllowanceWindows.FiveHour,
+            Unconfirmed = AllowanceWindows.Weekly
+        };
 
         var presentation = UsagePresentation.Create(
             snapshot,
+            events,
+            notificationsEnabled: false,
             now,
-            CultureInfo.GetCultureInfo("en-US"));
+            CultureInfo.InvariantCulture);
 
-        Assert.Contains("Inference today on this PC: 2,000 tokens", presentation.ConsoleText, StringComparison.Ordinal);
-        Assert.Contains(
-            "Inference lifetime including local activity: 12,000 tokens",
-            presentation.ConsoleText,
-            StringComparison.Ordinal);
+        var notice = Assert.Single(presentation.Notices);
+        Assert.Equal(
+            "Could not confirm weekly allowance activation after four requests.",
+            notice.Message);
+        Assert.Equal(UsagePresentation.NoticeSeverity.Warning, notice.Severity);
+        Assert.Equal(TimeSpan.FromSeconds(7), notice.Duration);
     }
 
     [Fact]

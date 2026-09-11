@@ -5,7 +5,6 @@ namespace CodexUsageTray;
 internal sealed class TrayApplicationContext : ApplicationContext
 {
     private readonly UsageUpdates usageUpdates;
-    private readonly IAllowanceWindowPreferences allowancePreferences;
     private readonly NotifyIcon notifyIcon;
     private readonly UsagePopupForm popup = new();
     private readonly System.Windows.Forms.Timer refreshTimer;
@@ -18,12 +17,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private int pendingRefreshes;
     private long? lastHandledTrayClickTimestamp;
 
-    public TrayApplicationContext(
-        UsageUpdates usageUpdates,
-        IAllowanceWindowPreferences allowancePreferences)
+    public TrayApplicationContext(UsageUpdates usageUpdates)
     {
         this.usageUpdates = usageUpdates;
-        this.allowancePreferences = allowancePreferences;
         currentIcon = TrayIconRenderer.Create(100, 100);
         startupItem = new ToolStripMenuItem("Start with Windows")
         {
@@ -33,13 +29,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
         startupItem.CheckedChanged += StartupItemOnCheckedChanged;
         windowStartItem = new ToolStripMenuItem("Auto-activate unused windows with \"Hi\"")
         {
-            Checked = allowancePreferences.ActivationEnabled,
+            Checked = usageUpdates.ActivationEnabled,
             CheckOnClick = true
         };
         windowStartItem.CheckedChanged += WindowStartItemOnCheckedChanged;
         allowanceNotificationsItem = new ToolStripMenuItem("Allowance notifications")
         {
-            Checked = allowancePreferences.NotificationsEnabled,
+            Checked = usageUpdates.NotificationsEnabled,
             CheckOnClick = true
         };
         allowanceNotificationsItem.CheckedChanged += AllowanceNotificationsItemOnCheckedChanged;
@@ -113,12 +109,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
         popup.SetLoading(true);
         try
         {
-            var update = includeActivity
+            var presentation = includeActivity
                 ? await usageUpdates.RefreshWithActivityAsync()
                 : await usageUpdates.RefreshAsync();
-            popup.ShowPresentation(update.Presentation.Popup);
-            UpdateTray(update.Presentation.Tray);
-            ShowAllowanceEvents(update.AllowanceEvents);
+            popup.ShowPresentation(presentation.Popup);
+            UpdateTray(presentation.Tray);
+            ShowNotices(presentation.Notices);
             return true;
         }
         catch (OperationCanceledException) when (exiting)
@@ -216,7 +212,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         try
         {
-            allowancePreferences.ActivationEnabled = windowStartItem.Checked;
+            usageUpdates.ActivationEnabled = windowStartItem.Checked;
             if (windowStartItem.Checked)
             {
                 _ = RefreshAsync();
@@ -235,7 +231,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         try
         {
-            allowancePreferences.NotificationsEnabled = allowanceNotificationsItem.Checked;
+            usageUpdates.NotificationsEnabled = allowanceNotificationsItem.Checked;
         }
         catch (Exception exception)
         {
@@ -246,46 +242,23 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
     }
 
-    private void ShowAllowanceEvents(AllowanceWindowActivationResult result)
+    private void ShowNotices(IReadOnlyList<UsagePresentation.NoticePresentation> notices)
     {
-        if (allowanceNotificationsItem.Checked)
+        foreach (var notice in notices)
         {
-            if (result.UsedUp != AllowanceWindows.None)
+            var icon = notice.Severity switch
             {
-                notifyIcon.ShowBalloonTip(
-                    5000,
-                    "Codex usage",
-                    $"{AllowanceNames(result.UsedUp)} allowance used up.",
-                    ToolTipIcon.Warning);
-            }
-
-            if (result.Reset != AllowanceWindows.None)
-            {
-                notifyIcon.ShowBalloonTip(
-                    5000,
-                    "Codex usage",
-                    $"{AllowanceNames(result.Reset)} allowance reset.",
-                    ToolTipIcon.Info);
-            }
-        }
-
-        if (result.Unconfirmed != AllowanceWindows.None)
-        {
+                UsagePresentation.NoticeSeverity.Information => ToolTipIcon.Info,
+                UsagePresentation.NoticeSeverity.Warning => ToolTipIcon.Warning,
+                _ => ToolTipIcon.None
+            };
             notifyIcon.ShowBalloonTip(
-                7000,
+                checked((int)notice.Duration.TotalMilliseconds),
                 "Codex usage",
-                $"Could not confirm {AllowanceNames(result.Unconfirmed).ToLowerInvariant()} allowance activation after four requests.",
-                ToolTipIcon.Warning);
+                notice.Message,
+                icon);
         }
     }
-
-    private static string AllowanceNames(AllowanceWindows windows) => windows switch
-    {
-        AllowanceWindows.FiveHour => "5-hour",
-        AllowanceWindows.Weekly => "Weekly",
-        AllowanceWindows.FiveHour | AllowanceWindows.Weekly => "5-hour and weekly",
-        _ => "Codex"
-    };
 
     private static void OpenUsagePage()
     {

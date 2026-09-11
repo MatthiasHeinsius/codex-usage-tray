@@ -12,24 +12,22 @@ public sealed class UsageUpdatesTests
         var observations = new QueueUsageObservationReader(
             Observe(now, usedPercent: 0, reset),
             Observe(now.AddSeconds(1), usedPercent: 100, reset));
-        var snapshots = new UsageSnapshots(observations);
         var time = new FixedTimeProvider(now);
-        var activation = new AllowanceWindowActivation(
-            new FailingActivationCommand(),
-            snapshots,
-            new EnabledActivationSettings(),
-            time);
+        var settings = new EnabledActivationSettings { NotificationsEnabled = true };
         await using var updates = new UsageUpdates(
-            snapshots,
-            activation,
+            observations,
+            new FailingActivationCommand(),
+            settings,
             time,
             CultureInfo.InvariantCulture);
 
-        var update = await updates.RefreshAsync();
+        var presentation = await updates.RefreshAsync();
 
-        Assert.Equal(100, update.Snapshot.FiveHour?.UsedPercent);
-        Assert.Equal("0% left", update.Presentation.Popup.FiveHour.RemainingText);
-        Assert.Equal(AllowanceWindows.FiveHour, update.AllowanceEvents.UsedUp);
+        Assert.Equal("0% left", presentation.Popup.FiveHour.RemainingText);
+        var notice = Assert.Single(presentation.Notices);
+        Assert.Equal("5-hour allowance used up.", notice.Message);
+        Assert.Equal(UsagePresentation.NoticeSeverity.Warning, notice.Severity);
+        Assert.Equal(TimeSpan.FromSeconds(5), notice.Duration);
     }
 
     [Fact]
@@ -40,17 +38,12 @@ public sealed class UsageUpdatesTests
         var observations = new QueueUsageObservationReader(
             Observe(now, usedPercent: 0, reset),
             Observe(now.AddSeconds(1), usedPercent: 10, reset));
-        var snapshots = new UsageSnapshots(observations);
         var command = new BlockingActivationCommand();
         var time = new FixedTimeProvider(now);
-        var activation = new AllowanceWindowActivation(
-            command,
-            snapshots,
-            new EnabledActivationSettings(),
-            time);
         await using var updates = new UsageUpdates(
-            snapshots,
-            activation,
+            observations,
+            command,
+            new EnabledActivationSettings(),
             time,
             CultureInfo.InvariantCulture);
 
@@ -62,8 +55,8 @@ public sealed class UsageUpdatesTests
         var first = await firstRefresh;
         var second = await secondRefresh;
 
-        Assert.Equal(0, first.Snapshot.FiveHour?.UsedPercent);
-        Assert.Equal(10, second.Snapshot.FiveHour?.UsedPercent);
+        Assert.Equal("100% left", first.Popup.FiveHour.RemainingText);
+        Assert.Equal("90% left", second.Popup.FiveHour.RemainingText);
     }
 
     [Fact]
@@ -71,16 +64,11 @@ public sealed class UsageUpdatesTests
     {
         var now = new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero);
         var observations = new BlockingUsageObservationReader();
-        var snapshots = new UsageSnapshots(observations);
         var time = new FixedTimeProvider(now);
-        var activation = new AllowanceWindowActivation(
-            new FailingActivationCommand(),
-            snapshots,
-            new EnabledActivationSettings { ActivationEnabled = false },
-            time);
         var updates = new UsageUpdates(
-            snapshots,
-            activation,
+            observations,
+            new FailingActivationCommand(),
+            new EnabledActivationSettings { ActivationEnabled = false },
             time,
             CultureInfo.InvariantCulture);
 
@@ -110,24 +98,106 @@ public sealed class UsageUpdatesTests
                     TodayTokens: 1234,
                     LatestDailyBucketDate: DateOnly.FromDateTime(now.LocalDateTime))),
             Local: null);
-        var snapshots = new UsageSnapshots(new QueueUsageObservationReader(observation));
         var time = new FixedTimeProvider(now);
-        var activation = new AllowanceWindowActivation(
-            new FailingActivationCommand(),
-            snapshots,
-            new EnabledActivationSettings { ActivationEnabled = false },
-            time);
         await using var updates = new UsageUpdates(
-            snapshots,
-            activation,
+            new QueueUsageObservationReader(observation),
+            new FailingActivationCommand(),
+            new EnabledActivationSettings { ActivationEnabled = false },
             time,
             CultureInfo.InvariantCulture);
 
-        var update = await updates.RefreshWithActivityAsync();
+        var presentation = await updates.RefreshWithActivityAsync();
 
-        Assert.Equal(1234, update.Snapshot.TodayTokens);
-        Assert.Equal("1.2K tokens", update.Presentation.Popup.TodayTokens);
-        Assert.Equal(75, update.Presentation.Tray.FiveHourRemaining);
+        Assert.Equal("1.2K tokens", presentation.Popup.TodayTokens);
+        Assert.Equal(75, presentation.Tray.FiveHourRemaining);
+    }
+
+    [Fact]
+    public async Task PreferencesArePersistedAndCapturedWhenRefreshIsRequested()
+    {
+        var now = new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero);
+        var reset = now.AddHours(5);
+        var changedReset = reset.AddHours(5);
+        var observations = new QueueUsageObservationReader(
+            Observe(now, usedPercent: 0, reset),
+            Observe(now.AddMinutes(1), usedPercent: 100, reset),
+            Observe(now.AddMinutes(2), usedPercent: 0, changedReset));
+        var command = new BlockingActivationCommand();
+        var settings = new EnabledActivationSettings { NotificationsEnabled = false };
+        await using var updates = new UsageUpdates(
+            observations,
+            command,
+            settings,
+            new FixedTimeProvider(now),
+            CultureInfo.InvariantCulture);
+
+        var firstRefresh = updates.RefreshAsync();
+        await command.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var queuedRefresh = updates.RefreshAsync();
+        updates.NotificationsEnabled = true;
+        command.Completion.TrySetResult();
+
+        await firstRefresh;
+        var queuedPresentation = await queuedRefresh;
+        var nextPresentation = await updates.RefreshAsync();
+
+        Assert.True(settings.NotificationsEnabled);
+        Assert.Empty(queuedPresentation.Notices);
+        var notice = Assert.Single(nextPresentation.Notices);
+        Assert.Equal("5-hour allowance reset.", notice.Message);
+    }
+
+    [Fact]
+    public async Task ActivationPreferenceIsCapturedWhenRefreshIsRequested()
+    {
+        var now = new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero);
+        var reset = now.AddHours(5);
+        var observations = new BlockingFirstUsageObservationReader(
+            Observe(now, usedPercent: 50, reset),
+            Observe(now.AddMinutes(1), usedPercent: 0, reset),
+            Observe(now.AddMinutes(2), usedPercent: 0, reset));
+        var command = new RecordingActivationCommand();
+        var settings = new EnabledActivationSettings { ActivationEnabled = false };
+        await using var updates = new UsageUpdates(
+            observations,
+            command,
+            settings,
+            new FixedTimeProvider(now),
+            CultureInfo.InvariantCulture);
+
+        var firstRefresh = updates.RefreshAsync();
+        await observations.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var queuedRefresh = updates.RefreshAsync();
+        updates.ActivationEnabled = true;
+        observations.CompleteFirst();
+
+        await firstRefresh;
+        await queuedRefresh;
+        Assert.Equal(0, command.CallCount);
+
+        await updates.RefreshAsync();
+        Assert.Equal(1, command.CallCount);
+    }
+
+    [Fact]
+    public async Task FailedPreferenceWriteKeepsTheEffectiveValue()
+    {
+        var settings = new EnabledActivationSettings
+        {
+            ActivationEnabled = false,
+            ThrowOnActivationWrite = true
+        };
+        await using var updates = new UsageUpdates(
+            new QueueUsageObservationReader(),
+            new FailingActivationCommand(),
+            settings,
+            TimeProvider.System,
+            CultureInfo.InvariantCulture);
+
+        Assert.Throws<UnauthorizedAccessException>(() => updates.ActivationEnabled = true);
+
+        Assert.False(updates.ActivationEnabled);
+        Assert.False(settings.ActivationEnabled);
     }
 
     private static UsageObservations Observe(
@@ -176,10 +246,50 @@ public sealed class UsageUpdatesTests
         }
     }
 
+    private sealed class BlockingFirstUsageObservationReader(
+        UsageObservations first,
+        params UsageObservations[] remaining) : IUsageObservationReader
+    {
+        private readonly Queue<UsageObservations> remaining = new(remaining);
+        private readonly TaskCompletionSource<UsageObservations> firstCompletion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int callCount;
+
+        public TaskCompletionSource Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void CompleteFirst() => firstCompletion.TrySetResult(first);
+
+        public async Task<UsageObservations> ReadAsync(
+            UsageObservationRequest request,
+            CancellationToken cancellationToken)
+        {
+            Assert.Equal(UsageObservationRequest.AllowanceWindows, request);
+            if (Interlocked.Increment(ref callCount) == 1)
+            {
+                Started.TrySetResult();
+                return await firstCompletion.Task.WaitAsync(cancellationToken);
+            }
+
+            return remaining.Dequeue();
+        }
+    }
+
     private sealed class FailingActivationCommand : IAllowanceWindowActivationCommand
     {
         public Task SendHiAsync(CancellationToken cancellationToken) =>
             Task.FromException(new InvalidOperationException("Synthetic activation failure."));
+    }
+
+    private sealed class RecordingActivationCommand : IAllowanceWindowActivationCommand
+    {
+        public int CallCount { get; private set; }
+
+        public Task SendHiAsync(CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class BlockingActivationCommand : IAllowanceWindowActivationCommand
@@ -199,8 +309,23 @@ public sealed class UsageUpdatesTests
     private sealed class EnabledActivationSettings : IAllowanceWindowActivationSettings
     {
         private readonly Dictionary<AllowanceWindowKind, DateTimeOffset> activatedResets = [];
+        private bool activationEnabled = true;
 
-        public bool ActivationEnabled { get; set; } = true;
+        public bool ThrowOnActivationWrite { get; set; }
+        public bool ActivationEnabled
+        {
+            get => activationEnabled;
+            set
+            {
+                if (ThrowOnActivationWrite)
+                {
+                    throw new UnauthorizedAccessException("Synthetic settings failure.");
+                }
+
+                activationEnabled = value;
+            }
+        }
+
         public bool NotificationsEnabled { get; set; }
 
         public DateTimeOffset? ReadActivatedReset(AllowanceWindowKind window) =>
