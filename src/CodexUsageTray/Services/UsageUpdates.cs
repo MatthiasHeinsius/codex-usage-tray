@@ -1,37 +1,91 @@
-namespace CodexUsageTray;
+using System.Globalization;
 
-internal sealed record UsageUpdate(
-    UsageSnapshot Snapshot,
-    UsagePresentation Presentation,
-    AllowanceWindowActivationResult AllowanceEvents);
+namespace CodexUsageTray;
 
 internal sealed class UsageUpdates : IAsyncDisposable
 {
     private readonly UsageSnapshots snapshots;
     private readonly AllowanceWindowActivation activation;
+    private readonly IAllowanceWindowActivationSettings settings;
     private readonly TimeProvider timeProvider;
     private readonly IFormatProvider formatProvider;
+    private readonly object preferencesSync = new();
     private readonly SemaphoreSlim updateGate = new(1, 1);
     private readonly CancellationTokenSource lifetime = new();
+    private bool activationEnabled;
+    private bool notificationsEnabled;
     private int disposed;
 
-    public UsageUpdates(
-        UsageSnapshots snapshots,
-        AllowanceWindowActivation activation,
+    internal UsageUpdates(
+        IUsageObservationReader observations,
+        IAllowanceWindowActivationCommand activationCommand,
+        IAllowanceWindowActivationSettings settings,
         TimeProvider timeProvider,
         IFormatProvider formatProvider)
     {
-        this.snapshots = snapshots;
-        this.activation = activation;
+        snapshots = new UsageSnapshots(observations);
+        activation = new AllowanceWindowActivation(
+            activationCommand,
+            snapshots,
+            settings,
+            timeProvider);
+        this.settings = settings;
         this.timeProvider = timeProvider;
         this.formatProvider = formatProvider;
+        activationEnabled = settings.ActivationEnabled;
+        notificationsEnabled = settings.NotificationsEnabled;
     }
 
-    public Task<UsageUpdate> RefreshAsync(CancellationToken cancellationToken = default) =>
-        RefreshAsync(includeActivity: false, cancellationToken);
+    public static UsageUpdates CreateDefault() => new(
+        new CodexUsageObservationReader(),
+        new CodexWindowStarter(),
+        new RegistryAllowanceWindowActivationSettings(),
+        TimeProvider.System,
+        CultureInfo.CurrentCulture);
 
-    public Task<UsageUpdate> RefreshWithActivityAsync(CancellationToken cancellationToken = default) =>
-        RefreshAsync(includeActivity: true, cancellationToken);
+    public bool ActivationEnabled
+    {
+        get
+        {
+            lock (preferencesSync)
+            {
+                return activationEnabled;
+            }
+        }
+        set
+        {
+            lock (preferencesSync)
+            {
+                settings.ActivationEnabled = value;
+                activationEnabled = value;
+            }
+        }
+    }
+
+    public bool NotificationsEnabled
+    {
+        get
+        {
+            lock (preferencesSync)
+            {
+                return notificationsEnabled;
+            }
+        }
+        set
+        {
+            lock (preferencesSync)
+            {
+                settings.NotificationsEnabled = value;
+                notificationsEnabled = value;
+            }
+        }
+    }
+
+    public Task<UsagePresentation> RefreshAsync(CancellationToken cancellationToken = default) =>
+        RequestAsync(includeActivity: false, CapturePreferences(), cancellationToken);
+
+    public Task<UsagePresentation> RefreshWithActivityAsync(CancellationToken cancellationToken = default) =>
+        RequestAsync(includeActivity: true, CapturePreferences(), cancellationToken);
 
     public async ValueTask DisposeAsync()
     {
@@ -48,8 +102,17 @@ internal sealed class UsageUpdates : IAsyncDisposable
         lifetime.Dispose();
     }
 
-    private async Task<UsageUpdate> RefreshAsync(
+    private (bool ActivationEnabled, bool NotificationsEnabled) CapturePreferences()
+    {
+        lock (preferencesSync)
+        {
+            return (activationEnabled, notificationsEnabled);
+        }
+    }
+
+    private async Task<UsagePresentation> RequestAsync(
         bool includeActivity,
+        (bool ActivationEnabled, bool NotificationsEnabled) preferences,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
@@ -63,13 +126,16 @@ internal sealed class UsageUpdates : IAsyncDisposable
             var snapshot = includeActivity
                 ? await snapshots.RefreshWithActivityAsync(cancellation.Token).ConfigureAwait(false)
                 : await snapshots.RefreshAsync(cancellation.Token).ConfigureAwait(false);
-            var allowanceEvents = await activation.ObserveAsync(snapshot, cancellation.Token).ConfigureAwait(false);
+            var allowanceEvents = await activation
+                .ObserveAsync(preferences.ActivationEnabled, snapshot, cancellation.Token)
+                .ConfigureAwait(false);
             var finalSnapshot = snapshots.Current ?? snapshot;
-            var presentation = UsagePresentation.Create(
+            return UsagePresentation.Create(
                 finalSnapshot,
+                allowanceEvents,
+                preferences.NotificationsEnabled,
                 timeProvider.GetLocalNow(),
                 formatProvider);
-            return new UsageUpdate(finalSnapshot, presentation, allowanceEvents);
         }
         finally
         {

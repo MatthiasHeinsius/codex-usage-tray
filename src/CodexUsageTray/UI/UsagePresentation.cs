@@ -7,19 +7,32 @@ internal sealed record UsagePresentation
     private UsagePresentation(
         PopupPresentation popup,
         TrayPresentation tray,
-        string consoleText)
+        IReadOnlyList<NoticePresentation> notices)
     {
         Popup = popup;
         Tray = tray;
-        ConsoleText = consoleText;
+        Notices = notices;
     }
 
     public PopupPresentation Popup { get; }
     public TrayPresentation Tray { get; }
-    public string ConsoleText { get; }
+    public IReadOnlyList<NoticePresentation> Notices { get; }
 
     public static UsagePresentation Create(
         UsageSnapshot snapshot,
+        DateTimeOffset now,
+        IFormatProvider formatProvider) =>
+        Create(
+            snapshot,
+            AllowanceWindowActivationResult.Empty,
+            notificationsEnabled: false,
+            now,
+            formatProvider);
+
+    internal static UsagePresentation Create(
+        UsageSnapshot snapshot,
+        AllowanceWindowActivationResult allowanceEvents,
+        bool notificationsEnabled,
         DateTimeOffset now,
         IFormatProvider formatProvider)
     {
@@ -32,49 +45,32 @@ internal sealed record UsagePresentation
             weekly,
             TokenLabel(snapshot.TodayTokens, formatProvider),
             TokenLabel(snapshot.LifetimeTokens, formatProvider),
-            observationText.Popup);
+            observationText);
         var tray = new TrayPresentation(
             snapshot.FiveHour?.RemainingPercent ?? 100,
             snapshot.Weekly?.RemainingPercent ?? 100,
             $"Codex · 5h {PercentOrUnknown(snapshot.FiveHour)}% · week {PercentOrUnknown(snapshot.Weekly)}%");
-        var consoleLines = new List<string>
-        {
-            $"5-hour: {fiveHour.RemainingText} ({fiveHour.ResetText})",
-            $"Weekly: {weekly.RemainingText} ({weekly.ResetText})",
-            $"Inference today{(snapshot.TodayTokensAreLocal ? " on this PC" : string.Empty)}: {ConsoleTokens(snapshot.TodayTokens)}",
-            $"Inference lifetime{(snapshot.LifetimeIncludesLocalActivity ? " including local activity" : string.Empty)}: {ConsoleTokens(snapshot.LifetimeTokens)}",
-            $"Plan: {snapshot.Plan ?? "unknown"}"
-        };
-        consoleLines.AddRange(observationText.Console);
-        var consoleText = string.Join(Environment.NewLine, consoleLines);
 
-        return new UsagePresentation(popup, tray, consoleText);
+        return new UsagePresentation(
+            popup,
+            tray,
+            PresentNotices(allowanceEvents, notificationsEnabled));
     }
 
-    private static (string Popup, IReadOnlyList<string> Console) PresentObservationTimes(
+    private static string PresentObservationTimes(
         UsageSnapshot snapshot,
         IFormatProvider formatProvider)
     {
         var allowanceTime = snapshot.AllowanceObservedAt.LocalDateTime;
         if (snapshot.ActivityObservedAt == snapshot.AllowanceObservedAt)
         {
-            return (
-                $"Updated {allowanceTime.ToString("t", formatProvider)}",
-                [$"Updated: {allowanceTime.ToString("G", formatProvider)}"]);
+            return $"Updated {allowanceTime.ToString("t", formatProvider)}";
         }
 
         var activityPopup = snapshot.ActivityObservedAt is { } activityObservedAt
             ? $"Activity updated {activityObservedAt.LocalDateTime.ToString("t", formatProvider)}"
             : "Activity not updated";
-        var activityConsole = snapshot.ActivityObservedAt is { } consoleActivityObservedAt
-            ? consoleActivityObservedAt.LocalDateTime.ToString("G", formatProvider)
-            : "unavailable";
-        return (
-            $"Limits updated {allowanceTime.ToString("t", formatProvider)} · {activityPopup}",
-            [
-                $"Allowances updated: {allowanceTime.ToString("G", formatProvider)}",
-                $"Activity updated: {activityConsole}"
-            ]);
+        return $"Limits updated {allowanceTime.ToString("t", formatProvider)} · {activityPopup}";
     }
 
     private static AllowancePresentation PresentAllowance(
@@ -164,16 +160,54 @@ internal sealed record UsagePresentation
             _ => $"{(tokens / 1_000_000_000d).ToString("0.##", formatProvider)}B"
         };
 
-    private static string ConsoleTokens(long? tokens) =>
-        tokens is { } value
-            ? $"{value.ToString("N0", CultureInfo.InvariantCulture)} tokens"
-            : "unavailable";
-
     private static string PercentOrUnknown(AllowanceWindow? window) =>
         window?.RemainingPercent.ToString(CultureInfo.InvariantCulture) ?? "?";
 
     private static string FormatNumber(int value, IFormatProvider formatProvider) =>
         string.Format(formatProvider, "{0}", value);
+
+    private static List<NoticePresentation> PresentNotices(
+        AllowanceWindowActivationResult events,
+        bool notificationsEnabled)
+    {
+        var notices = new List<NoticePresentation>();
+        if (notificationsEnabled)
+        {
+            if (events.UsedUp != AllowanceWindows.None)
+            {
+                notices.Add(new NoticePresentation(
+                    $"{AllowanceNames(events.UsedUp)} allowance used up.",
+                    NoticeSeverity.Warning,
+                    TimeSpan.FromSeconds(5)));
+            }
+
+            if (events.Reset != AllowanceWindows.None)
+            {
+                notices.Add(new NoticePresentation(
+                    $"{AllowanceNames(events.Reset)} allowance reset.",
+                    NoticeSeverity.Information,
+                    TimeSpan.FromSeconds(5)));
+            }
+        }
+
+        if (events.Unconfirmed != AllowanceWindows.None)
+        {
+            notices.Add(new NoticePresentation(
+                $"Could not confirm {AllowanceNames(events.Unconfirmed).ToLowerInvariant()} allowance activation after four requests.",
+                NoticeSeverity.Warning,
+                TimeSpan.FromSeconds(7)));
+        }
+
+        return notices;
+    }
+
+    private static string AllowanceNames(AllowanceWindows windows) => windows switch
+    {
+        AllowanceWindows.FiveHour => "5-hour",
+        AllowanceWindows.Weekly => "Weekly",
+        AllowanceWindows.FiveHour | AllowanceWindows.Weekly => "5-hour and weekly",
+        _ => "Codex"
+    };
 
     internal sealed record PopupPresentation(
         string AccountStatus,
@@ -193,4 +227,15 @@ internal sealed record UsagePresentation
         int FiveHourRemaining,
         int WeeklyRemaining,
         string Tooltip);
+
+    internal sealed record NoticePresentation(
+        string Message,
+        NoticeSeverity Severity,
+        TimeSpan Duration);
+
+    internal enum NoticeSeverity
+    {
+        Information,
+        Warning
+    }
 }

@@ -45,13 +45,7 @@ internal interface IAllowanceWindowActivationSettings
     void WriteActivatedReset(AllowanceWindowKind window, DateTimeOffset reset);
 }
 
-internal interface IAllowanceWindowPreferences
-{
-    bool ActivationEnabled { get; set; }
-    bool NotificationsEnabled { get; set; }
-}
-
-internal sealed class AllowanceWindowActivation : IDisposable, IAllowanceWindowPreferences
+internal sealed class AllowanceWindowActivation : IDisposable
 {
     private readonly IAllowanceWindowActivationCommand command;
     private readonly IUsageSnapshotRefresher snapshots;
@@ -60,8 +54,6 @@ internal sealed class AllowanceWindowActivation : IDisposable, IAllowanceWindowP
     private readonly Dictionary<AllowanceWindowKind, PendingActivation> pending = [];
     private readonly Dictionary<AllowanceWindowKind, AllowanceWindow?> previousWindows = [];
     private readonly SemaphoreSlim observationGate = new(1, 1);
-    private bool activationEnabled;
-    private bool notificationsEnabled;
 
     public AllowanceWindowActivation(
         IAllowanceWindowActivationCommand command,
@@ -73,40 +65,19 @@ internal sealed class AllowanceWindowActivation : IDisposable, IAllowanceWindowP
         this.snapshots = snapshots;
         this.settings = settings;
         this.timeProvider = timeProvider;
-        activationEnabled = settings.ActivationEnabled;
-        notificationsEnabled = settings.NotificationsEnabled;
     }
 
     public void Dispose() => observationGate.Dispose();
 
-    public bool ActivationEnabled
-    {
-        get => activationEnabled;
-        set
-        {
-            settings.ActivationEnabled = value;
-            activationEnabled = value;
-        }
-    }
-
-    public bool NotificationsEnabled
-    {
-        get => notificationsEnabled;
-        set
-        {
-            settings.NotificationsEnabled = value;
-            notificationsEnabled = value;
-        }
-    }
-
     public async Task<AllowanceWindowActivationResult> ObserveAsync(
+        bool activationEnabled,
         UsageSnapshot snapshot,
         CancellationToken cancellationToken = default)
     {
         await observationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await ObserveCoreAsync(snapshot, cancellationToken).ConfigureAwait(false);
+            return await ObserveCoreAsync(snapshot, activationEnabled, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -116,6 +87,7 @@ internal sealed class AllowanceWindowActivation : IDisposable, IAllowanceWindowP
 
     private async Task<AllowanceWindowActivationResult> ObserveCoreAsync(
         UsageSnapshot snapshot,
+        bool activationEnabled,
         CancellationToken cancellationToken)
     {
         var (reset, usedUp) = DetectTransitions(snapshot);

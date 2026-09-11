@@ -6,7 +6,7 @@ public sealed class AllowanceWindowActivationTests
     public async Task ObserveActivatesUnusedWindowRegardlessOfResetTime()
     {
         var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
-        var settings = new InMemoryActivationSettings { ActivationEnabled = true };
+        var settings = new InMemoryActivationSettings();
         var command = new RecordingActivationCommand();
         var activation = new AllowanceWindowActivation(
             command,
@@ -15,7 +15,7 @@ public sealed class AllowanceWindowActivationTests
             new TestTimeProvider(now));
         var snapshot = Snapshot(now, fiveHourUsedPercent: 0, fiveHourReset: now.AddHours(5));
 
-        await activation.ObserveAsync(snapshot);
+        await activation.ObserveAsync(activationEnabled: true, snapshot);
 
         Assert.Equal(1, command.CallCount);
     }
@@ -24,7 +24,7 @@ public sealed class AllowanceWindowActivationTests
     public async Task ChangedResetTimeConfirmsActivationWithoutAnotherCommand()
     {
         var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
-        var settings = new InMemoryActivationSettings { ActivationEnabled = true };
+        var settings = new InMemoryActivationSettings();
         var command = new RecordingActivationCommand();
         var time = new TestTimeProvider(now);
         var activation = new AllowanceWindowActivation(
@@ -35,17 +35,17 @@ public sealed class AllowanceWindowActivationTests
         var originalReset = now.AddHours(5);
         var activatedReset = originalReset.AddMinutes(1);
 
-        await activation.ObserveAsync(Snapshot(now, 0, originalReset));
+        await activation.ObserveAsync(activationEnabled: true, Snapshot(now, 0, originalReset));
         time.Advance(TimeSpan.FromMinutes(1));
         var activated = Snapshot(now.AddMinutes(1), 0, activatedReset);
-        await activation.ObserveAsync(activated);
+        await activation.ObserveAsync(activationEnabled: true, activated);
         var afterRestartCommand = new RecordingActivationCommand();
         var afterRestart = new AllowanceWindowActivation(
             afterRestartCommand,
             new StubUsageSnapshotRefresher(),
             settings,
             time);
-        await afterRestart.ObserveAsync(activated);
+        await afterRestart.ObserveAsync(activationEnabled: true, activated);
 
         Assert.Equal(1, command.CallCount);
         Assert.Equal(0, afterRestartCommand.CallCount);
@@ -55,7 +55,7 @@ public sealed class AllowanceWindowActivationTests
     public async Task UnconfirmedActivationStopsAfterThreeRetries()
     {
         var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
-        var settings = new InMemoryActivationSettings { ActivationEnabled = true };
+        var settings = new InMemoryActivationSettings();
         var command = new RecordingActivationCommand();
         var time = new TestTimeProvider(now);
         var activation = new AllowanceWindowActivation(
@@ -65,15 +65,15 @@ public sealed class AllowanceWindowActivationTests
             time);
         var reset = now.AddHours(5);
 
-        await activation.ObserveAsync(Snapshot(now, 0, reset));
+        await activation.ObserveAsync(activationEnabled: true, Snapshot(now, 0, reset));
         for (var retry = 1; retry <= 3; retry++)
         {
             time.Advance(TimeSpan.FromMinutes(1));
-            await activation.ObserveAsync(Snapshot(now.AddMinutes(retry), 0, reset));
+            await activation.ObserveAsync(activationEnabled: true, Snapshot(now.AddMinutes(retry), 0, reset));
         }
 
         time.Advance(TimeSpan.FromMinutes(1));
-        var result = await activation.ObserveAsync(Snapshot(now.AddMinutes(4), 0, reset));
+        var result = await activation.ObserveAsync(activationEnabled: true, Snapshot(now.AddMinutes(4), 0, reset));
 
         Assert.Equal(4, command.CallCount);
         Assert.Equal(AllowanceWindows.FiveHour, result.Unconfirmed);
@@ -83,7 +83,7 @@ public sealed class AllowanceWindowActivationTests
     public async Task FailedCommandWaitsWhenFreshObservationShowsUsedUpAllowance()
     {
         var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
-        var settings = new InMemoryActivationSettings { ActivationEnabled = true };
+        var settings = new InMemoryActivationSettings();
         var command = new RecordingActivationCommand();
         command.FailNext(new InvalidOperationException("synthetic command failure"));
         var reset = now.AddHours(5);
@@ -91,9 +91,9 @@ public sealed class AllowanceWindowActivationTests
         var time = new TestTimeProvider(now);
         var activation = new AllowanceWindowActivation(command, refresher, settings, time);
 
-        await activation.ObserveAsync(Snapshot(now, 0, reset));
+        await activation.ObserveAsync(activationEnabled: true, Snapshot(now, 0, reset));
         time.Advance(TimeSpan.FromMinutes(5));
-        await activation.ObserveAsync(Snapshot(now.AddMinutes(5), 100, reset));
+        await activation.ObserveAsync(activationEnabled: true, Snapshot(now.AddMinutes(5), 100, reset));
 
         Assert.Equal(1, command.CallCount);
         Assert.Equal(1, refresher.CallCount);
@@ -110,10 +110,10 @@ public sealed class AllowanceWindowActivationTests
             new TestTimeProvider(now));
         var reset = now.AddHours(5);
 
-        var initial = await activation.ObserveAsync(Snapshot(now, 99, reset));
-        var usedUp = await activation.ObserveAsync(Snapshot(now.AddMinutes(1), 100, reset));
-        var repeated = await activation.ObserveAsync(Snapshot(now.AddMinutes(2), 100, reset));
-        var naturalReset = await activation.ObserveAsync(Snapshot(now.AddMinutes(3), 0, reset.AddHours(5)));
+        var initial = await activation.ObserveAsync(activationEnabled: false, Snapshot(now, 99, reset));
+        var usedUp = await activation.ObserveAsync(activationEnabled: false, Snapshot(now.AddMinutes(1), 100, reset));
+        var repeated = await activation.ObserveAsync(activationEnabled: false, Snapshot(now.AddMinutes(2), 100, reset));
+        var naturalReset = await activation.ObserveAsync(activationEnabled: false, Snapshot(now.AddMinutes(3), 0, reset.AddHours(5)));
 
         Assert.Equal(AllowanceWindows.None, initial.UsedUp);
         Assert.Equal(AllowanceWindows.FiveHour, usedUp.UsedUp);
@@ -129,13 +129,13 @@ public sealed class AllowanceWindowActivationTests
         var activation = new AllowanceWindowActivation(
             command,
             new StubUsageSnapshotRefresher(),
-            new InMemoryActivationSettings { ActivationEnabled = true },
+            new InMemoryActivationSettings(),
             new TestTimeProvider(now));
         var snapshot = Snapshot(now, 0, now.AddHours(5));
 
-        var first = activation.ObserveAsync(snapshot);
+        var first = activation.ObserveAsync(activationEnabled: true, snapshot);
         await command.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var second = activation.ObserveAsync(snapshot);
+        var second = activation.ObserveAsync(activationEnabled: true, snapshot);
         command.Completion.TrySetResult();
         await Task.WhenAll(first, second);
 
@@ -146,7 +146,7 @@ public sealed class AllowanceWindowActivationTests
     public async Task OneCommandTargetsEitherUnusedWindowAndRetriesPartialConfirmation()
     {
         var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
-        var settings = new InMemoryActivationSettings { ActivationEnabled = true };
+        var settings = new InMemoryActivationSettings();
         var command = new RecordingActivationCommand();
         var time = new TestTimeProvider(now);
         var activation = new AllowanceWindowActivation(
@@ -157,12 +157,12 @@ public sealed class AllowanceWindowActivationTests
         var fiveHourReset = now.AddHours(5);
         var weeklyReset = now.AddDays(7);
 
-        await activation.ObserveAsync(Snapshot(now, 0, fiveHourReset, 0, weeklyReset));
+        await activation.ObserveAsync(activationEnabled: true, Snapshot(now, 0, fiveHourReset, 0, weeklyReset));
         time.Advance(TimeSpan.FromMinutes(1));
-        var partial = await activation.ObserveAsync(
+        var partial = await activation.ObserveAsync(activationEnabled: true,
             Snapshot(now.AddMinutes(1), 0, fiveHourReset.AddMinutes(1), 0, weeklyReset));
         time.Advance(TimeSpan.FromMinutes(1));
-        var complete = await activation.ObserveAsync(
+        var complete = await activation.ObserveAsync(activationEnabled: true,
             Snapshot(now.AddMinutes(2), 1, fiveHourReset.AddMinutes(1), 0, weeklyReset.AddMinutes(2)));
 
         Assert.Equal(2, command.CallCount);
@@ -181,14 +181,14 @@ public sealed class AllowanceWindowActivationTests
         var activation = new AllowanceWindowActivation(
             command,
             new StubUsageSnapshotRefresher(Snapshot(now.AddSeconds(1), 0, reset)),
-            new InMemoryActivationSettings { ActivationEnabled = true },
+            new InMemoryActivationSettings(),
             time);
 
-        await activation.ObserveAsync(Snapshot(now, 0, reset));
+        await activation.ObserveAsync(activationEnabled: true, Snapshot(now, 0, reset));
         time.Advance(TimeSpan.FromMinutes(4));
-        await activation.ObserveAsync(Snapshot(now.AddMinutes(4), 0, reset));
+        await activation.ObserveAsync(activationEnabled: true, Snapshot(now.AddMinutes(4), 0, reset));
         time.Advance(TimeSpan.FromMinutes(1));
-        await activation.ObserveAsync(Snapshot(now.AddMinutes(5), 0, reset));
+        await activation.ObserveAsync(activationEnabled: true, Snapshot(now.AddMinutes(5), 0, reset));
 
         Assert.Equal(2, command.CallCount);
     }
@@ -204,14 +204,14 @@ public sealed class AllowanceWindowActivationTests
         var activation = new AllowanceWindowActivation(
             command,
             new FailingUsageSnapshotRefresher(),
-            new InMemoryActivationSettings { ActivationEnabled = true },
+            new InMemoryActivationSettings(),
             time);
 
-        await activation.ObserveAsync(Snapshot(now, 0, reset));
+        await activation.ObserveAsync(activationEnabled: true, Snapshot(now, 0, reset));
         time.Advance(TimeSpan.FromMinutes(4));
-        await activation.ObserveAsync(Snapshot(now.AddMinutes(4), 0, reset));
+        await activation.ObserveAsync(activationEnabled: true, Snapshot(now.AddMinutes(4), 0, reset));
         time.Advance(TimeSpan.FromMinutes(1));
-        await activation.ObserveAsync(Snapshot(now.AddMinutes(5), 0, reset));
+        await activation.ObserveAsync(activationEnabled: true, Snapshot(now.AddMinutes(5), 0, reset));
 
         Assert.Equal(2, command.CallCount);
     }
@@ -226,12 +226,12 @@ public sealed class AllowanceWindowActivationTests
         var activation = new AllowanceWindowActivation(
             command,
             new StubUsageSnapshotRefresher(),
-            new InMemoryActivationSettings { ActivationEnabled = true },
+            new InMemoryActivationSettings(),
             time);
 
-        await activation.ObserveAsync(Snapshot(now, 0, reset));
+        await activation.ObserveAsync(activationEnabled: true, Snapshot(now, 0, reset));
         time.Advance(TimeSpan.FromMinutes(1));
-        await activation.ObserveAsync(Snapshot(now.AddMinutes(1), 100, reset));
+        await activation.ObserveAsync(activationEnabled: true, Snapshot(now.AddMinutes(1), 100, reset));
 
         Assert.Equal(1, command.CallCount);
     }
@@ -247,13 +247,13 @@ public sealed class AllowanceWindowActivationTests
         var activation = new AllowanceWindowActivation(
             command,
             new StubUsageSnapshotRefresher(Snapshot(now.AddMinutes(1).AddSeconds(1), 1, changedReset)),
-            new InMemoryActivationSettings { ActivationEnabled = true },
+            new InMemoryActivationSettings(),
             time);
 
-        await activation.ObserveAsync(Snapshot(now, 0, originalReset));
+        await activation.ObserveAsync(activationEnabled: true, Snapshot(now, 0, originalReset));
         command.FailNext(new InvalidOperationException("synthetic retry failure"));
         time.Advance(TimeSpan.FromMinutes(1));
-        var result = await activation.ObserveAsync(Snapshot(now.AddMinutes(1), 0, originalReset));
+        var result = await activation.ObserveAsync(activationEnabled: true, Snapshot(now.AddMinutes(1), 0, originalReset));
 
         Assert.Equal(AllowanceWindows.FiveHour, result.Confirmed);
         Assert.Equal(2, command.CallCount);
@@ -270,10 +270,10 @@ public sealed class AllowanceWindowActivationTests
         var activation = new AllowanceWindowActivation(
             command,
             new StubUsageSnapshotRefresher(Snapshot(now.AddSeconds(1), 1, changedReset)),
-            new InMemoryActivationSettings { ActivationEnabled = true },
+            new InMemoryActivationSettings(),
             new TestTimeProvider(now));
 
-        var result = await activation.ObserveAsync(Snapshot(now, 0, originalReset));
+        var result = await activation.ObserveAsync(activationEnabled: true, Snapshot(now, 0, originalReset));
 
         Assert.Equal(AllowanceWindows.FiveHour, result.Confirmed);
         Assert.Equal(1, command.CallCount);
@@ -283,7 +283,7 @@ public sealed class AllowanceWindowActivationTests
     public async Task RetryStateDoesNotSurviveRestart()
     {
         var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
-        var settings = new InMemoryActivationSettings { ActivationEnabled = true };
+        var settings = new InMemoryActivationSettings();
         var snapshot = Snapshot(now, 0, now.AddHours(5));
         var firstCommand = new RecordingActivationCommand();
         var first = new AllowanceWindowActivation(
@@ -291,7 +291,7 @@ public sealed class AllowanceWindowActivationTests
             new StubUsageSnapshotRefresher(),
             settings,
             new TestTimeProvider(now));
-        await first.ObserveAsync(snapshot);
+        await first.ObserveAsync(activationEnabled: true, snapshot);
 
         var restartedCommand = new RecordingActivationCommand();
         var restarted = new AllowanceWindowActivation(
@@ -299,7 +299,7 @@ public sealed class AllowanceWindowActivationTests
             new StubUsageSnapshotRefresher(),
             settings,
             new TestTimeProvider(now));
-        await restarted.ObserveAsync(snapshot);
+        await restarted.ObserveAsync(activationEnabled: true, snapshot);
 
         Assert.Equal(1, firstCommand.CallCount);
         Assert.Equal(1, restartedCommand.CallCount);
@@ -313,10 +313,10 @@ public sealed class AllowanceWindowActivationTests
         var activation = new AllowanceWindowActivation(
             command,
             new StubUsageSnapshotRefresher(),
-            new InMemoryActivationSettings { ActivationEnabled = true },
+            new InMemoryActivationSettings(),
             new TestTimeProvider(now));
 
-        await activation.ObserveAsync(Snapshot(now, 0, fiveHourReset: null));
+        await activation.ObserveAsync(activationEnabled: true, Snapshot(now, 0, fiveHourReset: null));
 
         Assert.Equal(0, command.CallCount);
     }
@@ -333,10 +333,10 @@ public sealed class AllowanceWindowActivationTests
         var fiveHourReset = now.AddHours(5);
         var weeklyReset = now.AddDays(7);
 
-        await activation.ObserveAsync(Snapshot(now, 99, fiveHourReset, 99, weeklyReset));
-        var usedUp = await activation.ObserveAsync(
+        await activation.ObserveAsync(activationEnabled: false, Snapshot(now, 99, fiveHourReset, 99, weeklyReset));
+        var usedUp = await activation.ObserveAsync(activationEnabled: false,
             Snapshot(now.AddMinutes(1), 100, fiveHourReset, 100, weeklyReset));
-        var reset = await activation.ObserveAsync(
+        var reset = await activation.ObserveAsync(activationEnabled: false,
             Snapshot(now.AddMinutes(2), 0, fiveHourReset.AddHours(5), 0, weeklyReset.AddDays(7)));
 
         var both = AllowanceWindows.FiveHour | AllowanceWindows.Weekly;
