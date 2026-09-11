@@ -53,24 +53,27 @@ public sealed class UsagePresentationTests
     public void CreateShowsSeparateObservationTimesForRetainedActivity()
     {
         var activityObservedAt = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
-        var previous = CreateSnapshot(
-            activityObservedAt,
-            new AllowanceWindow(36, TimeSpan.FromHours(5), activityObservedAt.AddHours(3)),
-            weekly: null,
-            lifetimeTokens: 123_456,
-            todayTokens: 7_890,
-            plan: "plus",
-            limitName: "Codex");
         var allowanceObservedAt = activityObservedAt.AddMinutes(1);
-        var snapshot = UsageSnapshot.Reconcile(
-            previous,
-            new AccountUsageObservation(
-                allowanceObservedAt,
-                [new AllowanceWindow(37, TimeSpan.FromHours(5), allowanceObservedAt.AddHours(3))],
-                "plus",
-                "Codex",
-                new AccountActivityObservation.NotRequested()),
-            local: null);
+        var snapshot = UsageSnapshotFixture.Create(
+            new UsageObservations(
+                new AccountUsageObservation(
+                    activityObservedAt,
+                    [new AllowanceWindow(36, TimeSpan.FromHours(5), activityObservedAt.AddHours(3))],
+                    "plus",
+                    "Codex",
+                    new AccountActivityObservation.Observed(
+                        LifetimeTokens: 123_456,
+                        TodayTokens: 7_890,
+                        LatestDailyBucketDate: DateOnly.FromDateTime(activityObservedAt.LocalDateTime))),
+                Local: null),
+            new UsageObservations(
+                new AccountUsageObservation(
+                    allowanceObservedAt,
+                    [new AllowanceWindow(37, TimeSpan.FromHours(5), allowanceObservedAt.AddHours(3))],
+                    "plus",
+                    "Codex",
+                    new AccountActivityObservation.NotRequested()),
+                Local: null));
         var culture = CultureInfo.GetCultureInfo("en-US");
 
         var presentation = UsagePresentation.Create(snapshot, allowanceObservedAt, culture);
@@ -165,8 +168,7 @@ public sealed class UsagePresentationTests
     public void CreateIncludesLocalActivityProvenanceInConsolePresentation()
     {
         var now = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
-        var snapshot = UsageSnapshot.Reconcile(
-            previous: null,
+        var snapshot = UsageSnapshotFixture.Create(
             new AccountUsageObservation(
                 now,
                 [],
@@ -247,8 +249,7 @@ public sealed class UsagePresentationTests
         string? limitName)
     {
         var windows = new[] { fiveHour, weekly }.OfType<AllowanceWindow>().ToArray();
-        return UsageSnapshot.Reconcile(
-            previous: null,
+        return UsageSnapshotFixture.Create(
             new AccountUsageObservation(
                 observedAt,
                 windows,
@@ -257,8 +258,7 @@ public sealed class UsagePresentationTests
                 new AccountActivityObservation.Observed(
                     lifetimeTokens,
                     todayTokens,
-                    LatestDailyBucketDate: DateOnly.FromDateTime(observedAt.LocalDateTime))),
-            local: null);
+                    LatestDailyBucketDate: DateOnly.FromDateTime(observedAt.LocalDateTime))));
     }
 
     private sealed class MarkedIntegerFormatProvider : IFormatProvider, ICustomFormatter

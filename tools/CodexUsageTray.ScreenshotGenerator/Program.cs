@@ -25,21 +25,7 @@ internal static class Program
         Directory.CreateDirectory(outputDirectory);
 
         var now = DateTimeOffset.Now;
-        var snapshot = CodexUsageTray.UsageSnapshot.Reconcile(
-            previous: null,
-            new CodexUsageTray.AccountUsageObservation(
-                now,
-                [
-                    new CodexUsageTray.AllowanceWindow(36, TimeSpan.FromHours(5), now.AddHours(3).AddMinutes(12)),
-                    new CodexUsageTray.AllowanceWindow(58, TimeSpan.FromDays(7), now.AddDays(3).AddHours(8))
-                ],
-                "plus",
-                "Codex",
-                new CodexUsageTray.AccountActivityObservation.Observed(
-                    LifetimeTokens: 128_440_800,
-                    TodayTokens: 784_200,
-                    LatestDailyBucketDate: DateOnly.FromDateTime(now.LocalDateTime))),
-            local: null);
+        var snapshot = CreateSnapshot(now);
         var presentation = CodexUsageTray.UsagePresentation.Create(
             snapshot,
             now,
@@ -68,6 +54,33 @@ internal static class Program
         }
 
         return 0;
+    }
+
+    private static CodexUsageTray.UsageSnapshot CreateSnapshot(DateTimeOffset now)
+    {
+        var observation = new CodexUsageTray.UsageObservations(
+            new CodexUsageTray.AccountUsageObservation(
+                now,
+                [
+                    new CodexUsageTray.AllowanceWindow(36, TimeSpan.FromHours(5), now.AddHours(3).AddMinutes(12)),
+                    new CodexUsageTray.AllowanceWindow(58, TimeSpan.FromDays(7), now.AddDays(3).AddHours(8))
+                ],
+                "plus",
+                "Codex",
+                new CodexUsageTray.AccountActivityObservation.Observed(
+                    LifetimeTokens: 128_440_800,
+                    TodayTokens: 784_200,
+                    LatestDailyBucketDate: DateOnly.FromDateTime(now.LocalDateTime))),
+            Local: null);
+        var snapshots = new CodexUsageTray.UsageSnapshots(new FixedUsageObservationReader(observation));
+        try
+        {
+            return snapshots.RefreshWithActivityAsync().GetAwaiter().GetResult();
+        }
+        finally
+        {
+            snapshots.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
     }
 
     private static void SaveAppIcon(string path)
@@ -184,5 +197,22 @@ internal static class Program
         graphics.DrawImage(
             iconBitmap,
             new Rectangle((width - 32) / 2, height - taskbarHeight + 10, 32, 32));
+    }
+
+    private sealed class FixedUsageObservationReader(CodexUsageTray.UsageObservations observation)
+        : CodexUsageTray.IUsageObservationReader
+    {
+        public Task<CodexUsageTray.UsageObservations> ReadAsync(
+            CodexUsageTray.UsageObservationRequest request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (request != CodexUsageTray.UsageObservationRequest.AllowanceWindowsAndActivity)
+            {
+                throw new InvalidOperationException("Screenshot generation requires account activity.");
+            }
+
+            return Task.FromResult(observation);
+        }
     }
 }
