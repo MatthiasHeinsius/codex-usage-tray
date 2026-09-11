@@ -39,12 +39,31 @@ internal sealed record UsageSnapshot
 
 }
 
-internal sealed record AllowanceWindow(
-    int UsedPercent,
-    TimeSpan? Duration,
-    DateTimeOffset? ResetsAt)
+internal sealed record AllowanceWindow
 {
-    public int RemainingPercent => Math.Clamp(100 - UsedPercent, 0, 100);
+    internal AllowanceWindow(
+        int UsedPercent,
+        TimeSpan? Duration,
+        DateTimeOffset? ResetsAt)
+    {
+        this.UsedPercent = Math.Clamp(UsedPercent, 0, 100);
+        this.Duration = Duration;
+        this.ResetsAt = ResetsAt;
+    }
+
+    public int UsedPercent { get; }
+    public TimeSpan? Duration { get; }
+    public DateTimeOffset? ResetsAt { get; }
+    public int RemainingPercent => 100 - UsedPercent;
+    public bool IsUnused => UsedPercent == 0;
+    public bool IsUsedUp => UsedPercent == 100;
+
+    public bool IsResetOf(AllowanceWindow previous) =>
+        previous.IsUsedUp
+        && IsUnused
+        && previous.ResetsAt is { } previousReset
+        && ResetsAt is { } currentReset
+        && currentReset != previousReset;
 }
 
 internal sealed record AccountUsageObservation(

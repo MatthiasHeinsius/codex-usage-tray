@@ -71,25 +71,19 @@ internal sealed partial class UsageUpdates
         var unconfirmed = AllowanceWindows.None;
         foreach (var (kind, activation) in pendingActivations.ToArray())
         {
-            if (Window(snapshot, kind) is { UsedPercent: >= 100 })
+            switch (activation.TakeNextAction(Window(snapshot, kind), now))
             {
-                pendingActivations.Remove(kind);
-                continue;
-            }
-
-            if (activation.FailureReported || now < activation.NextAttemptAt)
-            {
-                continue;
-            }
-
-            if (activation.Attempts >= 4)
-            {
-                activation.FailureReported = true;
-                unconfirmed |= Selection(kind);
-            }
-            else
-            {
-                targets.Add(kind);
+                case PendingActivationAction.Wait:
+                    break;
+                case PendingActivationAction.Cancel:
+                    pendingActivations.Remove(kind);
+                    break;
+                case PendingActivationAction.Request:
+                    targets.Add(kind);
+                    break;
+                case PendingActivationAction.ReportUnconfirmed:
+                    unconfirmed |= Selection(kind);
+                    break;
             }
         }
 
@@ -137,10 +131,9 @@ internal sealed partial class UsageUpdates
                     }
 
                     var window = fresh is null ? null : Window(fresh, target);
-                    var originalReset = pendingActivations.TryGetValue(target, out var attempted)
-                        ? attempted.OriginalReset
-                        : Window(snapshot, target)!.ResetsAt!.Value;
-                    if (window?.ResetsAt is { } changedReset && changedReset != originalReset)
+                    var activation = pendingActivations.GetValueOrDefault(target)
+                        ?? new PendingActivation(Window(snapshot, target)!.ResetsAt!.Value);
+                    if (activation.ConfirmedReset(window) is { } changedReset)
                     {
                         settings.WriteActivatedReset(target, changedReset);
                         pendingActivations.Remove(target);
@@ -148,23 +141,14 @@ internal sealed partial class UsageUpdates
                         continue;
                     }
 
-                    if (window is { UsedPercent: >= 100 })
+                    if (window?.IsUsedUp == true)
                     {
                         pendingActivations.Remove(target);
                         continue;
                     }
 
-                    if (pendingActivations.TryGetValue(target, out var failedExisting))
-                    {
-                        failedExisting.NextAttemptAt = now.AddMinutes(5);
-                    }
-                    else
-                    {
-                        pendingActivations[target] = new PendingActivation(
-                            originalReset,
-                            attempts: 0,
-                            now.AddMinutes(5));
-                    }
+                    activation.RecordRequestFailed(now);
+                    pendingActivations[target] = activation;
                 }
 
                 return (
@@ -180,18 +164,10 @@ internal sealed partial class UsageUpdates
 
             foreach (var target in targets)
             {
-                if (pendingActivations.TryGetValue(target, out var existing))
-                {
-                    existing.Attempts++;
-                    existing.NextAttemptAt = now.AddMinutes(1);
-                }
-                else
-                {
-                    pendingActivations[target] = new PendingActivation(
-                        Window(snapshot, target)!.ResetsAt!.Value,
-                        attempts: 1,
-                        now.AddMinutes(1));
-                }
+                var activation = pendingActivations.GetValueOrDefault(target)
+                    ?? new PendingActivation(Window(snapshot, target)!.ResetsAt!.Value);
+                activation.RecordCompletedAttempt(now);
+                pendingActivations[target] = activation;
             }
         }
 
@@ -216,15 +192,12 @@ internal sealed partial class UsageUpdates
             var current = Window(snapshot, kind);
             if (previousWindows.TryGetValue(kind, out var previous))
             {
-                if (previous is { UsedPercent: < 100 }
-                    && current is { UsedPercent: >= 100 })
+                if (previous is { IsUsedUp: false } && current?.IsUsedUp == true)
                 {
                     usedUp |= Selection(kind);
                 }
 
-                if (previous is { UsedPercent: >= 100, ResetsAt: { } previousReset }
-                    && current is { UsedPercent: 0, ResetsAt: { } currentReset }
-                    && currentReset != previousReset)
+                if (previous is { } prior && current?.IsResetOf(prior) == true)
                 {
                     reset |= Selection(kind);
                 }
@@ -241,8 +214,7 @@ internal sealed partial class UsageUpdates
         var confirmed = AllowanceWindows.None;
         foreach (var (kind, activation) in pendingActivations.ToArray())
         {
-            if (Window(snapshot, kind)?.ResetsAt is not { } currentReset
-                || currentReset == activation.OriginalReset)
+            if (activation.ConfirmedReset(Window(snapshot, kind)) is not { } currentReset)
             {
                 continue;
             }
@@ -259,7 +231,7 @@ internal sealed partial class UsageUpdates
         kind == AllowanceWindowKind.FiveHour ? snapshot.FiveHour : snapshot.Weekly;
 
     private bool IsUnusedAndUnconfirmed(AllowanceWindowKind kind, AllowanceWindow? window) =>
-        window is { UsedPercent: 0, ResetsAt: { } reset }
+        window is { IsUnused: true, ResetsAt: { } reset }
         && settings.ReadActivatedReset(kind) != reset;
 
     private static AllowanceWindows Selection(AllowanceWindowKind kind) =>
@@ -267,14 +239,51 @@ internal sealed partial class UsageUpdates
             ? AllowanceWindows.FiveHour
             : AllowanceWindows.Weekly;
 
-    private sealed class PendingActivation(
-        DateTimeOffset originalReset,
-        int attempts,
-        DateTimeOffset nextAttemptAt)
+    private enum PendingActivationAction
     {
-        public DateTimeOffset OriginalReset { get; } = originalReset;
-        public int Attempts { get; set; } = attempts;
-        public DateTimeOffset NextAttemptAt { get; set; } = nextAttemptAt;
-        public bool FailureReported { get; set; }
+        Wait,
+        Request,
+        Cancel,
+        ReportUnconfirmed
+    }
+
+    private sealed class PendingActivation(DateTimeOffset originalReset)
+    {
+        private int attempts;
+        private DateTimeOffset nextAttemptAt;
+        private bool failureReported;
+
+        public PendingActivationAction TakeNextAction(AllowanceWindow? window, DateTimeOffset now)
+        {
+            if (window?.IsUsedUp == true)
+            {
+                return PendingActivationAction.Cancel;
+            }
+
+            if (failureReported || now < nextAttemptAt)
+            {
+                return PendingActivationAction.Wait;
+            }
+
+            if (attempts < 4)
+            {
+                return PendingActivationAction.Request;
+            }
+
+            failureReported = true;
+            return PendingActivationAction.ReportUnconfirmed;
+        }
+
+        public DateTimeOffset? ConfirmedReset(AllowanceWindow? window) =>
+            window?.ResetsAt is { } reset && reset != originalReset ? reset : null;
+
+        public void RecordCompletedAttempt(DateTimeOffset now)
+        {
+            attempts++;
+            nextAttemptAt = now.AddMinutes(1);
+        }
+
+        public void RecordRequestFailed(DateTimeOffset now) =>
+            nextAttemptAt = now.AddMinutes(5);
     }
 }
