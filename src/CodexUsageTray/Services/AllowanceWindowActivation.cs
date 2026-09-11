@@ -45,7 +45,13 @@ internal interface IAllowanceWindowActivationSettings
     void WriteActivatedReset(AllowanceWindowKind window, DateTimeOffset reset);
 }
 
-internal sealed class AllowanceWindowActivation : IDisposable
+internal interface IAllowanceWindowPreferences
+{
+    bool ActivationEnabled { get; set; }
+    bool NotificationsEnabled { get; set; }
+}
+
+internal sealed class AllowanceWindowActivation : IDisposable, IAllowanceWindowPreferences
 {
     private readonly IAllowanceWindowActivationCommand command;
     private readonly IUsageSnapshotRefresher snapshots;

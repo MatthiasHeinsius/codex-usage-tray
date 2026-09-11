@@ -1,5 +1,3 @@
-using System.Globalization;
-
 namespace CodexUsageTray;
 
 internal sealed class UsagePopupForm : Form
@@ -29,7 +27,7 @@ internal sealed class UsagePopupForm : Form
     private readonly RefreshIconButton refreshButton;
     private readonly ToolTip toolTip = new();
     private readonly System.Windows.Forms.Timer deactivateTimer = new() { Interval = 100 };
-    private UsageSnapshot? displayedSnapshot;
+    private UsagePresentation.PopupPresentation? displayedPresentation;
     private bool compactView;
     private Control? dragControl;
     private Point dragStartCursor;
@@ -239,10 +237,10 @@ internal sealed class UsagePopupForm : Form
         }
     }
 
-    public void ShowSnapshot(UsageSnapshot snapshot)
+    public void ShowPresentation(UsagePresentation.PopupPresentation presentation)
     {
-        displayedSnapshot = snapshot;
-        RenderSnapshot(snapshot);
+        displayedPresentation = presentation;
+        RenderPresentation(presentation);
     }
 
     internal void SetViewModeForScreenshot(bool compact)
@@ -251,12 +249,8 @@ internal sealed class UsagePopupForm : Form
         ApplyViewMode(compact, preserveBottom: false);
     }
 
-    private void RenderSnapshot(UsageSnapshot snapshot)
+    private void RenderPresentation(UsagePresentation.PopupPresentation presentation)
     {
-        var presentation = UsagePresentation.Create(
-            snapshot,
-            DateTimeOffset.Now,
-            CultureInfo.CurrentCulture).Popup;
         statusLabel.Text = presentation.AccountStatus;
         fiveHourValue.Text = presentation.FiveHour.RemainingText;
         fiveHourReset.Text = compactView
@@ -344,9 +338,9 @@ internal sealed class UsagePopupForm : Form
         }
 
         toolTip.SetToolTip(viewModeButton, compact ? "Show extended view" : "Show compact view");
-        if (displayedSnapshot is not null)
+        if (displayedPresentation is not null)
         {
-            RenderSnapshot(displayedSnapshot);
+            RenderPresentation(displayedPresentation);
         }
 
         Invalidate(invalidateChildren: true);
