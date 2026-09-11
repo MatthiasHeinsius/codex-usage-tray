@@ -265,7 +265,7 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
             reset = DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
         }
 
-        destination.Add(new AllowanceWindow(Math.Clamp(used, 0, 100), durationValue, reset));
+        destination.Add(new AllowanceWindow(used, durationValue, reset));
     }
 
     private static string? GetString(JsonElement element, string name) =>
