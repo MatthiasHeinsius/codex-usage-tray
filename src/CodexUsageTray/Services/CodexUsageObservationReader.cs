@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 
 namespace CodexUsageTray;
@@ -8,7 +7,13 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(45);
     private static readonly string ClientVersion = typeof(CodexUsageObservationReader).Assembly
         .GetName().Version?.ToString(3) ?? "unknown";
+    private readonly ICodexProcessExecution processExecution;
     private readonly LocalTokenUsageReader localTokenUsage = new();
+
+    internal CodexUsageObservationReader(ICodexProcessExecution processExecution)
+    {
+        this.processExecution = processExecution;
+    }
 
     public Task<UsageObservations> ReadAsync(
         UsageObservationRequest request,
@@ -17,125 +22,115 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
 
     private async Task<UsageObservations> ReadUsageAsync(bool includeActivity, CancellationToken cancellationToken)
     {
-        var codexPath = CodexCommandLocator.Find();
-        using var process = StartAppServer(codexPath);
-        var errors = new List<string>();
-        process.ErrorDataReceived += (_, eventArgs) =>
-        {
-            if (!string.IsNullOrWhiteSpace(eventArgs.Data))
-            {
-                lock (errors)
-                {
-                    errors.Add(eventArgs.Data);
-                }
-            }
-        };
-        process.BeginErrorReadLine();
-
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(RequestTimeout);
-
-        try
-        {
-            await SendAsync(process, new
-            {
-                id = 1,
-                method = "initialize",
-                @params = new
-                {
-                    clientInfo = new { name = "codex-usage-tray", title = "Codex Usage Tray", version = ClientVersion },
-                    capabilities = new { experimentalApi = true }
-                }
-            });
-
-            await ReadResponseAsync(process, 1, timeout.Token);
-            await SendAsync(process, new { method = "initialized" });
-            await SendAsync(process, new { id = 2, method = "account/rateLimits/read", @params = (object?)null });
-            if (includeActivity)
-            {
-                await SendAsync(process, new { id = 3, method = "account/usage/read", @params = (object?)null });
-            }
-
-            JsonElement? rateLimits = null;
-            JsonElement? tokenUsage = null;
-
-            while (rateLimits is null || (includeActivity && tokenUsage is null))
-            {
-                var response = await ReadNextMessageAsync(process, timeout.Token);
-                if (!response.TryGetProperty("id", out var idElement) || !idElement.TryGetInt32(out var id))
-                {
-                    continue;
-                }
-
-                ThrowIfProtocolError(response);
-                if (!response.TryGetProperty("result", out var result))
-                {
-                    continue;
-                }
-
-                if (id == 2)
-                {
-                    rateLimits = result.Clone();
-                }
-                else if (id == 3)
-                {
-                    tokenUsage = result.Clone();
-                }
-            }
-
-            var now = DateTimeOffset.Now;
-            var account = ParseAccountObservation(rateLimits.Value, tokenUsage, now);
-            LocalUsageObservation? local = null;
-            if (account.Activity is AccountActivityObservation.Observed { TodayTokens: null })
+        return await processExecution.ExchangeLinesAsync(
+            "app-server --stdio",
+            RequestTimeout,
+            async lines =>
             {
                 try
                 {
-                    var localToday = localTokenUsage.ReadToday(now);
-                    if (localToday is { } tokens)
+                    await SendAsync(lines, new
                     {
-                        local = new LocalUsageObservation(DateOnly.FromDateTime(now.LocalDateTime), tokens);
+                        id = 1,
+                        method = "initialize",
+                        @params = new
+                        {
+                            clientInfo = new
+                            {
+                                name = "codex-usage-tray",
+                                title = "Codex Usage Tray",
+                                version = ClientVersion
+                            },
+                            capabilities = new { experimentalApi = true }
+                        }
+                    }).ConfigureAwait(false);
+
+                    await ReadResponseAsync(lines, 1).ConfigureAwait(false);
+                    await SendAsync(lines, new { method = "initialized" }).ConfigureAwait(false);
+                    await SendAsync(
+                        lines,
+                        new { id = 2, method = "account/rateLimits/read", @params = (object?)null })
+                        .ConfigureAwait(false);
+                    if (includeActivity)
+                    {
+                        await SendAsync(
+                            lines,
+                            new { id = 3, method = "account/usage/read", @params = (object?)null })
+                            .ConfigureAwait(false);
                     }
+
+                    JsonElement? rateLimits = null;
+                    JsonElement? tokenUsage = null;
+
+                    while (rateLimits is null || (includeActivity && tokenUsage is null))
+                    {
+                        var response = await ReadNextMessageAsync(lines).ConfigureAwait(false);
+                        if (!response.TryGetProperty("id", out var idElement)
+                            || !idElement.TryGetInt32(out var id))
+                        {
+                            continue;
+                        }
+
+                        ThrowIfProtocolError(response);
+                        if (!response.TryGetProperty("result", out var result))
+                        {
+                            continue;
+                        }
+
+                        if (id == 2)
+                        {
+                            rateLimits = result.Clone();
+                        }
+                        else if (id == 3)
+                        {
+                            tokenUsage = result.Clone();
+                        }
+                    }
+
+                    var now = DateTimeOffset.Now;
+                    var account = ParseAccountObservation(rateLimits.Value, tokenUsage, now);
+                    LocalUsageObservation? local = null;
+                    if (account.Activity is AccountActivityObservation.Observed { TodayTokens: null })
+                    {
+                        try
+                        {
+                            var localToday = localTokenUsage.ReadToday(now);
+                            if (localToday is { } tokens)
+                            {
+                                local = new LocalUsageObservation(
+                                    DateOnly.FromDateTime(now.LocalDateTime),
+                                    tokens);
+                            }
+                        }
+                        catch (IOException)
+                        {
+                            // A Codex session file may be rotating. Try again on the next refresh.
+                        }
+                        catch (UnauthorizedAccessException)
+                        {
+                            // Local session history is an optional fallback.
+                        }
+                    }
+
+                    return new UsageObservations(account, local);
                 }
-                catch (IOException)
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
-                    // A Codex session file may be rotating. Try again on the next refresh.
+                    throw;
                 }
-                catch (UnauthorizedAccessException)
+                catch (OperationCanceledException)
                 {
-                    // Local session history is an optional fallback.
+                    var detail = lines.LastStandardErrorLine ?? "No diagnostic message was returned.";
+                    throw new InvalidOperationException(
+                        $"Codex did not return usage data within 45 seconds. {detail}");
                 }
-            }
-
-            return new UsageObservations(account, local);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (OperationCanceledException)
-        {
-            string detail;
-            lock (errors)
-            {
-                detail = errors.LastOrDefault() ?? "No diagnostic message was returned.";
-            }
-
-            throw new InvalidOperationException($"Codex did not return usage data within 45 seconds. {detail}");
-        }
-        catch (Exception exception) when (exception is not InvalidOperationException)
-        {
-            string detail;
-            lock (errors)
-            {
-                detail = errors.LastOrDefault() ?? exception.Message;
-            }
-
-            throw new InvalidOperationException($"Could not read Codex usage: {detail}", exception);
-        }
-        finally
-        {
-            TryStop(process);
-        }
+                catch (Exception exception) when (exception is not InvalidOperationException)
+                {
+                    var detail = lines.LastStandardErrorLine ?? exception.Message;
+                    throw new InvalidOperationException($"Could not read Codex usage: {detail}", exception);
+                }
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     internal static AccountUsageObservation ParseAccountObservation(
@@ -273,39 +268,16 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
             ? value.GetString()
             : null;
 
-    private static Process StartAppServer(string codexPath)
-    {
-        var commandInterpreter = Environment.GetEnvironmentVariable("ComSpec") ?? "cmd.exe";
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = commandInterpreter,
-            Arguments = $"/d /s /c \"\"{codexPath}\" app-server --stdio\"",
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardInput = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardInputEncoding = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-            StandardOutputEncoding = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
-            StandardErrorEncoding = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
-        };
+    private static Task SendAsync(ICodexLineExchange lines, object message) =>
+        lines.WriteLineAsync(JsonSerializer.Serialize(message));
 
-        var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Windows could not start the Codex CLI.");
-        return process;
-    }
-
-    private static async Task SendAsync(Process process, object message)
-    {
-        await process.StandardInput.WriteLineAsync(JsonSerializer.Serialize(message));
-        await process.StandardInput.FlushAsync();
-    }
-
-    private static async Task<JsonElement> ReadResponseAsync(Process process, int expectedId, CancellationToken cancellationToken)
+    private static async Task<JsonElement> ReadResponseAsync(
+        ICodexLineExchange lines,
+        int expectedId)
     {
         while (true)
         {
-            var response = await ReadNextMessageAsync(process, cancellationToken);
+            var response = await ReadNextMessageAsync(lines).ConfigureAwait(false);
             if (response.TryGetProperty("id", out var id) && id.TryGetInt32(out var number) && number == expectedId)
             {
                 ThrowIfProtocolError(response);
@@ -314,9 +286,9 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
         }
     }
 
-    private static async Task<JsonElement> ReadNextMessageAsync(Process process, CancellationToken cancellationToken)
+    private static async Task<JsonElement> ReadNextMessageAsync(ICodexLineExchange lines)
     {
-        var line = await process.StandardOutput.ReadLineAsync(cancellationToken);
+        var line = await lines.ReadLineAsync().ConfigureAwait(false);
         if (line is null)
         {
             throw new InvalidOperationException("The Codex app-server closed before returning usage data.");
@@ -339,19 +311,4 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
         throw new InvalidOperationException($"Codex returned an error: {message}");
     }
 
-    private static void TryStop(Process process)
-    {
-        try
-        {
-            process.StandardInput.Close();
-            if (!process.WaitForExit(500))
-            {
-                process.Kill(entireProcessTree: true);
-            }
-        }
-        catch
-        {
-            // The process may already have exited.
-        }
-    }
 }

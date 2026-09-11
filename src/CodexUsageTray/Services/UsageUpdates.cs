@@ -32,12 +32,16 @@ internal sealed partial class UsageUpdates : IAsyncDisposable
         notificationsEnabled = settings.NotificationsEnabled;
     }
 
-    public static UsageUpdates CreateDefault() => new(
-        new CodexUsageObservationReader(),
-        new CodexWindowStarter(),
-        new RegistryAllowanceWindowActivationSettings(),
-        TimeProvider.System,
-        CultureInfo.CurrentCulture);
+    public static UsageUpdates CreateDefault()
+    {
+        var processExecution = new WindowsCodexProcessExecution();
+        return new UsageUpdates(
+            new CodexUsageObservationReader(processExecution),
+            new CodexWindowStarter(processExecution),
+            new RegistryAllowanceWindowActivationSettings(),
+            TimeProvider.System,
+            CultureInfo.CurrentCulture);
+    }
 
     public bool ActivationEnabled
     {
