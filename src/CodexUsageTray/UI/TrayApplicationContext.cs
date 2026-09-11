@@ -1,12 +1,11 @@
 using System.Diagnostics;
-using System.Globalization;
 
 namespace CodexUsageTray;
 
 internal sealed class TrayApplicationContext : ApplicationContext
 {
-    private readonly UsageSnapshots usageSnapshots;
-    private readonly AllowanceWindowActivation activation;
+    private readonly UsageUpdates usageUpdates;
+    private readonly IAllowanceWindowPreferences allowancePreferences;
     private readonly NotifyIcon notifyIcon;
     private readonly UsagePopupForm popup = new();
     private readonly System.Windows.Forms.Timer refreshTimer;
@@ -15,14 +14,16 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem allowanceNotificationsItem;
     private Icon currentIcon;
     private bool popupVisibleWhenTrayMousePressed;
+    private bool exiting;
+    private int pendingRefreshes;
     private long? lastHandledTrayClickTimestamp;
 
     public TrayApplicationContext(
-        UsageSnapshots usageSnapshots,
-        AllowanceWindowActivation activation)
+        UsageUpdates usageUpdates,
+        IAllowanceWindowPreferences allowancePreferences)
     {
-        this.usageSnapshots = usageSnapshots;
-        this.activation = activation;
+        this.usageUpdates = usageUpdates;
+        this.allowancePreferences = allowancePreferences;
         currentIcon = TrayIconRenderer.Create(100, 100);
         startupItem = new ToolStripMenuItem("Start with Windows")
         {
@@ -32,13 +33,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
         startupItem.CheckedChanged += StartupItemOnCheckedChanged;
         windowStartItem = new ToolStripMenuItem("Auto-activate unused windows with \"Hi\"")
         {
-            Checked = activation.ActivationEnabled,
+            Checked = allowancePreferences.ActivationEnabled,
             CheckOnClick = true
         };
         windowStartItem.CheckedChanged += WindowStartItemOnCheckedChanged;
         allowanceNotificationsItem = new ToolStripMenuItem("Allowance notifications")
         {
-            Checked = activation.NotificationsEnabled,
+            Checked = allowancePreferences.NotificationsEnabled,
             CheckOnClick = true
         };
         allowanceNotificationsItem.CheckedChanged += AllowanceNotificationsItemOnCheckedChanged;
@@ -96,28 +97,33 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     protected override void ExitThreadCore()
     {
+        exiting = true;
         refreshTimer.Stop();
         notifyIcon.Visible = false;
+        usageUpdates.DisposeAsync().AsTask().GetAwaiter().GetResult();
         notifyIcon.Dispose();
         currentIcon.Dispose();
         popup.Dispose();
-        usageSnapshots.DisposeAsync().AsTask().GetAwaiter().GetResult();
         base.ExitThreadCore();
     }
 
     private async Task<bool> RefreshAsync(bool includeActivity = false)
     {
+        pendingRefreshes++;
         popup.SetLoading(true);
         try
         {
-            var snapshot = includeActivity
-                ? await usageSnapshots.RefreshWithActivityAsync()
-                : await usageSnapshots.RefreshAsync();
-            popup.ShowSnapshot(snapshot);
-            UpdateTray(snapshot);
-            var activationResult = await activation.ObserveAsync(snapshot);
-            ShowAllowanceEvents(activationResult);
+            var update = includeActivity
+                ? await usageUpdates.RefreshWithActivityAsync()
+                : await usageUpdates.RefreshAsync();
+            popup.ShowPresentation(update.Presentation.Popup);
+            UpdateTray(update.Presentation.Tray);
+            ShowAllowanceEvents(update.AllowanceEvents);
             return true;
+        }
+        catch (OperationCanceledException) when (exiting)
+        {
+            return false;
         }
         catch (Exception exception)
         {
@@ -128,7 +134,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
         }
         finally
         {
-            popup.SetLoading(false);
+            pendingRefreshes--;
+            if (!exiting)
+            {
+                popup.SetLoading(pendingRefreshes > 0);
+            }
         }
     }
 
@@ -138,11 +148,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             popup.Hide();
             return;
-        }
-
-        if (usageSnapshots.Current is { } snapshot)
-        {
-            popup.ShowSnapshot(snapshot);
         }
 
         popup.ShowNearTray();
@@ -179,12 +184,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         return menu;
     }
 
-    private void UpdateTray(UsageSnapshot usage)
+    private void UpdateTray(UsagePresentation.TrayPresentation presentation)
     {
-        var presentation = UsagePresentation.Create(
-            usage,
-            DateTimeOffset.Now,
-            CultureInfo.CurrentCulture).Tray;
         var replacement = TrayIconRenderer.Create(
             presentation.FiveHourRemaining,
             presentation.WeeklyRemaining);
@@ -215,7 +216,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         try
         {
-            activation.ActivationEnabled = windowStartItem.Checked;
+            allowancePreferences.ActivationEnabled = windowStartItem.Checked;
             if (windowStartItem.Checked)
             {
                 _ = RefreshAsync();
@@ -234,7 +235,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         try
         {
-            activation.NotificationsEnabled = allowanceNotificationsItem.Checked;
+            allowancePreferences.NotificationsEnabled = allowanceNotificationsItem.Checked;
         }
         catch (Exception exception)
         {

@@ -12,6 +12,10 @@ _Avoid_: Raw account response, usage response
 A source-specific reading of usage facts before they are reconciled into a Usage Snapshot.
 _Avoid_: Usage Snapshot, raw response
 
+**Usage Update**:
+One requested refresh that produces a final Usage Snapshot and its corresponding user-facing presentation after any Allowance Window Activation work finishes.
+_Avoid_: Refresh cycle, display cycle
+
 **Observation Time**:
 The time at which a Usage Observation read a usage fact. A retained fact keeps its original Observation Time when it appears in a later Usage Snapshot.
 _Avoid_: Updated time, retrieval time

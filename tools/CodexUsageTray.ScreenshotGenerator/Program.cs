@@ -32,7 +32,7 @@ internal static class Program
             CultureInfo.CurrentCulture);
 
         using var popup = new CodexUsageTray.UsagePopupForm();
-        popup.ShowSnapshot(snapshot);
+        popup.ShowPresentation(presentation.Popup);
         popup.Location = new Point(-10_000, -10_000);
         popup.Show();
         try
