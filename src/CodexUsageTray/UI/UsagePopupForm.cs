@@ -402,14 +402,18 @@ internal sealed class UsagePopupForm : Form
     {
         var cursorLocation = Cursor.Position;
         var workingArea = Screen.FromPoint(cursorLocation).WorkingArea;
-        Location = GetLocationWhenShown(
+        PositionNearTray();
+        Show();
+        // The first Show applies DPI-aware label heights, so position again with the final size.
+        PositionNearTray();
+        Activate();
+
+        void PositionNearTray() => Location = GetLocationWhenShown(
             Location,
             pinButton.IsPinned,
             cursorLocation,
             Size,
             workingArea);
-        Show();
-        Activate();
     }
 
     internal static Point GetLocationWhenShown(
