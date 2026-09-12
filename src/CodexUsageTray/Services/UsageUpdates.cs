@@ -2,7 +2,15 @@ using System.Globalization;
 
 namespace CodexUsageTray;
 
-internal sealed partial class UsageUpdates : IAsyncDisposable
+internal interface IUsageUpdates : IAsyncDisposable
+{
+    bool ActivationEnabled { get; set; }
+    bool NotificationsEnabled { get; set; }
+    Task<UsagePresentation.Ready> RefreshAsync(CancellationToken cancellationToken = default);
+    Task<UsagePresentation.Ready> RefreshWithActivityAsync(CancellationToken cancellationToken = default);
+}
+
+internal sealed partial class UsageUpdates : IUsageUpdates
 {
     private readonly IUsageObservationReader observations;
     private readonly IAllowanceWindowActivationCommand activationCommand;
@@ -81,10 +89,10 @@ internal sealed partial class UsageUpdates : IAsyncDisposable
         }
     }
 
-    public Task<UsagePresentation> RefreshAsync(CancellationToken cancellationToken = default) =>
+    public Task<UsagePresentation.Ready> RefreshAsync(CancellationToken cancellationToken = default) =>
         RequestAsync(includeActivity: false, CapturePreferences(), cancellationToken);
 
-    public Task<UsagePresentation> RefreshWithActivityAsync(CancellationToken cancellationToken = default) =>
+    public Task<UsagePresentation.Ready> RefreshWithActivityAsync(CancellationToken cancellationToken = default) =>
         RequestAsync(includeActivity: true, CapturePreferences(), cancellationToken);
 
     public async ValueTask DisposeAsync()
@@ -121,7 +129,7 @@ internal sealed partial class UsageUpdates : IAsyncDisposable
         }
     }
 
-    private async Task<UsagePresentation> RequestAsync(
+    private async Task<UsagePresentation.Ready> RequestAsync(
         bool includeActivity,
         (bool ActivationEnabled, bool NotificationsEnabled) preferences,
         CancellationToken cancellationToken)

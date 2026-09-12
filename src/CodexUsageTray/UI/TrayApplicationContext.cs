@@ -2,9 +2,9 @@ using System.Diagnostics;
 
 namespace CodexUsageTray;
 
-internal sealed class TrayApplicationContext : ApplicationContext
+internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresentationSink
 {
-    private readonly UsageUpdates usageUpdates;
+    private readonly UsagePresentations usagePresentations;
     private readonly NotifyIcon notifyIcon;
     private readonly UsagePopupForm popup = new();
     private readonly System.Windows.Forms.Timer refreshTimer;
@@ -14,13 +14,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private Icon currentIcon;
     private bool popupVisibleWhenTrayMousePressed;
     private bool exiting;
-    private int pendingRefreshes;
     private long? lastHandledTrayClickTimestamp;
 
-    public TrayApplicationContext(UsageUpdates usageUpdates)
+    public TrayApplicationContext(Func<IUsagePresentationSink, UsagePresentations> createPresentations)
     {
-        this.usageUpdates = usageUpdates;
+        ArgumentNullException.ThrowIfNull(createPresentations);
+        popup.CreateControl();
         currentIcon = TrayIconRenderer.Create(100, 100);
+        notifyIcon = new NotifyIcon
+        {
+            Icon = currentIcon,
+            Text = "Codex usage · connecting"
+        };
+        usagePresentations = createPresentations(this);
         startupItem = new ToolStripMenuItem("Start with Windows")
         {
             Checked = StartupRegistration.IsEnabled(),
@@ -29,13 +35,13 @@ internal sealed class TrayApplicationContext : ApplicationContext
         startupItem.CheckedChanged += StartupItemOnCheckedChanged;
         windowStartItem = new ToolStripMenuItem("Auto-activate unused windows with \"Hi\"")
         {
-            Checked = usageUpdates.ActivationEnabled,
+            Checked = usagePresentations.ActivationEnabled,
             CheckOnClick = true
         };
         windowStartItem.CheckedChanged += WindowStartItemOnCheckedChanged;
         allowanceNotificationsItem = new ToolStripMenuItem("Allowance notifications")
         {
-            Checked = usageUpdates.NotificationsEnabled,
+            Checked = usagePresentations.NotificationsEnabled,
             CheckOnClick = true
         };
         allowanceNotificationsItem.CheckedChanged += AllowanceNotificationsItemOnCheckedChanged;
@@ -45,17 +51,12 @@ internal sealed class TrayApplicationContext : ApplicationContext
             windowStartItem,
             allowanceNotificationsItem,
             (_, _) => ShowPopup(),
-            async (_, _) => await RefreshAsync(includeActivity: true),
+            async (_, _) => await RequestAsync(UsageUpdateIntent.Activity),
             (_, _) => OpenUsagePage(),
             (_, _) => ExitThread());
 
-        notifyIcon = new NotifyIcon
-        {
-            Icon = currentIcon,
-            Text = "Codex usage · connecting",
-            Visible = true,
-            ContextMenuStrip = menu
-        };
+        notifyIcon.ContextMenuStrip = menu;
+        notifyIcon.Visible = true;
         notifyIcon.MouseDown += (_, eventArgs) =>
         {
             if (eventArgs.Button == MouseButtons.Left)
@@ -81,14 +82,14 @@ internal sealed class TrayApplicationContext : ApplicationContext
             }
         };
 
-        popup.RefreshRequested += async (_, _) => await RefreshAsync(includeActivity: true);
+        popup.RefreshRequested += async (_, _) => await RequestAsync(UsageUpdateIntent.Activity);
         popup.UsagePageRequested += (_, _) => OpenUsagePage();
-        popup.ExtendedViewActivated += async (_, _) => await RefreshAsync(includeActivity: true);
+        popup.ExtendedViewActivated += async (_, _) => await RequestAsync(UsageUpdateIntent.Activity);
         refreshTimer = new System.Windows.Forms.Timer { Interval = 60 * 1000 };
-        refreshTimer.Tick += async (_, _) => await RefreshAsync();
+        refreshTimer.Tick += async (_, _) => await RequestAsync(UsageUpdateIntent.Routine);
         refreshTimer.Start();
 
-        _ = RefreshAsync();
+        _ = RequestAsync(UsageUpdateIntent.Routine);
     }
 
     protected override void ExitThreadCore()
@@ -96,45 +97,22 @@ internal sealed class TrayApplicationContext : ApplicationContext
         exiting = true;
         refreshTimer.Stop();
         notifyIcon.Visible = false;
-        usageUpdates.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        usagePresentations.DisposeAsync().AsTask().GetAwaiter().GetResult();
         notifyIcon.Dispose();
         currentIcon.Dispose();
         popup.Dispose();
         base.ExitThreadCore();
     }
 
-    private async Task<bool> RefreshAsync(bool includeActivity = false)
+    private async Task RequestAsync(UsageUpdateIntent intent)
     {
-        pendingRefreshes++;
-        popup.SetLoading(true);
         try
         {
-            var presentation = includeActivity
-                ? await usageUpdates.RefreshWithActivityAsync()
-                : await usageUpdates.RefreshAsync();
-            popup.ShowPresentation(presentation.Popup);
-            UpdateTray(presentation.Tray);
-            ShowNotices(presentation.Notices);
-            return true;
+            await usagePresentations.RequestAsync(intent);
         }
         catch (OperationCanceledException) when (exiting)
         {
-            return false;
-        }
-        catch (Exception exception)
-        {
-            var message = OneLine(exception.Message);
-            popup.ShowError(message);
-            notifyIcon.Text = TruncateTooltip($"Codex usage · {message}");
-            return false;
-        }
-        finally
-        {
-            pendingRefreshes--;
-            if (!exiting)
-            {
-                popup.SetLoading(pendingRefreshes > 0);
-            }
+            // Disposal cancels active and queued Usage Updates.
         }
     }
 
@@ -149,7 +127,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         popup.ShowNearTray();
         if (popup.IsExtendedView)
         {
-            _ = RefreshAsync(includeActivity: true);
+            _ = RequestAsync(UsageUpdateIntent.Activity);
         }
     }
 
@@ -178,6 +156,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, exit);
         return menu;
+    }
+
+    void IUsagePresentationSink.Present(UsagePresentation presentation)
+    {
+        if (popup.InvokeRequired)
+        {
+            popup.Invoke(() => ((IUsagePresentationSink)this).Present(presentation));
+            return;
+        }
+
+        popup.ShowPresentation(presentation);
+        UpdateTray(presentation.Tray);
+        ShowNotices(presentation.Notices);
     }
 
     private void UpdateTray(UsagePresentation.TrayPresentation presentation)
@@ -212,10 +203,10 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         try
         {
-            usageUpdates.ActivationEnabled = windowStartItem.Checked;
+            usagePresentations.ActivationEnabled = windowStartItem.Checked;
             if (windowStartItem.Checked)
             {
-                _ = RefreshAsync();
+                _ = RequestAsync(UsageUpdateIntent.Routine);
             }
         }
         catch (Exception exception)
@@ -231,7 +222,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         try
         {
-            usageUpdates.NotificationsEnabled = allowanceNotificationsItem.Checked;
+            usagePresentations.NotificationsEnabled = allowanceNotificationsItem.Checked;
         }
         catch (Exception exception)
         {
@@ -271,6 +262,4 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private static string TruncateTooltip(string value) => value.Length <= 63 ? value : value[..63];
 
-    private static string OneLine(string value) =>
-        value.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
 }
