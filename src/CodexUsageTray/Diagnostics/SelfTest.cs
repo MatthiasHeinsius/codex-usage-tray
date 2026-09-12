@@ -84,14 +84,26 @@ internal static class SelfTest
         {
             popup.SetViewModeForScreenshot(compact: false);
             popup.ShowPresentation(UsagePresentation.CreateLoading(previous: null));
+            Assert(!popup.HeaderControlsOverlap, "scaled header controls do not overlap");
+            Assert(popup.InferenceDividerPaddingIsBalanced, "scaled inference padding is balanced");
             Assert(
                 popup.StatusTextBottomClearance >= 2,
                 $"loading status keeps descender clearance ({popup.StatusTextBottomClearance}px)");
+            Assert(
+                popup.FixedLabelVerticalClearance >= 4,
+                $"fixed-height labels keep vertical clearance ({popup.FixedLabelVerticalClearance}px)");
             var extendedRefreshInset = popup.RefreshButtonBottomInset;
             popup.SetViewModeForScreenshot(compact: true);
             Assert(popup.CompactRefreshLayoutIsCorrect, "compact refresh button fits without extra height");
             Assert(popup.RefreshButtonBottomInset == extendedRefreshInset,
                 "refresh button stays fixed when changing view mode");
+            var currentScreen = Screen.FromControl(popup);
+            popup.Location = new Point(
+                currentScreen.WorkingArea.Left + 100,
+                currentScreen.WorkingArea.Top + 8);
+            var snappedTop = popup.Top;
+            popup.SetViewModeForScreenshot(compact: false, preserveBottom: true);
+            Assert(popup.Top == snappedTop, "view mode preserves an eight-pixel top inset");
         }
         finally
         {

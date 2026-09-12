@@ -42,7 +42,7 @@ internal abstract record UsagePresentation(
     {
         var fiveHour = PresentAllowance(snapshot.FiveHour, now, formatProvider);
         var weekly = PresentAllowance(snapshot.Weekly, now, formatProvider);
-        var observationText = PresentObservationTimes(snapshot, formatProvider);
+        var observationText = PresentLatestObservationTime(snapshot, formatProvider);
         var popup = new PopupPresentation(
             AccountStatus(snapshot),
             fiveHour,
@@ -117,20 +117,15 @@ internal abstract record UsagePresentation(
         ResetText: "Reset time unavailable",
         CompactResetText: "Reset unknown");
 
-    private static string PresentObservationTimes(
+    private static string PresentLatestObservationTime(
         UsageSnapshot snapshot,
         IFormatProvider formatProvider)
     {
-        var allowanceTime = snapshot.AllowanceObservedAt.LocalDateTime;
-        if (snapshot.ActivityObservedAt == snapshot.AllowanceObservedAt)
-        {
-            return $"Updated {allowanceTime.ToString("t", formatProvider)}";
-        }
-
-        var activityPopup = snapshot.ActivityObservedAt is { } activityObservedAt
-            ? $"Activity updated {activityObservedAt.LocalDateTime.ToString("t", formatProvider)}"
-            : "Activity not updated";
-        return $"Limits updated {allowanceTime.ToString("t", formatProvider)} · {activityPopup}";
+        var latest = snapshot.ActivityObservedAt is { } activityObservedAt
+            && activityObservedAt > snapshot.AllowanceObservedAt
+                ? activityObservedAt
+                : snapshot.AllowanceObservedAt;
+        return $"Updated {latest.LocalDateTime.ToString("t", formatProvider)}";
     }
 
     private static AllowancePresentation PresentAllowance(

@@ -61,8 +61,7 @@ public sealed partial class UsageUpdatesTests
         Assert.Equal("123.46M tokens", presentation.Popup.LifetimeTokens);
         Assert.Equal("987.7K tokens", presentation.Popup.TodayTokens);
         Assert.Equal(
-            $"Limits updated {allowanceObservedAt.LocalDateTime.ToString("t", CultureInfo.InvariantCulture)} · "
-                + $"Activity updated {activityObservedAt.LocalDateTime.ToString("t", CultureInfo.InvariantCulture)}",
+            $"Updated {allowanceObservedAt.LocalDateTime.ToString("t", CultureInfo.InvariantCulture)}",
             presentation.Popup.UpdatedText);
     }
 
