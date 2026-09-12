@@ -85,6 +85,7 @@ internal static class SelfTest
             popup.SetViewModeForScreenshot(compact: false);
             popup.ShowPresentation(UsagePresentation.CreateLoading(previous: null));
             Assert(!popup.HeaderControlsOverlap, "scaled header controls do not overlap");
+            Assert(popup.ContentPaddingIsUniform, "popup content padding is uniform");
             Assert(popup.InferenceDividerPaddingIsBalanced, "scaled inference padding is balanced");
             Assert(
                 popup.StatusTextBottomClearance >= 2,

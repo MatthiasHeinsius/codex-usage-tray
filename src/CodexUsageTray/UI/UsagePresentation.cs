@@ -245,14 +245,6 @@ internal abstract record UsagePresentation(
             }
         }
 
-        if (events.Unconfirmed != AllowanceWindows.None)
-        {
-            notices.Add(new NoticePresentation(
-                $"Could not confirm {AllowanceNames(events.Unconfirmed).ToLowerInvariant()} allowance activation after four requests.",
-                NoticeSeverity.Warning,
-                TimeSpan.FromSeconds(7)));
-        }
-
         return [.. notices];
     }
 

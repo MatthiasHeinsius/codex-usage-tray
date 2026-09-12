@@ -14,7 +14,7 @@ This is an unofficial community project. It is not affiliated with OpenAI.
 - Total inference tokens reported for the account
 - Live countdowns in a compact view
 
-The tray icon has two rings. The inner ring shows the 5-hour allowance. The outer ring shows the weekly allowance. The app refreshes the limits and countdowns once a minute. It refreshes daily and lifetime activity when you open or switch to the extended view.
+The tray icon has two rings. The outer ring shows the 5-hour allowance. The inner ring shows the weekly allowance. The rings and extended-view bars change color continuously from green at 100% remaining through yellow near 50%, orange at 25%, and red at 10%. The app refreshes the limits and countdowns once a minute. It refreshes daily and lifetime activity when you open or switch to the extended view.
 
 ## Screenshots
 
@@ -61,9 +61,9 @@ Use the view button to switch between compact and extended modes. Compact mode s
 
 The pin button keeps the popup open and above other windows. While pinned, drag the background or text to move it. The popup snaps either flush with the screen and taskbar edges or with an eight-pixel gap. A pinned popup keeps its position when hidden. An unpinned popup opens next to the tray.
 
-`Auto-activate unused windows with "Hi"` activates a 5-hour or weekly allowance that has 100% remaining by sending an ephemeral `Hi` request with GPT-5.6 Luna. This request consumes Codex inference. The app confirms activation when the allowance reset time changes on a later one-minute refresh. It makes one initial request and up to three retries for each activation. A used-up allowance waits for its reset; other command failures retry after five minutes. Retry counts reset when the application restarts.
+`Auto-activate allowance window` activates a 5-hour or weekly allowance that has 100% remaining by sending an ephemeral `Hi` request with GPT-5.6 Luna. This request consumes Codex inference. The app confirms activation when the allowance reset time changes on a later one-minute refresh. It makes one initial request and up to three retries for each activation. A used-up allowance waits for its reset; other command failures retry after five minutes. Retry counts reset when the application restarts.
 
-`Allowance notifications` reports when an allowance becomes used up and when it resets. Notifications are off by default, combine simultaneous 5-hour and weekly events, and do not repeat when the application starts or retries an activation.
+`Notify on allowance changes` reports when an allowance becomes used up and when it resets. Notifications are off by default, combine simultaneous 5-hour and weekly events, and do not repeat when the application starts or retries an activation.
 
 ## Usage data and privacy
 

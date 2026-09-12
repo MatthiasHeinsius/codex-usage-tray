@@ -42,12 +42,7 @@ internal sealed class UsageProgressBar : Control
         var width = Math.Max(7, (int)Math.Round(track.Width * Value / 100d));
         var fill = new Rectangle(track.X, track.Y, Math.Min(width, track.Width), track.Height);
         using var fillPath = RoundedRectangle(fill, 3);
-        using var fillBrush = new SolidBrush(Value switch
-        {
-            <= 10 => Color.FromArgb(239, 68, 68),
-            <= 30 => Color.FromArgb(245, 158, 11),
-            _ => Color.FromArgb(16, 185, 129)
-        });
+        using var fillBrush = new SolidBrush(UsageStatusColor.ForRemainingPercent(Value));
         eventArgs.Graphics.FillPath(fillBrush, fillPath);
     }
 

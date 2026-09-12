@@ -91,17 +91,19 @@ internal static class Program
         {
             CheckOnClick = true
         };
-        using var windowStartItem = new ToolStripMenuItem("Auto-activate unused windows with \"Hi\"")
+        using var allowanceActivationItem = new ToolStripMenuItem(
+            CodexUsageTray.TrayApplicationContext.AllowanceActivationMenuText)
         {
             CheckOnClick = true
         };
-        using var allowanceNotificationsItem = new ToolStripMenuItem("Allowance notifications")
+        using var allowanceNotificationsItem = new ToolStripMenuItem(
+            CodexUsageTray.TrayApplicationContext.AllowanceNotificationsMenuText)
         {
             CheckOnClick = true
         };
         using var menu = CodexUsageTray.TrayApplicationContext.CreateContextMenu(
             startupItem,
-            windowStartItem,
+            allowanceActivationItem,
             allowanceNotificationsItem,
             (_, _) => { },
             (_, _) => { },

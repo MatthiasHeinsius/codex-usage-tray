@@ -17,11 +17,9 @@ internal enum AllowanceWindows
 internal sealed record AllowanceWindowActivationResult(
     AllowanceWindows Reset,
     AllowanceWindows UsedUp,
-    AllowanceWindows Confirmed,
-    AllowanceWindows Unconfirmed)
+    AllowanceWindows Confirmed)
 {
     public static AllowanceWindowActivationResult Empty { get; } = new(
-        AllowanceWindows.None,
         AllowanceWindows.None,
         AllowanceWindows.None,
         AllowanceWindows.None);
@@ -68,7 +66,6 @@ internal sealed partial class UsageUpdates
 
         var now = timeProvider.GetUtcNow();
         var targets = new List<AllowanceWindowKind>();
-        var unconfirmed = AllowanceWindows.None;
         foreach (var (kind, activation) in pendingActivations.ToArray())
         {
             switch (activation.TakeNextAction(Window(snapshot, kind), now))
@@ -80,9 +77,6 @@ internal sealed partial class UsageUpdates
                     break;
                 case PendingActivationAction.Request:
                     targets.Add(kind);
-                    break;
-                case PendingActivationAction.ReportUnconfirmed:
-                    unconfirmed |= Selection(kind);
                     break;
             }
         }
@@ -157,8 +151,7 @@ internal sealed partial class UsageUpdates
                     {
                         Reset = reset,
                         UsedUp = usedUp,
-                        Confirmed = confirmed,
-                        Unconfirmed = unconfirmed
+                        Confirmed = confirmed
                     });
             }
 
@@ -177,8 +170,7 @@ internal sealed partial class UsageUpdates
             {
                 Reset = reset,
                 UsedUp = usedUp,
-                Confirmed = confirmed,
-                Unconfirmed = unconfirmed
+                Confirmed = confirmed
             });
     }
 
@@ -243,15 +235,13 @@ internal sealed partial class UsageUpdates
     {
         Wait,
         Request,
-        Cancel,
-        ReportUnconfirmed
+        Cancel
     }
 
     private sealed class PendingActivation(DateTimeOffset originalReset)
     {
         private int attempts;
         private DateTimeOffset nextAttemptAt;
-        private bool failureReported;
 
         public PendingActivationAction TakeNextAction(AllowanceWindow? window, DateTimeOffset now)
         {
@@ -260,18 +250,12 @@ internal sealed partial class UsageUpdates
                 return PendingActivationAction.Cancel;
             }
 
-            if (failureReported || now < nextAttemptAt)
+            if (now < nextAttemptAt || attempts >= 4)
             {
                 return PendingActivationAction.Wait;
             }
 
-            if (attempts < 4)
-            {
-                return PendingActivationAction.Request;
-            }
-
-            failureReported = true;
-            return PendingActivationAction.ReportUnconfirmed;
+            return PendingActivationAction.Request;
         }
 
         public DateTimeOffset? ConfirmedReset(AllowanceWindow? window) =>

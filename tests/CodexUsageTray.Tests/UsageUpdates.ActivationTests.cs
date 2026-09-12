@@ -56,7 +56,7 @@ public sealed partial class UsageUpdatesTests
     }
 
     [Fact]
-    public async Task UnconfirmedActivationStopsAfterThreeRetries()
+    public async Task ActivationStopsAfterThreeUnconfirmedRetries()
     {
         var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
         var reset = now.AddHours(5);
@@ -71,7 +71,6 @@ public sealed partial class UsageUpdatesTests
             new ActivationSettings(),
             time);
 
-        UsagePresentation? final = null;
         for (var attempt = 0; attempt < observations.Length; attempt++)
         {
             if (attempt > 0)
@@ -79,13 +78,10 @@ public sealed partial class UsageUpdatesTests
                 time.Advance(TimeSpan.FromMinutes(1));
             }
 
-            final = await updates.RefreshAsync();
+            await updates.RefreshAsync();
         }
 
         Assert.Equal(4, command.CallCount);
-        Assert.Equal(
-            "Could not confirm 5-hour allowance activation after four requests.",
-            Assert.Single(final!.Notices).Message);
     }
 
     [Fact]

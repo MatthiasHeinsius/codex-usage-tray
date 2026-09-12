@@ -4,12 +4,14 @@ namespace CodexUsageTray;
 
 internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresentationSink
 {
+    internal const string AllowanceActivationMenuText = "Auto-activate allowance window";
+    internal const string AllowanceNotificationsMenuText = "Notify on allowance changes";
     private readonly UsagePresentations usagePresentations;
     private readonly NotifyIcon notifyIcon;
     private readonly UsagePopupForm popup = new();
     private readonly System.Windows.Forms.Timer refreshTimer;
     private readonly ToolStripMenuItem startupItem;
-    private readonly ToolStripMenuItem windowStartItem;
+    private readonly ToolStripMenuItem allowanceActivationItem;
     private readonly ToolStripMenuItem allowanceNotificationsItem;
     private Icon currentIcon;
     private bool popupVisibleWhenTrayMousePressed;
@@ -33,13 +35,13 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
             CheckOnClick = true
         };
         startupItem.CheckedChanged += StartupItemOnCheckedChanged;
-        windowStartItem = new ToolStripMenuItem("Auto-activate unused windows with \"Hi\"")
+        allowanceActivationItem = new ToolStripMenuItem(AllowanceActivationMenuText)
         {
             Checked = usagePresentations.ActivationEnabled,
             CheckOnClick = true
         };
-        windowStartItem.CheckedChanged += WindowStartItemOnCheckedChanged;
-        allowanceNotificationsItem = new ToolStripMenuItem("Allowance notifications")
+        allowanceActivationItem.CheckedChanged += AllowanceActivationItemOnCheckedChanged;
+        allowanceNotificationsItem = new ToolStripMenuItem(AllowanceNotificationsMenuText)
         {
             Checked = usagePresentations.NotificationsEnabled,
             CheckOnClick = true
@@ -48,7 +50,7 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
 
         var menu = CreateContextMenu(
             startupItem,
-            windowStartItem,
+            allowanceActivationItem,
             allowanceNotificationsItem,
             (_, _) => ShowPopup(),
             async (_, _) => await RequestAsync(UsageUpdateIntent.Activity),
@@ -138,7 +140,7 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
 
     internal static ContextMenuStrip CreateContextMenu(
         ToolStripMenuItem startupMenuItem,
-        ToolStripMenuItem windowStartMenuItem,
+        ToolStripMenuItem allowanceActivationMenuItem,
         ToolStripMenuItem allowanceNotificationsMenuItem,
         EventHandler open,
         EventHandler refresh,
@@ -150,7 +152,7 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
         menu.Items.Add("Refresh", null, refresh);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(startupMenuItem);
-        menu.Items.Add(windowStartMenuItem);
+        menu.Items.Add(allowanceActivationMenuItem);
         menu.Items.Add(allowanceNotificationsMenuItem);
         menu.Items.Add("Open Codex usage page", null, openUsagePage);
         menu.Items.Add(new ToolStripSeparator());
@@ -199,21 +201,21 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
         }
     }
 
-    private void WindowStartItemOnCheckedChanged(object? sender, EventArgs eventArgs)
+    private void AllowanceActivationItemOnCheckedChanged(object? sender, EventArgs eventArgs)
     {
         try
         {
-            usagePresentations.ActivationEnabled = windowStartItem.Checked;
-            if (windowStartItem.Checked)
+            usagePresentations.ActivationEnabled = allowanceActivationItem.Checked;
+            if (allowanceActivationItem.Checked)
             {
                 _ = RequestAsync(UsageUpdateIntent.Routine);
             }
         }
         catch (Exception exception)
         {
-            windowStartItem.CheckedChanged -= WindowStartItemOnCheckedChanged;
-            windowStartItem.Checked = !windowStartItem.Checked;
-            windowStartItem.CheckedChanged += WindowStartItemOnCheckedChanged;
+            allowanceActivationItem.CheckedChanged -= AllowanceActivationItemOnCheckedChanged;
+            allowanceActivationItem.Checked = !allowanceActivationItem.Checked;
+            allowanceActivationItem.CheckedChanged += AllowanceActivationItemOnCheckedChanged;
             MessageBox.Show(exception.Message, "Codex usage", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
