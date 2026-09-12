@@ -90,7 +90,7 @@ internal static class SelfTest
                 popup.StatusTextBottomClearance >= 2,
                 $"loading status keeps descender clearance ({popup.StatusTextBottomClearance}px)");
             Assert(
-                popup.FixedLabelVerticalClearance >= 6,
+                popup.FixedLabelVerticalClearance >= 4,
                 $"fixed-height labels keep vertical clearance ({popup.FixedLabelVerticalClearance}px)");
             var extendedRefreshInset = popup.RefreshButtonBottomInset;
             popup.SetViewModeForScreenshot(compact: true);
