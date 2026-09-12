@@ -154,7 +154,7 @@ public sealed class UsagePresentationTests
     }
 
     [Fact]
-    public void CreateAlwaysPresentsUnconfirmedActivationWarnings()
+    public void CreateDoesNotPresentActivationConfirmationNotices()
     {
         var now = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
         var snapshot = CreateSnapshot(
@@ -167,23 +167,17 @@ public sealed class UsagePresentationTests
             limitName: "Codex");
         var events = AllowanceWindowActivationResult.Empty with
         {
-            UsedUp = AllowanceWindows.FiveHour,
-            Unconfirmed = AllowanceWindows.Weekly
+            Confirmed = AllowanceWindows.Weekly
         };
 
         var presentation = UsagePresentation.Create(
             snapshot,
             events,
-            notificationsEnabled: false,
+            notificationsEnabled: true,
             now,
             CultureInfo.InvariantCulture);
 
-        var notice = Assert.Single(presentation.Notices);
-        Assert.Equal(
-            "Could not confirm weekly allowance activation after four requests.",
-            notice.Message);
-        Assert.Equal(UsagePresentation.NoticeSeverity.Warning, notice.Severity);
-        Assert.Equal(TimeSpan.FromSeconds(7), notice.Duration);
+        Assert.Empty(presentation.Notices);
     }
 
     [Fact]

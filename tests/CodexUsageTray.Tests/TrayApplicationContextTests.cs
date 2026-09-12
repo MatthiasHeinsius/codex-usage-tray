@@ -3,6 +3,17 @@ namespace CodexUsageTray.Tests;
 public sealed class TrayApplicationContextTests
 {
     [Fact]
+    public void AllowanceMenuLabelsUseRequestedWording()
+    {
+        Assert.Equal(
+            "Auto-activate allowance window",
+            TrayApplicationContext.AllowanceActivationMenuText);
+        Assert.Equal(
+            "Notify on allowance changes",
+            TrayApplicationContext.AllowanceNotificationsMenuText);
+    }
+
+    [Fact]
     public void TrayClickClosesPopupThatWasVisibleWhenTheMouseWasPressed()
     {
         Assert.False(TrayApplicationContext.ShouldShowAfterTrayClick(visibleWhenMousePressed: true));

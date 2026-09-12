@@ -62,7 +62,7 @@ internal static class TrayIconRenderer
         return stream.ToArray();
     }
 
-    private static byte[] RenderPng(int size, int fiveHourRemaining, int weeklyRemaining)
+    internal static byte[] RenderPng(int size, int fiveHourRemaining, int weeklyRemaining)
     {
         using var bitmap = new Bitmap(size, size, PixelFormat.Format32bppArgb);
         using var graphics = Graphics.FromImage(bitmap);
@@ -71,8 +71,8 @@ internal static class TrayIconRenderer
         graphics.Clear(Color.Transparent);
 
         var scale = size / 32f;
-        DrawRing(graphics, Scale(new RectangleF(2.5f, 2.5f, 27f, 27f), scale), 5f * scale, weeklyRemaining);
-        DrawRing(graphics, Scale(new RectangleF(7.5f, 7.5f, 17f, 17f), scale), 5f * scale, fiveHourRemaining);
+        DrawRing(graphics, Scale(new RectangleF(2.5f, 2.5f, 27f, 27f), scale), 5f * scale, fiveHourRemaining);
+        DrawRing(graphics, Scale(new RectangleF(7.5f, 7.5f, 17f, 17f), scale), 5f * scale, weeklyRemaining);
 
         using var stream = new MemoryStream();
         bitmap.Save(stream, ImageFormat.Png);
@@ -89,10 +89,10 @@ internal static class TrayIconRenderer
     {
         var remaining = Math.Clamp(remainingPercent, 0, 100);
         using var track = new Pen(Color.FromArgb(66, 73, 86), width);
-        using var progress = new Pen(StatusColor(remaining), width)
+        using var progress = new Pen(UsageStatusColor.ForRemainingPercent(remaining), width)
         {
-            StartCap = LineCap.Round,
-            EndCap = LineCap.Round
+            StartCap = LineCap.Flat,
+            EndCap = LineCap.Flat
         };
 
         graphics.DrawArc(track, bounds, -90, 360);
@@ -102,10 +102,4 @@ internal static class TrayIconRenderer
         }
     }
 
-    private static Color StatusColor(int remainingPercent) => remainingPercent switch
-    {
-        <= 10 => Color.FromArgb(239, 68, 68),
-        <= 30 => Color.FromArgb(245, 158, 11),
-        _ => Color.FromArgb(16, 185, 129)
-    };
 }

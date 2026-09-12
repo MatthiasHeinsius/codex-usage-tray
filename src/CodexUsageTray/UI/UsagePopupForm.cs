@@ -2,8 +2,10 @@ namespace CodexUsageTray;
 
 internal sealed class UsagePopupForm : Form
 {
-    private const int LogicalDpi = 96;
     private const int BorderInset = 8;
+    private const int ContentInset = 20;
+    private const int PopupWidth = 428;
+    private const int ContentWidth = PopupWidth - (2 * ContentInset);
     private const int SnapDistance = 12;
     private readonly Label title;
     private readonly Label statusLabel;
@@ -43,7 +45,7 @@ internal sealed class UsagePopupForm : Form
     internal bool HeaderControlsOverlap =>
         title.Left
         + TextRenderer.MeasureText(title.Text, title.Font, Size.Empty, TextFormatFlags.NoPadding).Width
-        + ScaleLayoutValue(8)
+        + 8
         > usagePageButton.Left
         || statusLabel.Bounds.IntersectsWith(usagePageButton.Bounds)
         || statusLabel.Bounds.IntersectsWith(viewModeButton.Bounds)
@@ -56,9 +58,16 @@ internal sealed class UsagePopupForm : Form
         compactView
         && refreshButton.Visible
         && !updatedLabel.Visible
-        && ClientSize.Width - refreshButton.Right == ScaleLayoutValue(26)
-        && ClientSize.Height - refreshButton.Bottom == ScaleLayoutValue(16)
-        && weeklyReset.Right + ScaleLayoutValue(10) <= refreshButton.Left;
+        && ClientSize.Width - refreshButton.Right == ContentInset
+        && ClientSize.Height - refreshButton.Bottom == ContentInset
+        && weeklyReset.Right + 10 <= refreshButton.Left;
+
+    internal bool ContentPaddingIsUniform =>
+        fiveHourTitle.Left == Padding.Left
+        && ClientSize.Width - fiveHourBar.Right == Padding.Right
+        && ClientSize.Width - pinButton.Right == Padding.Right
+        && pinButton.Top == Padding.Top
+        && ClientSize.Height - refreshButton.Bottom == Padding.Bottom;
 
     internal int RefreshButtonBottomInset => ClientSize.Height - refreshButton.Bottom;
 
@@ -81,8 +90,8 @@ internal sealed class UsagePopupForm : Form
         StartPosition = FormStartPosition.Manual;
         BackColor = Color.FromArgb(24, 27, 34);
         ForeColor = Color.FromArgb(235, 238, 244);
-        ClientSize = new Size(440, 407);
-        Padding = new Padding(26, 20, 26, 20);
+        ClientSize = new Size(PopupWidth, 411);
+        Padding = new Padding(ContentInset);
         Font = new Font("Segoe UI", 9.25f);
         SetStyle(ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer, true);
 
@@ -91,7 +100,7 @@ internal sealed class UsagePopupForm : Form
             Text = "Codex usage",
             Font = new Font("Segoe UI Semibold", 15f, FontStyle.Bold),
             AutoSize = true,
-            Location = new Point(26, 11)
+            Location = new Point(ContentInset, 11)
         };
 
         usagePageButton = new UsageLinkIconButton
@@ -101,7 +110,7 @@ internal sealed class UsagePopupForm : Form
             FlatStyle = FlatStyle.Flat,
             ForeColor = Color.FromArgb(96, 165, 250),
             BackColor = Color.FromArgb(30, 41, 59),
-            Location = new Point(296, 20),
+            Location = new Point(290, ContentInset),
             Size = new Size(34, 30),
             Padding = new Padding(0),
             Cursor = Cursors.Hand
@@ -115,7 +124,7 @@ internal sealed class UsagePopupForm : Form
             FlatStyle = FlatStyle.Flat,
             ForeColor = Color.FromArgb(203, 213, 225),
             BackColor = Color.FromArgb(36, 41, 51),
-            Location = new Point(338, 20),
+            Location = new Point(332, ContentInset),
             Size = new Size(34, 30),
             Padding = new Padding(0),
             Cursor = Cursors.Hand
@@ -145,7 +154,7 @@ internal sealed class UsagePopupForm : Form
             FlatStyle = FlatStyle.Flat,
             ForeColor = Color.FromArgb(203, 213, 225),
             BackColor = Color.FromArgb(36, 41, 51),
-            Location = new Point(380, 20),
+            Location = new Point(374, ContentInset),
             Size = new Size(34, 30),
             Padding = new Padding(0),
             Cursor = Cursors.Hand
@@ -229,8 +238,6 @@ internal sealed class UsagePopupForm : Form
         ]);
         AddDragHandlers(this);
         ApplyViewMode(viewModeButton.IsCompact, preserveBottom: false);
-        AutoScaleDimensions = new SizeF(LogicalDpi, LogicalDpi);
-        AutoScaleMode = AutoScaleMode.Dpi;
     }
 
     public void ShowPresentation(UsagePresentation presentation)
@@ -238,6 +245,18 @@ internal sealed class UsagePopupForm : Form
         displayedPresentation = presentation.Popup;
         refreshButton.Enabled = presentation is not UsagePresentation.Loading;
         RenderPresentation(presentation.Popup);
+    }
+
+    protected override void OnHandleCreated(EventArgs eventArgs)
+    {
+        base.OnHandleCreated(eventArgs);
+        ApplyViewMode(compactView, preserveBottom: false);
+    }
+
+    protected override void OnDpiChanged(DpiChangedEventArgs eventArgs)
+    {
+        base.OnDpiChanged(eventArgs);
+        ApplyViewMode(compactView, preserveBottom: Visible);
     }
 
     internal void SetViewModeForScreenshot(bool compact, bool preserveBottom = false)
@@ -268,7 +287,7 @@ internal sealed class UsagePopupForm : Form
     {
         var previousBounds = Bounds;
         var previousBottom = Bottom;
-        var targetHeight = ScaleLayoutValue(compact ? 141 : 407);
+        var targetHeight = compact ? 141 : 411;
         compactView = compact;
 
         statusLabel.Visible = !compact;
@@ -285,58 +304,64 @@ internal sealed class UsagePopupForm : Form
 
         if (compact)
         {
-            fiveHourTitle.Location = ScaleLayoutPoint(26, 64);
-            fiveHourValue.Location = ScaleLayoutPoint(142, 62);
-            fiveHourValue.Size = ScaleLayoutSize(112, 24);
-            fiveHourReset.Location = ScaleLayoutPoint(270, 64);
-            fiveHourReset.Size = ScaleLayoutSize(144, 24);
+            fiveHourTitle.Location = new Point(ContentInset, 64);
+            fiveHourValue.Location = new Point(136, 62);
+            fiveHourValue.Size = new Size(112, LabelHeight(fiveHourValue, 24));
+            fiveHourReset.Location = new Point(264, 64);
+            fiveHourReset.Size = new Size(144, LabelHeight(fiveHourReset, 24));
 
-            weeklyTitle.Location = ScaleLayoutPoint(26, 100);
-            weeklyValue.Location = ScaleLayoutPoint(142, 98);
-            weeklyValue.Size = ScaleLayoutSize(112, 24);
-            weeklyReset.Location = ScaleLayoutPoint(270, 100);
-            weeklyReset.Size = ScaleLayoutSize(100, 24);
+            weeklyTitle.Location = new Point(ContentInset, 100);
+            weeklyValue.Location = new Point(136, 98);
+            weeklyValue.Size = new Size(112, LabelHeight(weeklyValue, 24));
+            weeklyReset.Location = new Point(264, 100);
+            weeklyReset.Size = new Size(100, LabelHeight(weeklyReset, 24));
+            targetHeight = Math.Max(
+                141,
+                Math.Max(weeklyValue.Bottom, weeklyReset.Bottom) + ContentInset);
         }
         else
         {
-            statusLabel.Location = ScaleLayoutPoint(27, 46);
-            statusLabel.Size = ScaleLayoutSize(261, 28);
+            statusLabel.Location = new Point(21, 46);
+            statusLabel.Size = new Size(261, LabelHeight(statusLabel, 28));
 
-            fiveHourTitle.Location = ScaleLayoutPoint(26, 86);
-            fiveHourValue.Location = ScaleLayoutPoint(264, 86);
-            fiveHourValue.Size = ScaleLayoutSize(150, 24);
-            fiveHourReset.Location = ScaleLayoutPoint(26, 117);
-            fiveHourReset.Size = ScaleLayoutSize(388, 24);
-            fiveHourBar.Location = ScaleLayoutPoint(26, 145);
-            fiveHourBar.Width = ScaleLayoutValue(388);
+            fiveHourTitle.Location = new Point(ContentInset, 86);
+            fiveHourValue.Location = new Point(258, 86);
+            fiveHourValue.Size = new Size(150, LabelHeight(fiveHourValue, 24));
+            fiveHourReset.Location = new Point(ContentInset, 117);
+            fiveHourReset.Size = new Size(ContentWidth, LabelHeight(fiveHourReset, 24));
+            fiveHourBar.Location = new Point(ContentInset, 145);
+            fiveHourBar.Width = ContentWidth;
 
-            weeklyTitle.Location = ScaleLayoutPoint(26, 176);
-            weeklyValue.Location = ScaleLayoutPoint(264, 176);
-            weeklyValue.Size = ScaleLayoutSize(150, 24);
-            weeklyReset.Location = ScaleLayoutPoint(26, 207);
-            weeklyReset.Size = ScaleLayoutSize(388, 24);
-            weeklyBar.Location = ScaleLayoutPoint(26, 235);
-            weeklyBar.Width = ScaleLayoutValue(388);
+            weeklyTitle.Location = new Point(ContentInset, 176);
+            weeklyValue.Location = new Point(258, 176);
+            weeklyValue.Size = new Size(150, LabelHeight(weeklyValue, 24));
+            weeklyReset.Location = new Point(ContentInset, 207);
+            weeklyReset.Size = new Size(ContentWidth, LabelHeight(weeklyReset, 24));
+            weeklyBar.Location = new Point(ContentInset, 235);
+            weeklyBar.Width = ContentWidth;
 
-            limitsDivider.Location = ScaleLayoutPoint(26, 264);
-            limitsDivider.Size = ScaleLayoutSize(388, 1);
-            todayTitle.Location = ScaleLayoutPoint(26, 281);
-            todayTitle.Size = ScaleLayoutSize(220, 24);
-            todayTokens.Location = ScaleLayoutPoint(254, 281);
-            todayTokens.Size = ScaleLayoutSize(160, 24);
-            lifetimeTitle.Location = ScaleLayoutPoint(26, 311);
-            lifetimeTitle.Size = ScaleLayoutSize(220, 24);
-            lifetimeTokens.Location = ScaleLayoutPoint(254, 311);
-            lifetimeTokens.Size = ScaleLayoutSize(160, 24);
-            inferenceDivider.Location = ScaleLayoutPoint(26, 351);
-            inferenceDivider.Size = ScaleLayoutSize(388, 1);
-            updatedLabel.Location = ScaleLayoutPoint(26, 367);
-            updatedLabel.Size = ScaleLayoutSize(338, 24);
+            limitsDivider.Location = new Point(ContentInset, 264);
+            limitsDivider.Size = new Size(ContentWidth, 1);
+            todayTitle.Location = new Point(ContentInset, 281);
+            todayTitle.Size = new Size(220, LabelHeight(todayTitle, 24));
+            todayTokens.Location = new Point(248, 281);
+            todayTokens.Size = new Size(160, LabelHeight(todayTokens, 24));
+            lifetimeTitle.Location = new Point(ContentInset, 311);
+            lifetimeTitle.Size = new Size(220, LabelHeight(lifetimeTitle, 24));
+            lifetimeTokens.Location = new Point(248, 311);
+            lifetimeTokens.Size = new Size(160, LabelHeight(lifetimeTokens, 24));
+            inferenceDivider.Location = new Point(
+                ContentInset,
+                lifetimeTitle.Bottom + todayTitle.Top - limitsDivider.Bottom);
+            inferenceDivider.Size = new Size(ContentWidth, 1);
+            updatedLabel.Location = new Point(ContentInset, inferenceDivider.Bottom + 15);
+            updatedLabel.Size = new Size(338, LabelHeight(updatedLabel, 24));
+            targetHeight = Math.Max(411, updatedLabel.Bottom + ContentInset);
         }
 
         refreshButton.Location = new Point(
-            ScaleLayoutValue(440) - ScaleLayoutValue(26) - refreshButton.Width,
-            targetHeight - ScaleLayoutValue(16) - refreshButton.Height);
+            PopupWidth - ContentInset - refreshButton.Width,
+            targetHeight - ContentInset - refreshButton.Height);
 
         if (preserveBottom && Visible)
         {
@@ -349,18 +374,18 @@ internal sealed class UsagePopupForm : Form
                 : previousBottom - targetHeight;
             var targetLocation = KeepWithinBounds(
                 new Point(Left, targetY),
-                new Size(ScaleLayoutValue(440), targetHeight),
+                new Size(PopupWidth, targetHeight),
                 screen.Bounds);
             SetBounds(
                 targetLocation.X,
                 targetLocation.Y,
-                ScaleLayoutValue(440),
+                PopupWidth,
                 targetHeight,
                 BoundsSpecified.All);
         }
         else
         {
-            ClientSize = new Size(ScaleLayoutValue(440), targetHeight);
+            ClientSize = new Size(PopupWidth, targetHeight);
         }
 
         toolTip.SetToolTip(viewModeButton, compact ? "Show extended view" : "Show compact view");
@@ -399,7 +424,10 @@ internal sealed class UsagePopupForm : Form
             return currentLocation;
         }
 
-        var x = Math.Clamp(cursorLocation.X - windowSize.Width + 20, workingArea.Left, workingArea.Right - windowSize.Width);
+        var x = Math.Clamp(
+            cursorLocation.X - windowSize.Width + ContentInset,
+            workingArea.Left,
+            workingArea.Right - windowSize.Width);
         var y = workingArea.Bottom - windowSize.Height - BorderInset;
         return new Point(x, y);
     }
@@ -499,16 +527,8 @@ internal sealed class UsagePopupForm : Form
         Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold)
     };
 
-    private int ScaleLayoutValue(int value) =>
-        IsHandleCreated
-            ? (int)Math.Round(value * DeviceDpi / (double)LogicalDpi)
-            : value;
-
-    private Point ScaleLayoutPoint(int x, int y) =>
-        new(ScaleLayoutValue(x), ScaleLayoutValue(y));
-
-    private Size ScaleLayoutSize(int width, int height) =>
-        new(ScaleLayoutValue(width), ScaleLayoutValue(height));
+    private static int LabelHeight(Label label, int minimum) =>
+        Math.Max(minimum, label.PreferredHeight + 4);
 
     private void AddDragHandlers(Control control)
     {
