@@ -91,6 +91,11 @@ internal static class Program
         {
             CheckOnClick = true
         };
+        using var automaticUpdateItem = new ToolStripMenuItem(
+            CodexUsageTray.TrayApplicationContext.AutomaticUpdateMenuText)
+        {
+            CheckOnClick = true
+        };
         using var allowanceActivationItem = new ToolStripMenuItem(
             CodexUsageTray.TrayApplicationContext.AllowanceActivationMenuText)
         {
@@ -101,10 +106,15 @@ internal static class Program
         {
             CheckOnClick = true
         };
+        using var updateItem = new ToolStripMenuItem(
+            CodexUsageTray.TrayApplicationContext.CheckForUpdatesMenuText);
         using var menu = CodexUsageTray.TrayApplicationContext.CreateContextMenu(
             startupItem,
+            automaticUpdateItem,
             allowanceActivationItem,
             allowanceNotificationsItem,
+            updateItem,
+            (_, _) => { },
             (_, _) => { },
             (_, _) => { },
             (_, _) => { },

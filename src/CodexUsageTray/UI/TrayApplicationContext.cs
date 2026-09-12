@@ -6,15 +6,22 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
 {
     internal const string AllowanceActivationMenuText = "Auto-activate allowance window";
     internal const string AllowanceNotificationsMenuText = "Notify on allowance changes";
+    internal const string AutomaticUpdateMenuText = "Automatically check for updates";
+    internal const string CheckForUpdatesMenuText = "Check for updates";
     private readonly UsagePresentations usagePresentations;
+    private readonly ApplicationUpdater applicationUpdater;
     private readonly NotifyIcon notifyIcon;
     private readonly UsagePopupForm popup = new();
     private readonly System.Windows.Forms.Timer refreshTimer;
+    private readonly CancellationTokenSource updateCancellation = new();
     private readonly ToolStripMenuItem startupItem;
+    private readonly ToolStripMenuItem automaticUpdateItem;
     private readonly ToolStripMenuItem allowanceActivationItem;
     private readonly ToolStripMenuItem allowanceNotificationsItem;
+    private readonly ToolStripMenuItem updateItem;
     private Icon currentIcon;
     private bool popupVisibleWhenTrayMousePressed;
+    private bool updateCheckRunning;
     private bool exiting;
     private long? lastHandledTrayClickTimestamp;
 
@@ -29,12 +36,19 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
             Text = "Codex usage · connecting"
         };
         usagePresentations = createPresentations(this);
+        applicationUpdater = ApplicationUpdater.CreateDefault();
         startupItem = new ToolStripMenuItem("Start with Windows")
         {
             Checked = StartupRegistration.IsEnabled(),
             CheckOnClick = true
         };
         startupItem.CheckedChanged += StartupItemOnCheckedChanged;
+        automaticUpdateItem = new ToolStripMenuItem(AutomaticUpdateMenuText)
+        {
+            Checked = ApplicationUpdateSettings.IsAutomaticCheckEnabled(),
+            CheckOnClick = true
+        };
+        automaticUpdateItem.CheckedChanged += AutomaticUpdateItemOnCheckedChanged;
         allowanceActivationItem = new ToolStripMenuItem(AllowanceActivationMenuText)
         {
             Checked = usagePresentations.ActivationEnabled,
@@ -47,14 +61,18 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
             CheckOnClick = true
         };
         allowanceNotificationsItem.CheckedChanged += AllowanceNotificationsItemOnCheckedChanged;
+        updateItem = new ToolStripMenuItem(CheckForUpdatesMenuText);
 
         var menu = CreateContextMenu(
             startupItem,
+            automaticUpdateItem,
             allowanceActivationItem,
             allowanceNotificationsItem,
+            updateItem,
             (_, _) => ShowPopup(),
             async (_, _) => await RequestAsync(UsageUpdateIntent.Activity),
             (_, _) => OpenUsagePage(),
+            async (_, _) => await CheckForUpdatesAsync(UpdateCheckIntent.Manual),
             (_, _) => ExitThread());
 
         notifyIcon.ContextMenuStrip = menu;
@@ -92,17 +110,23 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
         refreshTimer.Start();
 
         _ = RequestAsync(UsageUpdateIntent.Routine);
+        if (automaticUpdateItem.Checked)
+        {
+            _ = CheckForUpdatesAsync(UpdateCheckIntent.Automatic);
+        }
     }
 
     protected override void ExitThreadCore()
     {
         exiting = true;
+        updateCancellation.Cancel();
         refreshTimer.Stop();
         notifyIcon.Visible = false;
         usagePresentations.DisposeAsync().AsTask().GetAwaiter().GetResult();
         notifyIcon.Dispose();
         currentIcon.Dispose();
         popup.Dispose();
+        updateCancellation.Dispose();
         base.ExitThreadCore();
     }
 
@@ -140,11 +164,14 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
 
     internal static ContextMenuStrip CreateContextMenu(
         ToolStripMenuItem startupMenuItem,
+        ToolStripMenuItem automaticUpdateMenuItem,
         ToolStripMenuItem allowanceActivationMenuItem,
         ToolStripMenuItem allowanceNotificationsMenuItem,
+        ToolStripMenuItem updateMenuItem,
         EventHandler open,
         EventHandler refresh,
         EventHandler openUsagePage,
+        EventHandler checkForUpdates,
         EventHandler exit)
     {
         var menu = new ContextMenuStrip();
@@ -152,9 +179,13 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
         menu.Items.Add("Refresh", null, refresh);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(startupMenuItem);
+        menu.Items.Add(automaticUpdateMenuItem);
         menu.Items.Add(allowanceActivationMenuItem);
         menu.Items.Add(allowanceNotificationsMenuItem);
         menu.Items.Add("Open Codex usage page", null, openUsagePage);
+        menu.Items.Add(new ToolStripSeparator());
+        updateMenuItem.Click += checkForUpdates;
+        menu.Items.Add(updateMenuItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit", null, exit);
         return menu;
@@ -188,50 +219,54 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
 
     private void StartupItemOnCheckedChanged(object? sender, EventArgs eventArgs)
     {
-        try
-        {
-            StartupRegistration.SetEnabled(startupItem.Checked);
-        }
-        catch (Exception exception)
-        {
-            startupItem.CheckedChanged -= StartupItemOnCheckedChanged;
-            startupItem.Checked = !startupItem.Checked;
-            startupItem.CheckedChanged += StartupItemOnCheckedChanged;
-            MessageBox.Show(exception.Message, "Codex usage", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
+        TryPersistCheckedSetting(startupItem, StartupItemOnCheckedChanged, StartupRegistration.SetEnabled);
     }
 
     private void AllowanceActivationItemOnCheckedChanged(object? sender, EventArgs eventArgs)
     {
-        try
+        if (TryPersistCheckedSetting(
+                allowanceActivationItem,
+                AllowanceActivationItemOnCheckedChanged,
+                enabled => usagePresentations.ActivationEnabled = enabled)
+            && allowanceActivationItem.Checked)
         {
-            usagePresentations.ActivationEnabled = allowanceActivationItem.Checked;
-            if (allowanceActivationItem.Checked)
-            {
-                _ = RequestAsync(UsageUpdateIntent.Routine);
-            }
+            _ = RequestAsync(UsageUpdateIntent.Routine);
         }
-        catch (Exception exception)
-        {
-            allowanceActivationItem.CheckedChanged -= AllowanceActivationItemOnCheckedChanged;
-            allowanceActivationItem.Checked = !allowanceActivationItem.Checked;
-            allowanceActivationItem.CheckedChanged += AllowanceActivationItemOnCheckedChanged;
-            MessageBox.Show(exception.Message, "Codex usage", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
+    }
+
+    private void AutomaticUpdateItemOnCheckedChanged(object? sender, EventArgs eventArgs)
+    {
+        TryPersistCheckedSetting(
+            automaticUpdateItem,
+            AutomaticUpdateItemOnCheckedChanged,
+            ApplicationUpdateSettings.SetAutomaticCheckEnabled);
     }
 
     private void AllowanceNotificationsItemOnCheckedChanged(object? sender, EventArgs eventArgs)
     {
+        TryPersistCheckedSetting(
+            allowanceNotificationsItem,
+            AllowanceNotificationsItemOnCheckedChanged,
+            enabled => usagePresentations.NotificationsEnabled = enabled);
+    }
+
+    private static bool TryPersistCheckedSetting(
+        ToolStripMenuItem item,
+        EventHandler changedHandler,
+        Action<bool> persist)
+    {
         try
         {
-            usagePresentations.NotificationsEnabled = allowanceNotificationsItem.Checked;
+            persist(item.Checked);
+            return true;
         }
         catch (Exception exception)
         {
-            allowanceNotificationsItem.CheckedChanged -= AllowanceNotificationsItemOnCheckedChanged;
-            allowanceNotificationsItem.Checked = !allowanceNotificationsItem.Checked;
-            allowanceNotificationsItem.CheckedChanged += AllowanceNotificationsItemOnCheckedChanged;
+            item.CheckedChanged -= changedHandler;
+            item.Checked = !item.Checked;
+            item.CheckedChanged += changedHandler;
             MessageBox.Show(exception.Message, "Codex usage", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return false;
         }
     }
 
@@ -262,6 +297,95 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
         });
     }
 
+    private async Task CheckForUpdatesAsync(UpdateCheckIntent intent)
+    {
+        if (updateCheckRunning)
+        {
+            return;
+        }
+
+        updateCheckRunning = true;
+        updateItem.Enabled = false;
+        updateItem.Text = "Checking for updates...";
+        ApplicationUpdate? update = null;
+        var installerStarted = false;
+        var userAcceptedUpdate = false;
+        try
+        {
+            var availableUpdate = await applicationUpdater.CheckAsync(updateCancellation.Token);
+            if (availableUpdate is null)
+            {
+                if (intent == UpdateCheckIntent.Manual)
+                {
+                    MessageBox.Show(
+                        $"Version {applicationUpdater.CurrentVersion.ToString(3)} is up to date.",
+                        "Codex usage update",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information);
+                }
+
+                return;
+            }
+
+            var choice = MessageBox.Show(
+                $"Version {availableUpdate.Version.ToString(3)} is available. "
+                    + $"You are using version {applicationUpdater.CurrentVersion.ToString(3)}.\n\n"
+                    + "Download and install the update now?",
+                "Codex usage update",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button2);
+            if (choice != DialogResult.Yes)
+            {
+                return;
+            }
+
+            userAcceptedUpdate = true;
+            updateItem.Text = $"Downloading version {availableUpdate.Version.ToString(3)}...";
+            update = await applicationUpdater.DownloadAsync(availableUpdate, updateCancellation.Token);
+            updateItem.Text = $"Installing version {update.Version.ToString(3)}...";
+            var processPath = Environment.ProcessPath
+                ?? throw new InvalidOperationException("The application executable path is unavailable.");
+            UpdateInstaller.Launch(update, Environment.ProcessId, processPath);
+            installerStarted = true;
+            ExitThread();
+        }
+        catch (OperationCanceledException) when (exiting)
+        {
+        }
+        catch (Exception exception)
+        {
+            if (intent == UpdateCheckIntent.Manual || userAcceptedUpdate)
+            {
+                MessageBox.Show(
+                    $"The update failed.\n\n{exception.Message}",
+                    "Codex usage update",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+        finally
+        {
+            if (!installerStarted && update is not null)
+            {
+                ApplicationUpdater.TryDelete(update.StagedPath);
+            }
+
+            if (!exiting)
+            {
+                updateCheckRunning = false;
+                updateItem.Enabled = true;
+                updateItem.Text = CheckForUpdatesMenuText;
+            }
+        }
+    }
+
     private static string TruncateTooltip(string value) => value.Length <= 63 ? value : value[..63];
+
+    private enum UpdateCheckIntent
+    {
+        Automatic,
+        Manual
+    }
 
 }
