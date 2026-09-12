@@ -2,6 +2,8 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
+    <RuntimeFrameworkVersion>10.0.12</RuntimeFrameworkVersion>
+    <TargetLatestRuntimePatch>false</TargetLatestRuntimePatch>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -30,5 +32,18 @@
   <ItemGroup>
     <InternalsVisibleTo Include="CodexUsageTray.ScreenshotGenerator" />
     <InternalsVisibleTo Include="CodexUsageTray.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\LICENSE"
+             Link="LICENSE.txt"
+             CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="..\..\THIRD-PARTY-NOTICES.txt"
+             Link="THIRD-PARTY-NOTICES.txt"
+             CopyToPublishDirectory="PreserveNewest" />
+    <EmbeddedResource Include="..\..\LICENSE"
+                      LogicalName="CodexUsageTray.LICENSE.txt" />
+    <EmbeddedResource Include="..\..\THIRD-PARTY-NOTICES.txt"
+                      LogicalName="CodexUsageTray.THIRD-PARTY-NOTICES.txt" />
   </ItemGroup>
 </Project>

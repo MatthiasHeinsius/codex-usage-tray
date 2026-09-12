@@ -109,16 +109,20 @@ internal static class Program
         using var updateItem = new ToolStripMenuItem(
             CodexUsageTray.TrayApplicationContext.CheckForUpdatesMenuText);
         using var menu = CodexUsageTray.TrayApplicationContext.CreateContextMenu(
-            startupItem,
-            automaticUpdateItem,
-            allowanceActivationItem,
-            allowanceNotificationsItem,
-            updateItem,
-            (_, _) => { },
-            (_, _) => { },
-            (_, _) => { },
-            (_, _) => { },
-            (_, _) => { });
+            new CodexUsageTray.TrayApplicationContext.ContextMenuItems(
+                startupItem,
+                automaticUpdateItem,
+                allowanceActivationItem,
+                allowanceNotificationsItem,
+                updateItem),
+            new CodexUsageTray.TrayApplicationContext.ContextMenuCommands(
+                Open: (_, _) => { },
+                Refresh: (_, _) => { },
+                OpenUsagePage: (_, _) => { },
+                OpenProjectReadme: (_, _) => { },
+                OpenLegalNotices: (_, _) => { },
+                CheckForUpdates: (_, _) => { },
+                Exit: (_, _) => { }));
         menu.CreateControl();
         menu.PerformLayout();
         menu.Size = menu.GetPreferredSize(Size.Empty);
