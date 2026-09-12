@@ -32,8 +32,8 @@ if errorlevel 1 (
 )
 
 echo.
-echo Release ready in:
-echo %~dp0artifacts\win-x64\CodexUsageTray.exe
+echo Release files ready in:
+echo %~dp0artifacts\win-x64
 echo.
-echo Copy the executable to a permanent location on another Windows x64 machine and run it.
+echo Distribute the executable together with LICENSE.txt and THIRD-PARTY-NOTICES.txt.
 pause

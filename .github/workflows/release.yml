@@ -20,7 +20,7 @@ jobs:
       - name: Install .NET 10 SDK
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.401
 
       - name: Check tag matches application version
         shell: pwsh
@@ -60,7 +60,9 @@ jobs:
         run: >-
           gh release create $env:GITHUB_REF_NAME
           .\artifacts\win-x64\CodexUsageTray.exe
+          .\artifacts\win-x64\LICENSE.txt
           .\artifacts\win-x64\SHA256SUMS.txt
+          .\artifacts\win-x64\THIRD-PARTY-NOTICES.txt
           --generate-notes
           --title "Codex Usage Tray $env:GITHUB_REF_NAME"
           --verify-tag

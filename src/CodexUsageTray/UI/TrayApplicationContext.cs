@@ -4,10 +4,14 @@ namespace CodexUsageTray;
 
 internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresentationSink
 {
-    internal const string AllowanceActivationMenuText = "Auto-activate allowance window";
+    internal const string AllowanceActivationMenuText = "Auto-start allowance window";
     internal const string AllowanceNotificationsMenuText = "Notify on allowance changes";
-    internal const string AutomaticUpdateMenuText = "Automatically check for updates";
+    internal const string AutomaticUpdateMenuText = "Check for updates on startup";
     internal const string CheckForUpdatesMenuText = "Check for updates";
+    internal const string LegalNoticesMenuText = "Open licenses and notices";
+    internal const string ProjectReadmeMenuText = "Open README on GitHub";
+    internal const string ProjectReadmeUrl =
+        "https://github.com/MatthiasHeinsius/codex-usage-tray/blob/main/README.md";
     private readonly UsagePresentations usagePresentations;
     private readonly ApplicationUpdater applicationUpdater;
     private readonly NotifyIcon notifyIcon;
@@ -64,16 +68,20 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
         updateItem = new ToolStripMenuItem(CheckForUpdatesMenuText);
 
         var menu = CreateContextMenu(
-            startupItem,
-            automaticUpdateItem,
-            allowanceActivationItem,
-            allowanceNotificationsItem,
-            updateItem,
-            (_, _) => ShowPopup(),
-            async (_, _) => await RequestAsync(UsageUpdateIntent.Activity),
-            (_, _) => OpenUsagePage(),
-            async (_, _) => await CheckForUpdatesAsync(UpdateCheckIntent.Manual),
-            (_, _) => ExitThread());
+            new ContextMenuItems(
+                startupItem,
+                automaticUpdateItem,
+                allowanceActivationItem,
+                allowanceNotificationsItem,
+                updateItem),
+            new ContextMenuCommands(
+                Open: (_, _) => ShowPopup(),
+                Refresh: async (_, _) => await RequestAsync(UsageUpdateIntent.Activity),
+                OpenUsagePage: (_, _) => OpenUsagePage(),
+                OpenProjectReadme: (_, _) => OpenWebPage(ProjectReadmeUrl),
+                OpenLegalNotices: (_, _) => LegalNotices.Open(),
+                CheckForUpdates: async (_, _) => await CheckForUpdatesAsync(UpdateCheckIntent.Manual),
+                Exit: (_, _) => ExitThread()));
 
         notifyIcon.ContextMenuStrip = menu;
         notifyIcon.Visible = true;
@@ -163,31 +171,26 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
         previousTimestamp is null || currentTimestamp - previousTimestamp > doubleClickTime;
 
     internal static ContextMenuStrip CreateContextMenu(
-        ToolStripMenuItem startupMenuItem,
-        ToolStripMenuItem automaticUpdateMenuItem,
-        ToolStripMenuItem allowanceActivationMenuItem,
-        ToolStripMenuItem allowanceNotificationsMenuItem,
-        ToolStripMenuItem updateMenuItem,
-        EventHandler open,
-        EventHandler refresh,
-        EventHandler openUsagePage,
-        EventHandler checkForUpdates,
-        EventHandler exit)
+        ContextMenuItems items,
+        ContextMenuCommands commands)
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Open", null, open);
-        menu.Items.Add("Refresh", null, refresh);
+        menu.Items.Add("Open", null, commands.Open);
+        menu.Items.Add("Refresh", null, commands.Refresh);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(startupMenuItem);
-        menu.Items.Add(automaticUpdateMenuItem);
-        menu.Items.Add(allowanceActivationMenuItem);
-        menu.Items.Add(allowanceNotificationsMenuItem);
-        menu.Items.Add("Open Codex usage page", null, openUsagePage);
+        menu.Items.Add(items.Startup);
+        menu.Items.Add(items.AutomaticUpdate);
+        menu.Items.Add(items.AllowanceActivation);
+        menu.Items.Add(items.AllowanceNotifications);
         menu.Items.Add(new ToolStripSeparator());
-        updateMenuItem.Click += checkForUpdates;
-        menu.Items.Add(updateMenuItem);
+        menu.Items.Add("Open Codex usage page", null, commands.OpenUsagePage);
+        menu.Items.Add(ProjectReadmeMenuText, null, commands.OpenProjectReadme);
+        menu.Items.Add(LegalNoticesMenuText, null, commands.OpenLegalNotices);
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Exit", null, exit);
+        items.Update.Click += commands.CheckForUpdates;
+        menu.Items.Add(items.Update);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Exit", null, commands.Exit);
         return menu;
     }
 
@@ -290,9 +293,14 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
 
     private static void OpenUsagePage()
     {
+        OpenWebPage("https://chatgpt.com/codex/settings/usage");
+    }
+
+    private static void OpenWebPage(string url)
+    {
         Process.Start(new ProcessStartInfo
         {
-            FileName = "https://chatgpt.com/codex/settings/usage",
+            FileName = url,
             UseShellExecute = true
         });
     }
@@ -387,5 +395,21 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
         Automatic,
         Manual
     }
+
+    internal sealed record ContextMenuItems(
+        ToolStripMenuItem Startup,
+        ToolStripMenuItem AutomaticUpdate,
+        ToolStripMenuItem AllowanceActivation,
+        ToolStripMenuItem AllowanceNotifications,
+        ToolStripMenuItem Update);
+
+    internal sealed record ContextMenuCommands(
+        EventHandler Open,
+        EventHandler Refresh,
+        EventHandler OpenUsagePage,
+        EventHandler OpenProjectReadme,
+        EventHandler OpenLegalNotices,
+        EventHandler CheckForUpdates,
+        EventHandler Exit);
 
 }
