@@ -41,7 +41,7 @@ public sealed class UsagePresentationTests
     }
 
     [Fact]
-    public void CreateShowsSeparateObservationTimesForRetainedActivity()
+    public void CreateShowsTheMostRecentObservationTime()
     {
         var activityObservedAt = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
         var allowanceObservedAt = activityObservedAt.AddMinutes(1);
@@ -59,9 +59,27 @@ public sealed class UsagePresentationTests
         var presentation = UsagePresentation.Create(snapshot, allowanceObservedAt, culture);
 
         Assert.Equal(
-            $"Limits updated {allowanceObservedAt.LocalDateTime.ToString("t", culture)} · "
-                + $"Activity updated {activityObservedAt.LocalDateTime.ToString("t", culture)}",
+            $"Updated {allowanceObservedAt.LocalDateTime.ToString("t", culture)}",
             presentation.Popup.UpdatedText);
+
+        var newerActivitySnapshot = new UsageSnapshot(
+            allowanceObservedAt,
+            allowanceObservedAt.AddMinutes(1),
+            fiveHour: null,
+            weekly: null,
+            lifetimeTokens: 123_456,
+            todayTokens: 7_890,
+            plan: "plus",
+            limitName: "Codex");
+
+        var newerActivityPresentation = UsagePresentation.Create(
+            newerActivitySnapshot,
+            allowanceObservedAt,
+            culture);
+
+        Assert.Equal(
+            $"Updated {allowanceObservedAt.AddMinutes(1).LocalDateTime.ToString("t", culture)}",
+            newerActivityPresentation.Popup.UpdatedText);
     }
 
     [Fact]

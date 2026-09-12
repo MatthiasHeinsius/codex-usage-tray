@@ -2,6 +2,7 @@ namespace CodexUsageTray;
 
 internal sealed class UsagePopupForm : Form
 {
+    private const int LogicalDpi = 96;
     private const int BorderInset = 8;
     private const int SnapDistance = 12;
     private readonly Label title;
@@ -42,7 +43,7 @@ internal sealed class UsagePopupForm : Form
     internal bool HeaderControlsOverlap =>
         title.Left
         + TextRenderer.MeasureText(title.Text, title.Font, Size.Empty, TextFormatFlags.NoPadding).Width
-        + 8
+        + ScaleLayoutValue(8)
         > usagePageButton.Left
         || statusLabel.Bounds.IntersectsWith(usagePageButton.Bounds)
         || statusLabel.Bounds.IntersectsWith(viewModeButton.Bounds)
@@ -55,13 +56,22 @@ internal sealed class UsagePopupForm : Form
         compactView
         && refreshButton.Visible
         && !updatedLabel.Visible
-        && ClientSize.Width - refreshButton.Right == 26
-        && ClientSize.Height - refreshButton.Bottom == 16
-        && weeklyReset.Right + 10 <= refreshButton.Left;
+        && ClientSize.Width - refreshButton.Right == ScaleLayoutValue(26)
+        && ClientSize.Height - refreshButton.Bottom == ScaleLayoutValue(16)
+        && weeklyReset.Right + ScaleLayoutValue(10) <= refreshButton.Left;
 
     internal int RefreshButtonBottomInset => ClientSize.Height - refreshButton.Bottom;
 
     internal int StatusTextBottomClearance => statusLabel.Height - statusLabel.PreferredHeight;
+
+    internal int FixedLabelVerticalClearance => Controls
+        .OfType<Label>()
+        .Where(label => !label.AutoSize)
+        .Min(label => label.Height - TextRenderer.MeasureText(
+            label.Text,
+            label.Font,
+            Size.Empty,
+            TextFormatFlags.NoPadding).Height);
 
     public UsagePopupForm()
     {
@@ -127,9 +137,7 @@ internal sealed class UsagePopupForm : Form
         {
             Text = "Connecting...",
             ForeColor = Color.FromArgb(148, 163, 184),
-            AutoEllipsis = true,
-            Location = new Point(27, 46),
-            Size = new Size(261, 28)
+            AutoEllipsis = true
         };
 
         pinButton = new PinIconButton
@@ -181,7 +189,6 @@ internal sealed class UsagePopupForm : Form
             FlatStyle = FlatStyle.Flat,
             ForeColor = Color.FromArgb(203, 213, 225),
             BackColor = Color.FromArgb(36, 41, 51),
-            Location = new Point(380, 361),
             Size = new Size(34, 30),
             Padding = new Padding(0),
             Cursor = Cursors.Hand
@@ -189,34 +196,30 @@ internal sealed class UsagePopupForm : Form
         refreshButton.FlatAppearance.BorderColor = Color.FromArgb(61, 68, 82);
         refreshButton.Click += (_, _) => RefreshRequested?.Invoke(this, EventArgs.Empty);
 
-        fiveHourTitle = MakeSectionTitle("5-hour limit", 86);
-        fiveHourValue = MakeValueLabel(86);
-        fiveHourReset = MakeMutedLabel(117);
-        fiveHourBar = new UsageProgressBar { Location = new Point(26, 145), Width = 388, Value = 0 };
+        fiveHourTitle = MakeSectionTitle("5-hour limit");
+        fiveHourValue = MakeValueLabel();
+        fiveHourReset = MakeMutedLabel("Reset time unavailable");
+        fiveHourBar = new UsageProgressBar { Value = 0 };
 
-        weeklyTitle = MakeSectionTitle("Weekly limit", 176);
-        weeklyValue = MakeValueLabel(176);
-        weeklyReset = MakeMutedLabel(207);
-        weeklyBar = new UsageProgressBar { Location = new Point(26, 235), Width = 388, Value = 0 };
+        weeklyTitle = MakeSectionTitle("Weekly limit");
+        weeklyValue = MakeValueLabel();
+        weeklyReset = MakeMutedLabel("Reset time unavailable");
+        weeklyBar = new UsageProgressBar { Value = 0 };
 
         limitsDivider = new Panel
         {
-            BackColor = Color.FromArgb(48, 54, 66),
-            Location = new Point(26, 264),
-            Size = new Size(388, 1)
+            BackColor = Color.FromArgb(48, 54, 66)
         };
 
-        todayTitle = MakeMutedLabel("Inference today", 281, 26, 220);
-        todayTokens = MakeTokenValue(281, 254, 160);
-        lifetimeTitle = MakeMutedLabel("Inference total", 311, 26, 220);
-        lifetimeTokens = MakeTokenValue(311, 254, 160);
+        todayTitle = MakeMutedLabel("Inference today");
+        todayTokens = MakeTokenValue();
+        lifetimeTitle = MakeMutedLabel("Inference total");
+        lifetimeTokens = MakeTokenValue();
         inferenceDivider = new Panel
         {
-            BackColor = Color.FromArgb(48, 54, 66),
-            Location = new Point(26, 349),
-            Size = new Size(388, 1)
+            BackColor = Color.FromArgb(48, 54, 66)
         };
-        updatedLabel = MakeMutedLabel("Not updated yet", 365, 26, 338);
+        updatedLabel = MakeMutedLabel("Not updated yet");
         updatedLabel.Font = new Font("Segoe UI", 8f);
         Controls.AddRange([
             title, usagePageButton, statusLabel, viewModeButton, pinButton, refreshButton,
@@ -226,6 +229,8 @@ internal sealed class UsagePopupForm : Form
         ]);
         AddDragHandlers(this);
         ApplyViewMode(viewModeButton.IsCompact, preserveBottom: false);
+        AutoScaleDimensions = new SizeF(LogicalDpi, LogicalDpi);
+        AutoScaleMode = AutoScaleMode.Dpi;
     }
 
     public void ShowPresentation(UsagePresentation presentation)
@@ -235,10 +240,10 @@ internal sealed class UsagePopupForm : Form
         RenderPresentation(presentation.Popup);
     }
 
-    internal void SetViewModeForScreenshot(bool compact)
+    internal void SetViewModeForScreenshot(bool compact, bool preserveBottom = false)
     {
         viewModeButton.SetCompact(compact);
-        ApplyViewMode(compact, preserveBottom: false);
+        ApplyViewMode(compact, preserveBottom);
     }
 
     private void RenderPresentation(UsagePresentation.PopupPresentation presentation)
@@ -263,7 +268,7 @@ internal sealed class UsagePopupForm : Form
     {
         var previousBounds = Bounds;
         var previousBottom = Bottom;
-        var targetHeight = compact ? 141 : 407;
+        var targetHeight = ScaleLayoutValue(compact ? 141 : 407);
         compactView = compact;
 
         statusLabel.Visible = !compact;
@@ -280,34 +285,58 @@ internal sealed class UsagePopupForm : Form
 
         if (compact)
         {
-            fiveHourTitle.Location = new Point(26, 64);
-            fiveHourValue.Location = new Point(142, 62);
-            fiveHourValue.Size = new Size(112, 24);
-            fiveHourReset.Location = new Point(270, 64);
-            fiveHourReset.Size = new Size(144, 22);
+            fiveHourTitle.Location = ScaleLayoutPoint(26, 64);
+            fiveHourValue.Location = ScaleLayoutPoint(142, 62);
+            fiveHourValue.Size = ScaleLayoutSize(112, 24);
+            fiveHourReset.Location = ScaleLayoutPoint(270, 64);
+            fiveHourReset.Size = ScaleLayoutSize(144, 24);
 
-            weeklyTitle.Location = new Point(26, 100);
-            weeklyValue.Location = new Point(142, 98);
-            weeklyValue.Size = new Size(112, 24);
-            weeklyReset.Location = new Point(270, 100);
-            weeklyReset.Size = new Size(100, 22);
-            refreshButton.Location = new Point(380, 95);
+            weeklyTitle.Location = ScaleLayoutPoint(26, 100);
+            weeklyValue.Location = ScaleLayoutPoint(142, 98);
+            weeklyValue.Size = ScaleLayoutSize(112, 24);
+            weeklyReset.Location = ScaleLayoutPoint(270, 100);
+            weeklyReset.Size = ScaleLayoutSize(100, 24);
         }
         else
         {
-            fiveHourTitle.Location = new Point(26, 86);
-            fiveHourValue.Location = new Point(264, 86);
-            fiveHourValue.Size = new Size(150, 24);
-            fiveHourReset.Location = new Point(26, 117);
-            fiveHourReset.Size = new Size(388, 22);
+            statusLabel.Location = ScaleLayoutPoint(27, 46);
+            statusLabel.Size = ScaleLayoutSize(261, 28);
 
-            weeklyTitle.Location = new Point(26, 176);
-            weeklyValue.Location = new Point(264, 176);
-            weeklyValue.Size = new Size(150, 24);
-            weeklyReset.Location = new Point(26, 207);
-            weeklyReset.Size = new Size(388, 22);
-            refreshButton.Location = new Point(380, 361);
+            fiveHourTitle.Location = ScaleLayoutPoint(26, 86);
+            fiveHourValue.Location = ScaleLayoutPoint(264, 86);
+            fiveHourValue.Size = ScaleLayoutSize(150, 24);
+            fiveHourReset.Location = ScaleLayoutPoint(26, 117);
+            fiveHourReset.Size = ScaleLayoutSize(388, 24);
+            fiveHourBar.Location = ScaleLayoutPoint(26, 145);
+            fiveHourBar.Width = ScaleLayoutValue(388);
+
+            weeklyTitle.Location = ScaleLayoutPoint(26, 176);
+            weeklyValue.Location = ScaleLayoutPoint(264, 176);
+            weeklyValue.Size = ScaleLayoutSize(150, 24);
+            weeklyReset.Location = ScaleLayoutPoint(26, 207);
+            weeklyReset.Size = ScaleLayoutSize(388, 24);
+            weeklyBar.Location = ScaleLayoutPoint(26, 235);
+            weeklyBar.Width = ScaleLayoutValue(388);
+
+            limitsDivider.Location = ScaleLayoutPoint(26, 264);
+            limitsDivider.Size = ScaleLayoutSize(388, 1);
+            todayTitle.Location = ScaleLayoutPoint(26, 281);
+            todayTitle.Size = ScaleLayoutSize(220, 24);
+            todayTokens.Location = ScaleLayoutPoint(254, 281);
+            todayTokens.Size = ScaleLayoutSize(160, 24);
+            lifetimeTitle.Location = ScaleLayoutPoint(26, 311);
+            lifetimeTitle.Size = ScaleLayoutSize(220, 24);
+            lifetimeTokens.Location = ScaleLayoutPoint(254, 311);
+            lifetimeTokens.Size = ScaleLayoutSize(160, 24);
+            inferenceDivider.Location = ScaleLayoutPoint(26, 351);
+            inferenceDivider.Size = ScaleLayoutSize(388, 1);
+            updatedLabel.Location = ScaleLayoutPoint(26, 367);
+            updatedLabel.Size = ScaleLayoutSize(338, 24);
         }
+
+        refreshButton.Location = new Point(
+            ScaleLayoutValue(440) - ScaleLayoutValue(26) - refreshButton.Width,
+            targetHeight - ScaleLayoutValue(16) - refreshButton.Height);
 
         if (preserveBottom && Visible)
         {
@@ -320,13 +349,18 @@ internal sealed class UsagePopupForm : Form
                 : previousBottom - targetHeight;
             var targetLocation = KeepWithinBounds(
                 new Point(Left, targetY),
-                new Size(440, targetHeight),
+                new Size(ScaleLayoutValue(440), targetHeight),
                 screen.Bounds);
-            SetBounds(targetLocation.X, targetLocation.Y, 440, targetHeight, BoundsSpecified.All);
+            SetBounds(
+                targetLocation.X,
+                targetLocation.Y,
+                ScaleLayoutValue(440),
+                targetHeight,
+                BoundsSpecified.All);
         }
         else
         {
-            ClientSize = new Size(440, targetHeight);
+            ClientSize = new Size(ScaleLayoutValue(440), targetHeight);
         }
 
         toolTip.SetToolTip(viewModeButton, compact ? "Show extended view" : "Show compact view");
@@ -437,42 +471,44 @@ internal sealed class UsagePopupForm : Form
         return base.ProcessCmdKey(ref message, keyData);
     }
 
-    private static Label MakeSectionTitle(string text, int y) => new()
+    private static Label MakeSectionTitle(string text) => new()
     {
         Text = text,
         Font = new Font("Segoe UI Semibold", 10f, FontStyle.Bold),
-        AutoSize = true,
-        Location = new Point(26, y)
+        AutoSize = true
     };
 
-    private static Label MakeValueLabel(int y) => new()
+    private static Label MakeValueLabel() => new()
     {
         Text = "Unavailable",
         TextAlign = ContentAlignment.MiddleRight,
-        Font = new Font("Segoe UI Semibold", 10f, FontStyle.Bold),
-        Location = new Point(264, y),
-        Size = new Size(150, 24)
+        Font = new Font("Segoe UI Semibold", 10f, FontStyle.Bold)
     };
 
-    private static Label MakeMutedLabel(int y) => MakeMutedLabel("Reset time unavailable", y, 26, 388);
-
-    private static Label MakeMutedLabel(string text, int y, int x, int width) => new()
+    private static Label MakeMutedLabel(string text) => new()
     {
         Text = text,
         ForeColor = Color.FromArgb(148, 163, 184),
-        AutoEllipsis = true,
-        Location = new Point(x, y),
-        Size = new Size(width, 22)
+        AutoEllipsis = true
     };
 
-    private static Label MakeTokenValue(int y, int x, int width) => new()
+    private static Label MakeTokenValue() => new()
     {
         Text = "Unavailable",
         TextAlign = ContentAlignment.MiddleRight,
-        Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold),
-        Location = new Point(x, y),
-        Size = new Size(width, 22)
+        Font = new Font("Segoe UI Semibold", 9f, FontStyle.Bold)
     };
+
+    private int ScaleLayoutValue(int value) =>
+        IsHandleCreated
+            ? (int)Math.Round(value * DeviceDpi / (double)LogicalDpi)
+            : value;
+
+    private Point ScaleLayoutPoint(int x, int y) =>
+        new(ScaleLayoutValue(x), ScaleLayoutValue(y));
+
+    private Size ScaleLayoutSize(int width, int height) =>
+        new(ScaleLayoutValue(width), ScaleLayoutValue(height));
 
     private void AddDragHandlers(Control control)
     {
