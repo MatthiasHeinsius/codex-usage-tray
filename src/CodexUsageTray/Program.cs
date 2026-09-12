@@ -5,6 +5,11 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        if (UpdateInstaller.TryHandleCommandLine(args, out var updateExitCode))
+        {
+            return updateExitCode;
+        }
+
         if (args.Contains("--self-test", StringComparer.OrdinalIgnoreCase))
         {
             try

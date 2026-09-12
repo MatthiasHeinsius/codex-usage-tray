@@ -49,9 +49,13 @@ The portable release includes the .NET desktop runtime. It does not require a se
 
 Download [`CodexUsageTray.exe`](https://github.com/MatthiasHeinsius/codex-usage-tray/releases/latest/download/CodexUsageTray.exe) from the [latest GitHub release](https://github.com/MatthiasHeinsius/codex-usage-tray/releases/latest). Move it to a permanent location, then run it. You can also build the executable from source.
 
-Left-click the tray icon to open or close the usage window. A double-click performs the same toggle once. Right-click the icon to refresh the data, change startup settings, open the Codex usage page, or exit.
+Left-click the tray icon to open or close the usage window. A double-click performs the same toggle once. Right-click the icon to refresh the data, change startup settings, check for updates, open the Codex usage page, or exit.
 
-Both automation options are off on first launch. `Start with Windows` creates a shortcut that appears in Windows Startup Apps. Keep the executable at the same path after enabling this setting because the shortcut points to that file.
+`Automatically check for updates` is off by default and appears directly below `Start with Windows` in the tray menu. Enable it to check GitHub when the app starts. Use `Check for updates` to run a check manually.
+
+When either check finds a newer release, the app asks before downloading or installing it. If you accept, the app downloads `CodexUsageTray.exe`, verifies it against the release's `SHA256SUMS.txt`, replaces the executable in its current folder, and restarts. Windows asks for administrator access only if the executable is in a protected location. A manual check reports when the installed version is current or the check fails. Startup checks stay silent when no update is available or GitHub cannot be reached.
+
+`Start with Windows`, `Auto-activate allowance window`, and `Notify on allowance changes` are off on first launch. `Start with Windows` creates a shortcut that appears in Windows Startup Apps. Keep the executable at the same path after enabling this setting because the shortcut points to that file.
 
 The executable is not code-signed, so Windows SmartScreen or antivirus software may warn about it.
 
@@ -71,7 +75,7 @@ The app runs the installed Codex CLI in app-server mode and calls its read-only 
 
 The account service may publish daily token buckets a day late. If today's bucket is missing, the app totals `token_usage_record` entries from the local Codex session history. If the account total ends with yesterday's data, the app adds today's local total to the displayed inference total. Routine allowance refreshes retain same-day activity and its original observation time. On a new local date, today's retained activity clears while the lifetime total remains available with its observation time.
 
-The app does not upload the usage data it reads from the account or local history. The optional auto-start feature only sends the `Hi` request described above.
+The app does not upload the usage data it reads from the account or local history. Update checks contact the GitHub releases API and download release files from GitHub when needed. The optional auto-activation feature only sends the `Hi` request described above.
 
 The app stores its view and window-start settings under `HKEY_CURRENT_USER\Software\CodexUsageTray`. The optional Windows startup shortcut is in the current user's Startup folder.
 

@@ -11,6 +11,10 @@ public sealed class TrayApplicationContextTests
         Assert.Equal(
             "Notify on allowance changes",
             TrayApplicationContext.AllowanceNotificationsMenuText);
+        Assert.Equal(
+            "Automatically check for updates",
+            TrayApplicationContext.AutomaticUpdateMenuText);
+        Assert.Equal("Check for updates", TrayApplicationContext.CheckForUpdatesMenuText);
     }
 
     [Fact]
