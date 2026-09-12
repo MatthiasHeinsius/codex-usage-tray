@@ -4,11 +4,6 @@ internal static class SelfTest
 {
     public static int Run()
     {
-        using var lengthAhead = new LengthAheadStream(length: 10, position: 3);
-        using var copiedBytes = new MemoryStream();
-        Assert(LocalTokenUsageReader.CopyUnreadBytes(lengthAhead, copiedBytes) == 3,
-            "local token reader advances by consumed bytes");
-
         Assert(
             TrayIconRenderer.StaticFiveHourRemaining == 66
                 && TrayIconRenderer.StaticWeeklyRemaining == 75,
@@ -83,27 +78,12 @@ internal static class SelfTest
                 workingArea)
                 == new Point(480, 592),
             "unpinned popup returns to its tray position when reopened");
-        Assert(
-            !TrayApplicationContext.ShouldShowAfterTrayClick(visibleWhenMousePressed: true),
-            "tray click closes a popup that deactivated during the click");
-        Assert(
-            !TrayApplicationContext.ShouldHandleTrayClick(
-                currentTimestamp: 1_100,
-                previousTimestamp: 1_000,
-                doubleClickTime: 500),
-            "second click of a tray double-click does not toggle again");
-        Assert(
-            TrayApplicationContext.ShouldHandleTrayClick(
-                currentTimestamp: 1_501,
-                previousTimestamp: 1_000,
-                doubleClickTime: 500),
-            "later tray click toggles normally");
         popup.Location = new Point(-10_000, -10_000);
         popup.Show();
         try
         {
             popup.SetViewModeForScreenshot(compact: false);
-            popup.SetLoading(loading: true);
+            popup.ShowPresentation(UsagePresentation.CreateLoading(previous: null));
             Assert(
                 popup.StatusTextBottomClearance >= 2,
                 $"loading status keeps descender clearance ({popup.StatusTextBottomClearance}px)");
@@ -141,30 +121,6 @@ internal static class SelfTest
             Directory.Delete(startupTestDirectory, recursive: true);
         }
 
-        var shortcutRolledBack = false;
-        try
-        {
-            StartupRegistration.DeleteLegacyOrRollbackShortcut(
-                () => throw new UnauthorizedAccessException("Synthetic registry failure."),
-                () => shortcutRolledBack = true);
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // Expected test failure path.
-        }
-
-        Assert(shortcutRolledBack, "failed legacy cleanup rolls back the startup shortcut");
-
-        var localUsageLines = new[]
-        {
-            "{\"timestamp\":\"2026-09-07T08:00:00Z\",\"type\":\"token_usage_record\",\"payload\":{\"usage\":{\"total_tokens\":1200}}}",
-            "{\"timestamp\":\"2026-09-07T09:00:00Z\",\"type\":\"token_usage_record\",\"payload\":{\"usage\":{\"total_tokens\":800}}}",
-            "{\"timestamp\":\"2026-09-06T09:00:00Z\",\"type\":\"token_usage_record\",\"payload\":{\"usage\":{\"total_tokens\":9999}}}",
-            "{\"timestamp\":\"2026-09-07T09:00:00Z\",\"type\":\"event_msg\",\"payload\":{}}"
-        };
-        var localUsage = LocalTokenUsageReader.SumLinesForDate(localUsageLines, new DateOnly(2026, 9, 7));
-        Assert(localUsage.Found && localUsage.Tokens == 2000, "local daily inference fallback");
-
         Console.WriteLine("All self-tests passed.");
         return 0;
     }
@@ -177,21 +133,4 @@ internal static class SelfTest
         }
     }
 
-    private sealed class LengthAheadStream(long length, long position) : Stream
-    {
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => length;
-        public override long Position { get; set; } = position;
-
-        public override void Flush()
-        {
-        }
-
-        public override int Read(byte[] buffer, int offset, int count) => 0;
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-    }
 }

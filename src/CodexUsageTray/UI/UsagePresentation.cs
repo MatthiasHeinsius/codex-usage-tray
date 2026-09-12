@@ -1,24 +1,28 @@
+using System.Collections.Immutable;
 using System.Globalization;
 
 namespace CodexUsageTray;
 
-internal sealed record UsagePresentation
+internal abstract record UsagePresentation(
+    UsagePresentation.PopupPresentation Popup,
+    UsagePresentation.TrayPresentation Tray,
+    ImmutableArray<UsagePresentation.NoticePresentation> Notices)
 {
-    private UsagePresentation(
-        PopupPresentation popup,
-        TrayPresentation tray,
-        IReadOnlyList<NoticePresentation> notices)
+    public static Initial CreateInitial()
     {
-        Popup = popup;
-        Tray = tray;
-        Notices = notices;
+        var unavailable = UnavailableAllowance();
+        return new Initial(
+            new PopupPresentation(
+                "Connecting...",
+                unavailable,
+                unavailable,
+                "Unavailable",
+                "Unavailable",
+                "Not updated yet"),
+            new TrayPresentation(100, 100, "Codex usage · connecting"));
     }
 
-    public PopupPresentation Popup { get; }
-    public TrayPresentation Tray { get; }
-    public IReadOnlyList<NoticePresentation> Notices { get; }
-
-    public static UsagePresentation Create(
+    public static Ready Create(
         UsageSnapshot snapshot,
         DateTimeOffset now,
         IFormatProvider formatProvider) =>
@@ -29,7 +33,7 @@ internal sealed record UsagePresentation
             now,
             formatProvider);
 
-    internal static UsagePresentation Create(
+    internal static Ready Create(
         UsageSnapshot snapshot,
         AllowanceWindowActivationResult allowanceEvents,
         bool notificationsEnabled,
@@ -51,11 +55,67 @@ internal sealed record UsagePresentation
             snapshot.Weekly?.RemainingPercent ?? 100,
             $"Codex · 5h {PercentOrUnknown(snapshot.FiveHour)}% · week {PercentOrUnknown(snapshot.Weekly)}%");
 
-        return new UsagePresentation(
+        return new Ready(
             popup,
             tray,
             PresentNotices(allowanceEvents, notificationsEnabled));
     }
+
+    internal static Loading CreateLoading(
+        Ready? previous,
+        string? failureMessage = null,
+        ImmutableArray<NoticePresentation>? notices = null)
+    {
+        var initial = previous is null ? CreateInitial() : null;
+        var popup = previous?.Popup ?? initial!.Popup;
+        popup = popup with
+        {
+            AccountStatus = "Reading your Codex account",
+            UpdatedText = failureMessage is null
+                ? previous is null ? "Not updated yet" : $"{previous.Popup.UpdatedText} · Updating"
+                : previous is null ? failureMessage : $"Stale · {failureMessage}"
+        };
+
+        var tray = previous?.Tray ?? initial!.Tray;
+        tray = tray with
+        {
+            Tooltip = failureMessage is null
+                ? previous is null ? tray.Tooltip : $"{tray.Tooltip} · updating"
+                : previous is null
+                    ? $"Codex usage · unavailable · updating · {failureMessage}"
+                    : $"{tray.Tooltip} · stale · updating · {failureMessage}"
+        };
+
+        return new Loading(
+            popup,
+            tray,
+            notices ?? ImmutableArray<NoticePresentation>.Empty,
+            failureMessage);
+    }
+
+    internal static Failed CreateFailed(Ready? previous, string failureMessage)
+    {
+        var initial = previous is null ? CreateInitial() : null;
+        var popup = (previous?.Popup ?? initial!.Popup) with
+        {
+            AccountStatus = "Could not refresh",
+            UpdatedText = previous is null ? failureMessage : $"Stale · {failureMessage}"
+        };
+        var priorTray = previous?.Tray ?? initial!.Tray;
+        var tray = priorTray with
+        {
+            Tooltip = previous is null
+                ? $"Codex usage · unavailable · {failureMessage}"
+                : $"{priorTray.Tooltip} · stale · {failureMessage}"
+        };
+        return new Failed(popup, tray, failureMessage);
+    }
+
+    private static AllowancePresentation UnavailableAllowance() => new(
+        ProgressValue: 0,
+        RemainingText: "Unavailable",
+        ResetText: "Reset time unavailable",
+        CompactResetText: "Reset unknown");
 
     private static string PresentObservationTimes(
         UsageSnapshot snapshot,
@@ -166,7 +226,7 @@ internal sealed record UsagePresentation
     private static string FormatNumber(int value, IFormatProvider formatProvider) =>
         string.Format(formatProvider, "{0}", value);
 
-    private static List<NoticePresentation> PresentNotices(
+    private static ImmutableArray<NoticePresentation> PresentNotices(
         AllowanceWindowActivationResult events,
         bool notificationsEnabled)
     {
@@ -198,7 +258,7 @@ internal sealed record UsagePresentation
                 TimeSpan.FromSeconds(7)));
         }
 
-        return notices;
+        return [.. notices];
     }
 
     private static string AllowanceNames(AllowanceWindows windows) => windows switch
@@ -232,6 +292,34 @@ internal sealed record UsagePresentation
         string Message,
         NoticeSeverity Severity,
         TimeSpan Duration);
+
+    internal sealed record Initial(
+        PopupPresentation Popup,
+        TrayPresentation Tray)
+        : UsagePresentation(Popup, Tray, ImmutableArray<NoticePresentation>.Empty);
+
+    internal sealed record Loading(
+        PopupPresentation Popup,
+        TrayPresentation Tray,
+        ImmutableArray<NoticePresentation> Notices,
+        string? FailureMessage)
+        : UsagePresentation(Popup, Tray, Notices);
+
+    internal sealed record Ready(
+        PopupPresentation Popup,
+        TrayPresentation Tray,
+        ImmutableArray<NoticePresentation> Notices)
+        : UsagePresentation(Popup, Tray, Notices)
+    {
+        public Ready WithoutNotices() =>
+            Notices.Length == 0 ? this : new Ready(Popup, Tray, ImmutableArray<NoticePresentation>.Empty);
+    }
+
+    internal sealed record Failed(
+        PopupPresentation Popup,
+        TrayPresentation Tray,
+        string FailureMessage)
+        : UsagePresentation(Popup, Tray, ImmutableArray<NoticePresentation>.Empty);
 
     internal enum NoticeSeverity
     {

@@ -16,6 +16,10 @@ _Avoid_: Usage Snapshot, raw response
 One requested refresh that produces a final Usage Snapshot and its corresponding user-facing presentation after any Allowance Window Activation work finishes.
 _Avoid_: Refresh cycle, display cycle
 
+**Usage Presentation**:
+The complete user-facing state of Codex usage, including loading, current or stale values, failure context, tray display, popup display, and notices.
+_Avoid_: UI state, view model, display data
+
 **Observation Time**:
 The time at which a Usage Observation read a usage fact. A retained fact keeps its original Observation Time when it appears in a later Usage Snapshot.
 _Avoid_: Updated time, retrieval time

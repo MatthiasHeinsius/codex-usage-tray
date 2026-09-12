@@ -26,8 +26,7 @@ internal static class Program
         }
 
         ApplicationConfiguration.Initialize();
-        var trayUpdates = UsageUpdates.CreateDefault();
-        Application.Run(new TrayApplicationContext(trayUpdates));
+        Application.Run(new TrayApplicationContext(UsagePresentations.CreateDefault));
         GC.KeepAlive(singleInstance);
         return 0;
     }

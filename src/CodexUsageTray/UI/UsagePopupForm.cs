@@ -228,19 +228,11 @@ internal sealed class UsagePopupForm : Form
         ApplyViewMode(viewModeButton.IsCompact, preserveBottom: false);
     }
 
-    public void SetLoading(bool loading)
+    public void ShowPresentation(UsagePresentation presentation)
     {
-        refreshButton.Enabled = !loading;
-        if (loading)
-        {
-            statusLabel.Text = "Reading your Codex account";
-        }
-    }
-
-    public void ShowPresentation(UsagePresentation.PopupPresentation presentation)
-    {
-        displayedPresentation = presentation;
-        RenderPresentation(presentation);
+        displayedPresentation = presentation.Popup;
+        refreshButton.Enabled = presentation is not UsagePresentation.Loading;
+        RenderPresentation(presentation.Popup);
     }
 
     internal void SetViewModeForScreenshot(bool compact)
@@ -345,12 +337,6 @@ internal sealed class UsagePopupForm : Form
 
         Invalidate(invalidateChildren: true);
         Update();
-    }
-
-    public void ShowError(string message)
-    {
-        statusLabel.Text = "Could not refresh";
-        updatedLabel.Text = message;
     }
 
     public void ShowNearTray()

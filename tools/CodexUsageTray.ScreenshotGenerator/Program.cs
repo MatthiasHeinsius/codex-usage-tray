@@ -32,7 +32,8 @@ internal static class Program
             CultureInfo.CurrentCulture);
 
         using var popup = new CodexUsageTray.UsagePopupForm();
-        popup.ShowPresentation(presentation.Popup);
+        var sink = new ScreenshotUsagePresentationSink(popup);
+        sink.Present(presentation);
         popup.Location = new Point(-10_000, -10_000);
         popup.Show();
         try
@@ -181,6 +182,13 @@ internal static class Program
         graphics.DrawImage(
             iconBitmap,
             new Rectangle((width - 32) / 2, height - taskbarHeight + 10, 32, 32));
+    }
+
+    private sealed class ScreenshotUsagePresentationSink(CodexUsageTray.UsagePopupForm popup)
+        : CodexUsageTray.IUsagePresentationSink
+    {
+        public void Present(CodexUsageTray.UsagePresentation presentation) =>
+            popup.ShowPresentation(presentation);
     }
 
 }
