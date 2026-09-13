@@ -5,6 +5,16 @@ namespace CodexUsageTray.Tests;
 public sealed class UpdateInstallerTests
 {
     [Fact]
+    public void WritableTargetDoesNotNeedElevation()
+    {
+        using var directory = new TemporaryDirectory("writable-installer-target");
+        var path = directory.FilePath("CodexUsageTray.exe");
+        File.WriteAllText(path, "installed executable");
+
+        Assert.True(UpdateInstaller.HasWriteAccess(path));
+    }
+
+    [Fact]
     public void ReadOnlyTargetNeedsElevation()
     {
         var path = Path.Combine(Path.GetTempPath(), $"CodexUsageTray-read-only-{Guid.NewGuid():N}.exe");
@@ -33,6 +43,9 @@ public sealed class UpdateInstallerTests
 
         Assert.True(startInfo.UseShellExecute);
         Assert.Equal("runas", startInfo.Verb);
+        Assert.Equal(Path.GetFullPath(@"C:\Temp\update helper.exe"), startInfo.FileName);
+        Assert.Equal(@"C:\Temp", startInfo.WorkingDirectory);
+        Assert.Equal(System.Diagnostics.ProcessWindowStyle.Hidden, startInfo.WindowStyle);
         Assert.Equal(
             [
                 "--apply-update-elevated",
@@ -46,24 +59,32 @@ public sealed class UpdateInstallerTests
     [Fact]
     public void ReplacementOverwritesExistingFileContents()
     {
-        var directory = Path.Combine(Path.GetTempPath(), $"CodexUsageTray-installer-test-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(directory);
-        var sourcePath = Path.Combine(directory, "source.tmp");
-        var targetPath = Path.Combine(directory, "CodexUsageTray.exe");
+        using var directory = new TemporaryDirectory("installer-replacement");
+        var sourcePath = directory.FilePath("source.tmp");
+        var targetPath = directory.FilePath("CodexUsageTray.exe");
         var replacement = Encoding.UTF8.GetBytes("verified replacement executable");
         File.WriteAllBytes(sourcePath, replacement);
         File.WriteAllText(targetPath, "old executable");
 
-        try
-        {
-            UpdateInstaller.ReplaceFileContentsWhenAvailable(sourcePath, targetPath);
+        UpdateInstaller.ReplaceFileContentsWhenAvailable(sourcePath, targetPath);
 
-            Assert.Equal(replacement, File.ReadAllBytes(targetPath));
-            Assert.True(File.Exists(sourcePath));
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
+        Assert.Equal(replacement, File.ReadAllBytes(targetPath));
+        Assert.True(File.Exists(sourcePath));
+    }
+
+    [Fact]
+    public void CleanupArgumentDeletesTheHelperAndContinuesApplicationStartup()
+    {
+        using var directory = new TemporaryDirectory("installer-cleanup");
+        var helperPath = directory.FilePath("update-helper.exe");
+        File.WriteAllText(helperPath, "helper");
+
+        var handled = UpdateInstaller.TryHandleCommandLine(
+            ["--cleanup-update", helperPath],
+            out var exitCode);
+
+        Assert.False(handled);
+        Assert.Equal(0, exitCode);
+        Assert.False(File.Exists(helperPath));
     }
 }

@@ -5,7 +5,7 @@ namespace CodexUsageTray.Tests;
 public sealed class CodexUsageObservationReaderTests
 {
     [Fact]
-    public async Task ReadUsesLineExchangeForTheAppServerConversation()
+    public async Task ReadInitializesAppServerAndReadsAllowanceWindows()
     {
         var processes = new ScriptedCodexProcessExecution();
         processes.EnqueueLine("""{"id":1,"result":{}}""");
@@ -108,6 +108,43 @@ public sealed class CodexUsageObservationReaderTests
             () => reader.ReadAsync(UsageObservationRequest.AllowanceWindows, CancellationToken.None));
 
         Assert.Equal("Codex returned an error: unsupported", failure.Message);
+    }
+
+    [Fact]
+    public async Task ReadIgnoresNotificationsAndIncompleteResponses()
+    {
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine("""{"method":"account/rateLimits/updated"}""");
+        processes.EnqueueLine("""{"id":2}""");
+        processes.EnqueueLine("""
+            {"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300}}}}
+            """);
+        var reader = new CodexUsageObservationReader(processes);
+
+        var observations = await reader.ReadAsync(
+            UsageObservationRequest.AllowanceWindows,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(25, Assert.Single(observations.Account.AllowanceWindows).UsedPercent);
+    }
+
+    [Fact]
+    public async Task ReadReportsWhenAppServerClosesBeforeReturningUsage()
+    {
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine(null);
+        var reader = new CodexUsageObservationReader(processes);
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            reader.ReadAsync(
+                UsageObservationRequest.AllowanceWindows,
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(
+            "The Codex app-server closed before returning usage data.",
+            failure.Message);
     }
 
     [Fact]

@@ -36,5 +36,7 @@ public sealed class AllowanceWindowTests
         Assert.False(unchanged.IsResetOf(usedUp));
         Assert.False(partiallyUsed.IsResetOf(usedUp));
         Assert.False(reset.IsResetOf(new AllowanceWindow(99, TimeSpan.FromHours(5), originalReset)));
+        Assert.False(new AllowanceWindow(0, TimeSpan.FromHours(5), null).IsResetOf(usedUp));
+        Assert.False(reset.IsResetOf(new AllowanceWindow(100, TimeSpan.FromHours(5), null)));
     }
 }

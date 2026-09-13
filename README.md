@@ -85,8 +85,17 @@ Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), th
 
 ```powershell
 dotnet build .\CodexUsageTray.slnx -c Release
-dotnet test .\tests\CodexUsageTray.Tests\CodexUsageTray.Tests.csproj -c Release --no-build
+dotnet test --project .\tests\CodexUsageTray.Tests\CodexUsageTray.Tests.csproj -c Release --no-build
 dotnet run --project .\src\CodexUsageTray\CodexUsageTray.csproj -c Release --no-build -- --self-test
+```
+
+The test project uses xUnit.net 4 and Microsoft Testing Platform v2. To collect a Cobertura report with the MTP coverage extension, run:
+
+```powershell
+dotnet test --project .\tests\CodexUsageTray.Tests\CodexUsageTray.Tests.csproj `
+  -c Release `
+  --coverage `
+  --coverage-output-format cobertura
 ```
 
 To create the self-contained Windows x64 executable, double-click `build-release.cmd` or run:

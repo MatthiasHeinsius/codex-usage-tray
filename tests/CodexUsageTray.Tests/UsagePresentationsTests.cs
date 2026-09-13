@@ -12,7 +12,7 @@ public sealed class UsagePresentationsTests
         var sink = new RecordingSink();
         await using var presentations = new UsagePresentations(updates, sink);
 
-        var request = presentations.RequestAsync(UsageUpdateIntent.Activity);
+        var request = presentations.RequestAsync(UsageUpdateIntent.Activity, TestContext.Current.CancellationToken);
 
         Assert.Collection(
             sink.Presentations,
@@ -36,7 +36,7 @@ public sealed class UsagePresentationsTests
         var sink = new RecordingSink();
         await using var presentations = new UsagePresentations(updates, sink);
 
-        var request = presentations.RequestAsync(UsageUpdateIntent.Routine);
+        var request = presentations.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         step.Fail(new IOException("Account read failed.\r\nTry again."));
         await request;
 
@@ -56,10 +56,10 @@ public sealed class UsagePresentationsTests
         var sink = new RecordingSink();
         await using var presentations = new UsagePresentations(updates, sink);
 
-        var successfulRequest = presentations.RequestAsync(UsageUpdateIntent.Routine);
+        var successfulRequest = presentations.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         success.Succeed(CreateReady(usedPercent: 20));
         await successfulRequest;
-        var failedRequest = presentations.RequestAsync(UsageUpdateIntent.Routine);
+        var failedRequest = presentations.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         failure.Fail(new IOException("Synthetic failure."));
         await failedRequest;
 
@@ -79,8 +79,8 @@ public sealed class UsagePresentationsTests
         var sink = new RecordingSink();
         await using var presentations = new UsagePresentations(updates, sink);
 
-        var firstRequest = presentations.RequestAsync(UsageUpdateIntent.Routine);
-        var secondRequest = presentations.RequestAsync(UsageUpdateIntent.Activity);
+        var firstRequest = presentations.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+        var secondRequest = presentations.RequestAsync(UsageUpdateIntent.Activity, TestContext.Current.CancellationToken);
 
         Assert.Equal(2, sink.Presentations.Count);
         Assert.IsType<UsagePresentation.Loading>(sink.Presentations[^1]);
@@ -110,8 +110,8 @@ public sealed class UsagePresentationsTests
         var sink = new RecordingSink();
         await using var presentations = new UsagePresentations(updates, sink);
 
-        var firstRequest = presentations.RequestAsync(UsageUpdateIntent.Routine);
-        var secondRequest = presentations.RequestAsync(UsageUpdateIntent.Activity);
+        var firstRequest = presentations.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+        var secondRequest = presentations.RequestAsync(UsageUpdateIntent.Activity, TestContext.Current.CancellationToken);
         firstStep.Fail(new IOException("Routine update failed."));
         await firstRequest;
 
@@ -170,7 +170,7 @@ public sealed class UsagePresentationsTests
         var sink = new RecordingSink();
         await using var presentations = new UsagePresentations(updates, sink);
 
-        var request = presentations.RequestAsync(UsageUpdateIntent.Routine);
+        var request = presentations.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         step.Fail(new OperationCanceledException("Internal cancellation."));
         await request;
 
@@ -179,28 +179,52 @@ public sealed class UsagePresentationsTests
     }
 
     [Fact]
-    public async Task PreferencesAndLifetimeStayBehindThePresentationModule()
+    public async Task PreferencesAreForwardedToUsageUpdates()
     {
         var updates = new ScriptedUsageUpdates
         {
             ActivationEnabled = false,
             NotificationsEnabled = true
         };
-        var presentations = new UsagePresentations(updates, new RecordingSink());
+        await using var presentations = new UsagePresentations(updates, new RecordingSink());
 
         Assert.False(presentations.ActivationEnabled);
         Assert.True(presentations.NotificationsEnabled);
 
         presentations.ActivationEnabled = true;
         presentations.NotificationsEnabled = false;
-        await presentations.DisposeAsync();
 
         Assert.True(updates.ActivationEnabled);
         Assert.False(updates.NotificationsEnabled);
+    }
+
+    [Fact]
+    public async Task DisposalDisposesUpdatesAndRejectsFurtherCalls()
+    {
+        var updates = new ScriptedUsageUpdates();
+        var presentations = new UsagePresentations(updates, new RecordingSink());
+
+        await presentations.DisposeAsync();
+
         Assert.True(updates.Disposed);
         Assert.Throws<ObjectDisposedException>(() => _ = presentations.ActivationEnabled);
         await Assert.ThrowsAsync<ObjectDisposedException>(
-            () => presentations.RequestAsync(UsageUpdateIntent.Routine));
+            () => presentations.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task UnknownIntentIsRejectedWithoutPublishingLoadingState()
+    {
+        var updates = new ScriptedUsageUpdates();
+        var sink = new RecordingSink();
+        await using var presentations = new UsagePresentations(updates, sink);
+
+        var exception = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            presentations.RequestAsync((UsageUpdateIntent)42, TestContext.Current.CancellationToken));
+
+        Assert.Equal("intent", exception.ParamName);
+        Assert.Single(sink.Presentations);
+        Assert.Empty(updates.Requests);
     }
 
     [Fact]
@@ -211,7 +235,7 @@ public sealed class UsagePresentationsTests
         var sink = new RecordingSink { ThrowOnReady = true };
         await using var presentations = new UsagePresentations(updates, sink);
 
-        var request = presentations.RequestAsync(UsageUpdateIntent.Routine);
+        var request = presentations.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         step.Succeed(CreateReady(usedPercent: 20));
 
         var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => request);
@@ -227,11 +251,11 @@ public sealed class UsagePresentationsTests
         await using var presentations = new UsagePresentations(updates, sink);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => presentations.RequestAsync(UsageUpdateIntent.Routine));
+            () => presentations.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken));
         Assert.Empty(updates.Requests);
 
         var step = updates.Enqueue(UsageUpdateIntent.Routine);
-        var retry = presentations.RequestAsync(UsageUpdateIntent.Routine);
+        var retry = presentations.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         step.Succeed(CreateReady(usedPercent: 20));
         await retry;
 
@@ -245,7 +269,7 @@ public sealed class UsagePresentationsTests
         updates.Enqueue(UsageUpdateIntent.Routine);
         var sink = new RecordingSink();
         var presentations = new UsagePresentations(updates, sink);
-        var request = presentations.RequestAsync(UsageUpdateIntent.Routine);
+        var request = presentations.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
 
         await presentations.DisposeAsync();
 
@@ -261,7 +285,7 @@ public sealed class UsagePresentationsTests
         var step = updates.Enqueue(UsageUpdateIntent.Routine);
         var sink = new RecordingSink();
         var presentations = new UsagePresentations(updates, sink);
-        var request = presentations.RequestAsync(UsageUpdateIntent.Routine);
+        var request = presentations.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
 
         await presentations.DisposeAsync();
         step.Succeed(CreateReady(usedPercent: 20));
@@ -280,10 +304,9 @@ public sealed class UsagePresentationsTests
         var sink = new BlockingReadySink();
         await using var presentations = new UsagePresentations(updates, sink);
 
-        var firstRequest = Task.Run(
-            () => presentations.RequestAsync(UsageUpdateIntent.Routine));
+        var firstRequest = Task.Run(() => presentations.RequestAsync(UsageUpdateIntent.Routine), TestContext.Current.CancellationToken);
         firstStep.Succeed(CreateReady(usedPercent: 20));
-        await sink.ReadyDeliveryStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await sink.ReadyDeliveryStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
 
         Task? secondRequest = null;
         var secondCallReturned = new TaskCompletionSource(
@@ -292,11 +315,11 @@ public sealed class UsagePresentationsTests
         {
             secondRequest = presentations.RequestAsync(UsageUpdateIntent.Activity);
             secondCallReturned.SetResult();
-        });
+        }, TestContext.Current.CancellationToken);
 
         try
         {
-            await secondCallReturned.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await secondCallReturned.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         }
         finally
         {
@@ -311,16 +334,6 @@ public sealed class UsagePresentationsTests
         Assert.Equal(
             [UsageUpdateIntent.Routine, UsageUpdateIntent.Activity],
             updates.Requests);
-    }
-
-    [Fact]
-    public void PublishedNoticesCannotBeMutated()
-    {
-        var presentation = CreateReady(usedPercent: 20, withNotice: true);
-        var notices = (ICollection<UsagePresentation.NoticePresentation>)presentation.Notices;
-
-        Assert.True(notices.IsReadOnly);
-        Assert.Throws<NotSupportedException>(() => notices.Clear());
     }
 
     private static UsagePresentation.Ready CreateReady(int usedPercent, bool withNotice = false)

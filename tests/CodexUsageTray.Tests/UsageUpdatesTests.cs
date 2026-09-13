@@ -21,7 +21,7 @@ public sealed partial class UsageUpdatesTests
             time,
             CultureInfo.InvariantCulture);
 
-        var presentation = await updates.RefreshAsync();
+        var presentation = await updates.RefreshAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal("0% left", presentation.Popup.FiveHour.RemainingText);
         var notice = Assert.Single(presentation.Notices);
@@ -47,9 +47,9 @@ public sealed partial class UsageUpdatesTests
             time,
             CultureInfo.InvariantCulture);
 
-        var firstRefresh = updates.RefreshAsync();
-        await command.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var secondRefresh = updates.RefreshAsync();
+        var firstRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
+        await command.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var secondRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
         command.Completion.TrySetResult();
 
         var first = await firstRefresh;
@@ -72,9 +72,9 @@ public sealed partial class UsageUpdatesTests
             time,
             CultureInfo.InvariantCulture);
 
-        var activeRefresh = updates.RefreshAsync();
-        await observations.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var queuedRefresh = updates.RefreshAsync();
+        var activeRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
+        await observations.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var queuedRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
         var disposal = updates.DisposeAsync().AsTask();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => activeRefresh);
@@ -83,7 +83,7 @@ public sealed partial class UsageUpdatesTests
     }
 
     [Fact]
-    public async Task ActivityRefreshPublishesOnePresentationOfObservedActivity()
+    public async Task ActivityRefreshRequestsAllowanceWindowsAndActivity()
     {
         var now = new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero);
         var reset = now.AddHours(5);
@@ -99,17 +99,19 @@ public sealed partial class UsageUpdatesTests
                     LatestDailyBucketDate: DateOnly.FromDateTime(now.LocalDateTime))),
             Local: null);
         var time = new FixedTimeProvider(now);
+        var observations = new QueueUsageObservationReader(observation);
         await using var updates = new UsageUpdates(
-            new QueueUsageObservationReader(observation),
+            observations,
             new FailingActivationCommand(),
             new EnabledActivationSettings { ActivationEnabled = false },
             time,
             CultureInfo.InvariantCulture);
 
-        var presentation = await updates.RefreshWithActivityAsync();
+        await updates.RefreshWithActivityAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal("1.2K tokens", presentation.Popup.TodayTokens);
-        Assert.Equal(75, presentation.Tray.FiveHourRemaining);
+        Assert.Equal(
+            [UsageObservationRequest.AllowanceWindowsAndActivity],
+            observations.Requests);
     }
 
     [Fact]
@@ -131,15 +133,15 @@ public sealed partial class UsageUpdatesTests
             new FixedTimeProvider(now),
             CultureInfo.InvariantCulture);
 
-        var firstRefresh = updates.RefreshAsync();
-        await command.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var queuedRefresh = updates.RefreshAsync();
+        var firstRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
+        await command.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var queuedRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
         updates.NotificationsEnabled = true;
         command.Completion.TrySetResult();
 
         await firstRefresh;
         var queuedPresentation = await queuedRefresh;
-        var nextPresentation = await updates.RefreshAsync();
+        var nextPresentation = await updates.RefreshAsync(TestContext.Current.CancellationToken);
 
         Assert.True(settings.NotificationsEnabled);
         Assert.Empty(queuedPresentation.Notices);
@@ -165,9 +167,9 @@ public sealed partial class UsageUpdatesTests
             new FixedTimeProvider(now),
             CultureInfo.InvariantCulture);
 
-        var firstRefresh = updates.RefreshAsync();
-        await observations.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var queuedRefresh = updates.RefreshAsync();
+        var firstRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
+        await observations.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var queuedRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
         updates.ActivationEnabled = true;
         observations.CompleteFirst();
 
@@ -175,7 +177,7 @@ public sealed partial class UsageUpdatesTests
         await queuedRefresh;
         Assert.Equal(0, command.CallCount);
 
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
         Assert.Equal(1, command.CallCount);
     }
 
@@ -200,6 +202,27 @@ public sealed partial class UsageUpdatesTests
         Assert.False(settings.ActivationEnabled);
     }
 
+    [Fact]
+    public async Task FailedNotificationWriteKeepsTheEffectiveValue()
+    {
+        var settings = new EnabledActivationSettings
+        {
+            NotificationsEnabled = false,
+            ThrowOnNotificationWrite = true
+        };
+        await using var updates = new UsageUpdates(
+            new QueueUsageObservationReader(),
+            new FailingActivationCommand(),
+            settings,
+            TimeProvider.System,
+            CultureInfo.InvariantCulture);
+
+        Assert.Throws<UnauthorizedAccessException>(() => updates.NotificationsEnabled = true);
+
+        Assert.False(updates.NotificationsEnabled);
+        Assert.False(settings.NotificationsEnabled);
+    }
+
     private static UsageObservations Observe(
         DateTimeOffset observedAt,
         int usedPercent,
@@ -217,11 +240,15 @@ public sealed partial class UsageUpdatesTests
         : IUsageObservationReader
     {
         private readonly Queue<UsageObservations> observations = new(observations);
+        private readonly List<UsageObservationRequest> requests = [];
+
+        public UsageObservationRequest[] Requests => requests.ToArray();
 
         public Task<UsageObservations> ReadAsync(
             UsageObservationRequest request,
             CancellationToken cancellationToken)
         {
+            requests.Add(request);
             var observation = observations.Dequeue();
             var expected = observation.Account.Activity is AccountActivityObservation.NotRequested
                 ? UsageObservationRequest.AllowanceWindows
@@ -310,8 +337,10 @@ public sealed partial class UsageUpdatesTests
     {
         private readonly Dictionary<AllowanceWindowKind, DateTimeOffset> activatedResets = [];
         private bool activationEnabled = true;
+        private bool notificationsEnabled;
 
         public bool ThrowOnActivationWrite { get; set; }
+        public bool ThrowOnNotificationWrite { get; set; }
         public bool ActivationEnabled
         {
             get => activationEnabled;
@@ -326,7 +355,19 @@ public sealed partial class UsageUpdatesTests
             }
         }
 
-        public bool NotificationsEnabled { get; set; }
+        public bool NotificationsEnabled
+        {
+            get => notificationsEnabled;
+            set
+            {
+                if (ThrowOnNotificationWrite)
+                {
+                    throw new UnauthorizedAccessException("Synthetic settings failure.");
+                }
+
+                notificationsEnabled = value;
+            }
+        }
 
         public DateTimeOffset? ReadActivatedReset(AllowanceWindowKind window) =>
             activatedResets.GetValueOrDefault(window);

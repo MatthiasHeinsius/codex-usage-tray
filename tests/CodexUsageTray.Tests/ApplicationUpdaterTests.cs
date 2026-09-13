@@ -7,81 +7,67 @@ namespace CodexUsageTray.Tests;
 
 public sealed class ApplicationUpdaterTests
 {
-    [Fact]
-    public async Task NewReleaseIsDownloadedToStagingDirectoryAndVerified()
+    [Theory]
+    [InlineData("{0}  CodexUsageTray.exe")]
+    [InlineData("{0} *CODEXUSAGETRAY.EXE")]
+    public async Task DownloadStagesExecutableWhenChecksumManifestMatches(string checksumLine)
     {
-        var directory = CreateTestDirectory();
+        using var directory = new TemporaryDirectory("update-download");
         var payload = Encoding.UTF8.GetBytes("replacement executable");
         var expectedHash = Convert.ToHexStringLower(SHA256.HashData(payload));
         using var httpClient = CreateHttpClient(new Dictionary<string, HttpResponseMessage>
         {
             ["/repos/MatthiasHeinsius/codex-usage-tray/releases/latest"] = JsonResponse(CreateRelease("v1.3.0")),
-            ["/downloads/SHA256SUMS.txt"] = TextResponse($"{expectedHash}  CodexUsageTray.exe\n"),
+            ["/downloads/SHA256SUMS.txt"] = TextResponse(
+                string.Format(System.Globalization.CultureInfo.InvariantCulture, checksumLine, expectedHash)),
             ["/downloads/CodexUsageTray.exe"] = ByteResponse(payload)
         });
         var updater = new ApplicationUpdater(
             httpClient,
             new Version(1, 2, 0),
-            directory);
-        ApplicationUpdate? update = null;
+            directory.RootPath);
 
-        try
-        {
-            var availableUpdate = await updater.CheckAsync(CancellationToken.None);
-            Assert.NotNull(availableUpdate);
-            update = await updater.DownloadAsync(availableUpdate, CancellationToken.None);
+        var availableUpdate = await updater.CheckAsync(TestContext.Current.CancellationToken);
+        Assert.NotNull(availableUpdate);
+        var update = await updater.DownloadAsync(
+            availableUpdate,
+            TestContext.Current.CancellationToken);
 
-            Assert.NotNull(update);
-            Assert.Equal(new Version(1, 3, 0), update.Version);
-            Assert.Equal(directory, Path.GetDirectoryName(update.StagedPath));
-            Assert.Equal(payload, await File.ReadAllBytesAsync(update.StagedPath, CancellationToken.None));
-        }
-        finally
-        {
-            if (update is not null)
-            {
-                ApplicationUpdater.TryDelete(update.StagedPath);
-            }
-
-            Directory.Delete(directory, recursive: true);
-        }
+        Assert.Equal(new Version(1, 3, 0), update.Version);
+        Assert.Equal(directory.RootPath, Path.GetDirectoryName(update.StagedPath));
+        Assert.Equal(
+            payload,
+            await File.ReadAllBytesAsync(update.StagedPath, TestContext.Current.CancellationToken));
     }
 
     [Fact]
-    public async Task CurrentReleaseDoesNotDownloadAssets()
+    public async Task CheckReturnsNullForCurrentReleaseWithoutRequiringAssets()
     {
-        var directory = CreateTestDirectory();
+        using var directory = new TemporaryDirectory("current-update");
         var requestCount = 0;
         using var httpClient = new HttpClient(new StubHttpMessageHandler(request =>
         {
             requestCount++;
             return request.RequestUri?.AbsolutePath.EndsWith("/latest", StringComparison.Ordinal) == true
-                ? JsonResponse(CreateRelease("v1.2.0", includeAssets: false))
+                ? JsonResponse(CreateRelease("v1.2.0", includeExecutable: false, includeChecksum: false))
                 : new HttpResponseMessage(HttpStatusCode.NotFound);
         }));
         var updater = new ApplicationUpdater(
             httpClient,
             new Version(1, 2, 0),
-            directory);
+            directory.RootPath);
 
-        try
-        {
-            var update = await updater.CheckAsync(CancellationToken.None);
+        var update = await updater.CheckAsync(TestContext.Current.CancellationToken);
 
-            Assert.Null(update);
-            Assert.Equal(1, requestCount);
-            Assert.Empty(Directory.EnumerateFiles(directory));
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
+        Assert.Null(update);
+        Assert.Equal(1, requestCount);
+        Assert.Empty(Directory.EnumerateFiles(directory.RootPath));
     }
 
     [Fact]
-    public async Task InvalidDownloadIsDeletedWhenChecksumDoesNotMatch()
+    public async Task DownloadDeletesStagedFileWhenChecksumDoesNotMatch()
     {
-        var directory = CreateTestDirectory();
+        using var directory = new TemporaryDirectory("invalid-update");
         var payload = Encoding.UTF8.GetBytes("invalid replacement");
         using var httpClient = CreateHttpClient(new Dictionary<string, HttpResponseMessage>
         {
@@ -92,28 +78,21 @@ public sealed class ApplicationUpdaterTests
         var updater = new ApplicationUpdater(
             httpClient,
             new Version(1, 2, 0),
-            directory);
+            directory.RootPath);
 
-        try
-        {
-            var availableUpdate = await updater.CheckAsync(CancellationToken.None);
-            Assert.NotNull(availableUpdate);
-            var exception = await Assert.ThrowsAsync<InvalidDataException>(
-                () => updater.DownloadAsync(availableUpdate, CancellationToken.None));
+        var availableUpdate = await updater.CheckAsync(TestContext.Current.CancellationToken);
+        Assert.NotNull(availableUpdate);
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(
+            () => updater.DownloadAsync(availableUpdate, TestContext.Current.CancellationToken));
 
-            Assert.Contains("failed its SHA-256 check", exception.Message, StringComparison.Ordinal);
-            Assert.Empty(Directory.EnumerateFiles(directory));
-        }
-        finally
-        {
-            Directory.Delete(directory, recursive: true);
-        }
+        Assert.Contains("failed its SHA-256 check", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(Directory.EnumerateFiles(directory.RootPath));
     }
 
     [Fact]
-    public async Task NewReleaseCheckDoesNotDownloadAssets()
+    public async Task CheckReturnsMetadataWithoutDownloadingAssets()
     {
-        var directory = CreateTestDirectory();
+        using var directory = new TemporaryDirectory("update-check");
         var requestCount = 0;
         using var httpClient = new HttpClient(new StubHttpMessageHandler(request =>
         {
@@ -125,21 +104,60 @@ public sealed class ApplicationUpdaterTests
         var updater = new ApplicationUpdater(
             httpClient,
             new Version(1, 2, 0),
-            directory);
+            directory.RootPath);
 
-        try
-        {
-            var update = await updater.CheckAsync(CancellationToken.None);
+        var update = await updater.CheckAsync(TestContext.Current.CancellationToken);
 
-            Assert.NotNull(update);
-            Assert.Equal(new Version(1, 3, 0), update.Version);
-            Assert.Equal(1, requestCount);
-            Assert.Empty(Directory.EnumerateFiles(directory));
-        }
-        finally
+        Assert.NotNull(update);
+        Assert.Equal(new Version(1, 3, 0), update.Version);
+        Assert.Equal(1, requestCount);
+        Assert.Empty(Directory.EnumerateFiles(directory.RootPath));
+    }
+
+    [Theory]
+    [InlineData("release", true, true, "not a valid version")]
+    [InlineData("v1.3.0", false, true, "does not contain CodexUsageTray.exe")]
+    [InlineData("v1.3.0", true, false, "does not contain SHA256SUMS.txt")]
+    public async Task CheckRejectsMalformedReleaseMetadata(
+        string tag,
+        bool includeExecutable,
+        bool includeChecksum,
+        string expectedMessage)
+    {
+        using var directory = new TemporaryDirectory("malformed-release");
+        using var httpClient = CreateHttpClient(new Dictionary<string, HttpResponseMessage>
         {
-            Directory.Delete(directory, recursive: true);
-        }
+            ["/repos/MatthiasHeinsius/codex-usage-tray/releases/latest"] =
+                JsonResponse(CreateRelease(tag, includeExecutable, includeChecksum))
+        });
+        var updater = new ApplicationUpdater(httpClient, new Version(1, 2, 0), directory.RootPath);
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(
+            () => updater.CheckAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains(expectedMessage, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DownloadRejectsChecksumManifestWithoutExecutableHash()
+    {
+        using var directory = new TemporaryDirectory("missing-checksum");
+        using var httpClient = CreateHttpClient(new Dictionary<string, HttpResponseMessage>
+        {
+            ["/repos/MatthiasHeinsius/codex-usage-tray/releases/latest"] = JsonResponse(CreateRelease("v1.3.0")),
+            ["/downloads/SHA256SUMS.txt"] = TextResponse($"{new string('0', 64)}  another.exe\n")
+        });
+        var updater = new ApplicationUpdater(httpClient, new Version(1, 2, 0), directory.RootPath);
+        var availableUpdate = await updater.CheckAsync(TestContext.Current.CancellationToken);
+        Assert.NotNull(availableUpdate);
+
+        var exception = await Assert.ThrowsAsync<InvalidDataException>(
+            () => updater.DownloadAsync(availableUpdate, TestContext.Current.CancellationToken));
+
+        Assert.Equal(
+            "SHA256SUMS.txt does not contain a hash for CodexUsageTray.exe.",
+            exception.Message);
+        Assert.Empty(Directory.EnumerateFiles(directory.RootPath));
     }
 
     private static HttpClient CreateHttpClient(Dictionary<string, HttpResponseMessage> responses) =>
@@ -152,23 +170,30 @@ public sealed class ApplicationUpdaterTests
                 : new HttpResponseMessage(HttpStatusCode.NotFound);
         }));
 
-    private static string CreateRelease(string tagName, bool includeAssets = true)
+    private static string CreateRelease(
+        string tagName,
+        bool includeExecutable = true,
+        bool includeChecksum = true)
     {
-        object[] assets = includeAssets
-            ?
-            [
-                new
-                {
-                    name = "CodexUsageTray.exe",
-                    browser_download_url = "https://example.test/downloads/CodexUsageTray.exe"
-                },
-                new
-                {
-                    name = "SHA256SUMS.txt",
-                    browser_download_url = "https://example.test/downloads/SHA256SUMS.txt"
-                }
-            ]
-            : [];
+        var assets = new List<object>();
+        if (includeExecutable)
+        {
+            assets.Add(new
+            {
+                name = "CodexUsageTray.exe",
+                browser_download_url = "https://example.test/downloads/CodexUsageTray.exe"
+            });
+        }
+
+        if (includeChecksum)
+        {
+            assets.Add(new
+            {
+                name = "SHA256SUMS.txt",
+                browser_download_url = "https://example.test/downloads/SHA256SUMS.txt"
+            });
+        }
+
         return JsonSerializer.Serialize(new
         {
             tag_name = tagName,
@@ -190,13 +215,6 @@ public sealed class ApplicationUpdaterTests
     {
         Content = new ByteArrayContent(contents)
     };
-
-    private static string CreateTestDirectory()
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"CodexUsageTray-update-test-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(path);
-        return path;
-    }
 
     private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> handleRequest)
         : HttpMessageHandler
