@@ -2,123 +2,66 @@ using System.Diagnostics;
 
 namespace CodexUsageTray;
 
-internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresentationSink
+internal sealed class TrayApplicationContext : ApplicationContext
 {
-    internal const string AllowanceActivationMenuText = "Auto-start allowance window";
-    internal const string AllowanceNotificationsMenuText = "Notify on allowance changes";
-    internal const string AutomaticUpdateMenuText = "Check for updates on startup";
-    internal const string CheckForUpdatesMenuText = WinFormsApplicationUpdateInteraction.CheckForUpdatesMenuText;
-    internal const string LegalNoticesMenuText = "Open licenses and notices";
-    internal const string ProjectReadmeMenuText = "Open README on GitHub";
-    internal const string ProjectReadmeUrl =
+    private const string ProjectReadmeUrl =
         "https://github.com/MatthiasHeinsius/codex-usage-tray/blob/main/README.md";
+    private readonly WinFormsApplicationShell shell;
     private readonly UsagePresentations usagePresentations;
     private readonly ApplicationUpdates applicationUpdates;
-    private readonly NotifyIcon notifyIcon;
-    private readonly UsagePopupForm popup = new();
     private readonly System.Windows.Forms.Timer refreshTimer;
-    private readonly ToolStripMenuItem startupItem;
-    private readonly ToolStripMenuItem automaticUpdateItem;
-    private readonly ToolStripMenuItem allowanceActivationItem;
-    private readonly ToolStripMenuItem allowanceNotificationsItem;
-    private readonly ToolStripMenuItem updateItem;
-    private Icon currentIcon;
-    private bool popupVisibleWhenTrayMousePressed;
     private bool exiting;
-    private long? lastHandledTrayClickTimestamp;
 
     public TrayApplicationContext(Func<IUsagePresentationSink, UsagePresentations> createPresentations)
     {
         ArgumentNullException.ThrowIfNull(createPresentations);
-        popup.CreateControl();
-        currentIcon = TrayIconRenderer.Create(100, 100);
-        notifyIcon = new NotifyIcon
+        var automaticUpdateEnabled = ApplicationUpdateSettings.IsAutomaticCheckEnabled();
+        var createdShell = new WinFormsApplicationShell(
+            StartupRegistration.IsEnabled(),
+            automaticUpdateEnabled,
+            new WinFormsApplicationShell.Commands(
+                RequestUsageUpdate: RequestAsync,
+                RequestApplicationUpdate: RequestApplicationUpdateAsync,
+                SetStartupEnabled: StartupRegistration.SetEnabled,
+                SetAutomaticUpdateEnabled: ApplicationUpdateSettings.SetAutomaticCheckEnabled,
+                SetAllowanceActivationEnabled: SetAllowanceActivationEnabled,
+                SetAllowanceNotificationsEnabled: SetAllowanceNotificationsEnabled,
+                OpenUsagePage: OpenUsagePage,
+                OpenProjectReadme: () => OpenWebPage(ProjectReadmeUrl),
+                OpenLegalNotices: LegalNotices.Open,
+                Exit: ExitThread));
+        UsagePresentations? createdPresentations = null;
+        ApplicationUpdates? createdUpdates = null;
+        System.Windows.Forms.Timer? createdTimer = null;
+        try
         {
-            Icon = currentIcon,
-            Text = "Codex usage · connecting"
-        };
-        usagePresentations = createPresentations(this);
-        startupItem = new ToolStripMenuItem("Start with Windows")
-        {
-            Checked = StartupRegistration.IsEnabled(),
-            CheckOnClick = true
-        };
-        startupItem.CheckedChanged += StartupItemOnCheckedChanged;
-        automaticUpdateItem = new ToolStripMenuItem(AutomaticUpdateMenuText)
-        {
-            Checked = ApplicationUpdateSettings.IsAutomaticCheckEnabled(),
-            CheckOnClick = true
-        };
-        automaticUpdateItem.CheckedChanged += AutomaticUpdateItemOnCheckedChanged;
-        allowanceActivationItem = new ToolStripMenuItem(AllowanceActivationMenuText)
-        {
-            Checked = usagePresentations.ActivationEnabled,
-            CheckOnClick = true
-        };
-        allowanceActivationItem.CheckedChanged += AllowanceActivationItemOnCheckedChanged;
-        allowanceNotificationsItem = new ToolStripMenuItem(AllowanceNotificationsMenuText)
-        {
-            Checked = usagePresentations.NotificationsEnabled,
-            CheckOnClick = true
-        };
-        allowanceNotificationsItem.CheckedChanged += AllowanceNotificationsItemOnCheckedChanged;
-        updateItem = new ToolStripMenuItem(CheckForUpdatesMenuText);
-        applicationUpdates = ApplicationUpdates.CreateDefault(
-            new WinFormsApplicationUpdateInteraction(popup, updateItem, ExitThread));
+            createdPresentations = createPresentations(createdShell);
+            createdShell.InitializeUsagePreferences(
+                createdPresentations.ActivationEnabled,
+                createdPresentations.NotificationsEnabled);
+            createdUpdates = ApplicationUpdates.CreateDefault(createdShell);
+            createdTimer = new System.Windows.Forms.Timer { Interval = 60 * 1000 };
 
-        var menu = CreateContextMenu(
-            new ContextMenuItems(
-                startupItem,
-                automaticUpdateItem,
-                allowanceActivationItem,
-                allowanceNotificationsItem,
-                updateItem),
-            new ContextMenuCommands(
-                Open: (_, _) => ShowPopup(),
-                Refresh: async (_, _) => await RequestAsync(UsageUpdateIntent.Activity),
-                OpenUsagePage: (_, _) => OpenUsagePage(),
-                OpenProjectReadme: (_, _) => OpenWebPage(ProjectReadmeUrl),
-                OpenLegalNotices: (_, _) => LegalNotices.Open(),
-                CheckForUpdates: async (_, _) =>
-                    await RequestApplicationUpdateAsync(ApplicationUpdateIntent.Manual),
-                Exit: (_, _) => ExitThread()));
+            shell = createdShell;
+            usagePresentations = createdPresentations;
+            applicationUpdates = createdUpdates;
+            refreshTimer = createdTimer;
 
-        notifyIcon.ContextMenuStrip = menu;
-        notifyIcon.Visible = true;
-        notifyIcon.MouseDown += (_, eventArgs) =>
+            refreshTimer.Tick += async (_, _) => await RequestAsync(UsageUpdateIntent.Routine);
+            shell.Activate();
+            refreshTimer.Start();
+        }
+        catch
         {
-            if (eventArgs.Button == MouseButtons.Left)
-            {
-                popupVisibleWhenTrayMousePressed = popup.Visible;
-            }
-        };
-        notifyIcon.MouseClick += (_, eventArgs) =>
-        {
-            if (eventArgs.Button == MouseButtons.Left)
-            {
-                var currentTimestamp = Environment.TickCount64;
-                if (!ShouldHandleTrayClick(
-                    currentTimestamp,
-                    lastHandledTrayClickTimestamp,
-                    SystemInformation.DoubleClickTime))
-                {
-                    return;
-                }
-
-                lastHandledTrayClickTimestamp = currentTimestamp;
-                ShowPopup(popupVisibleWhenTrayMousePressed);
-            }
-        };
-
-        popup.RefreshRequested += async (_, _) => await RequestAsync(UsageUpdateIntent.Activity);
-        popup.UsagePageRequested += (_, _) => OpenUsagePage();
-        popup.ExtendedViewActivated += async (_, _) => await RequestAsync(UsageUpdateIntent.Activity);
-        refreshTimer = new System.Windows.Forms.Timer { Interval = 60 * 1000 };
-        refreshTimer.Tick += async (_, _) => await RequestAsync(UsageUpdateIntent.Routine);
-        refreshTimer.Start();
+            createdTimer?.Dispose();
+            createdUpdates?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            createdPresentations?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            createdShell.Dispose();
+            throw;
+        }
 
         _ = RequestAsync(UsageUpdateIntent.Routine);
-        if (automaticUpdateItem.Checked)
+        if (automaticUpdateEnabled)
         {
             _ = RequestApplicationUpdateAsync(ApplicationUpdateIntent.Automatic);
         }
@@ -128,12 +71,10 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
     {
         exiting = true;
         refreshTimer.Stop();
-        notifyIcon.Visible = false;
+        refreshTimer.Dispose();
         applicationUpdates.DisposeAsync().AsTask().GetAwaiter().GetResult();
         usagePresentations.DisposeAsync().AsTask().GetAwaiter().GetResult();
-        notifyIcon.Dispose();
-        currentIcon.Dispose();
-        popup.Dispose();
+        shell.Dispose();
         base.ExitThreadCore();
     }
 
@@ -161,145 +102,18 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
         }
     }
 
-    private void ShowPopup(bool? visibleWhenMousePressed = null)
+    private void SetAllowanceActivationEnabled(bool enabled)
     {
-        if (!ShouldShowAfterTrayClick(visibleWhenMousePressed ?? popup.Visible))
-        {
-            popup.Hide();
-            return;
-        }
-
-        popup.ShowNearTray();
-        if (popup.IsExtendedView)
-        {
-            _ = RequestAsync(UsageUpdateIntent.Activity);
-        }
-    }
-
-    internal static bool ShouldShowAfterTrayClick(bool visibleWhenMousePressed) => !visibleWhenMousePressed;
-
-    internal static bool ShouldHandleTrayClick(long currentTimestamp, long? previousTimestamp, int doubleClickTime) =>
-        previousTimestamp is null || currentTimestamp - previousTimestamp > doubleClickTime;
-
-    internal static ContextMenuStrip CreateContextMenu(
-        ContextMenuItems items,
-        ContextMenuCommands commands)
-    {
-        var menu = new ContextMenuStrip();
-        menu.Items.Add("Open", null, commands.Open);
-        menu.Items.Add("Refresh", null, commands.Refresh);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(items.Startup);
-        menu.Items.Add(items.AutomaticUpdate);
-        menu.Items.Add(items.AllowanceActivation);
-        menu.Items.Add(items.AllowanceNotifications);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Open Codex usage page", null, commands.OpenUsagePage);
-        menu.Items.Add(ProjectReadmeMenuText, null, commands.OpenProjectReadme);
-        menu.Items.Add(LegalNoticesMenuText, null, commands.OpenLegalNotices);
-        menu.Items.Add(new ToolStripSeparator());
-        items.Update.Click += commands.CheckForUpdates;
-        menu.Items.Add(items.Update);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Exit", null, commands.Exit);
-        return menu;
-    }
-
-    void IUsagePresentationSink.Present(UsagePresentation presentation)
-    {
-        if (popup.InvokeRequired)
-        {
-            popup.Invoke(() => ((IUsagePresentationSink)this).Present(presentation));
-            return;
-        }
-
-        popup.ShowPresentation(presentation);
-        UpdateTray(presentation.Tray);
-        ShowNotices(presentation.Notices);
-    }
-
-    private void UpdateTray(UsagePresentation.TrayPresentation presentation)
-    {
-        var replacement = TrayIconRenderer.Create(
-            presentation.FiveHourRemaining,
-            presentation.WeeklyRemaining);
-        notifyIcon.Icon = replacement;
-        var old = currentIcon;
-        currentIcon = replacement;
-        old.Dispose();
-
-        notifyIcon.Text = TruncateTooltip(presentation.Tooltip);
-    }
-
-    private void StartupItemOnCheckedChanged(object? sender, EventArgs eventArgs)
-    {
-        TryPersistCheckedSetting(startupItem, StartupItemOnCheckedChanged, StartupRegistration.SetEnabled);
-    }
-
-    private void AllowanceActivationItemOnCheckedChanged(object? sender, EventArgs eventArgs)
-    {
-        if (TryPersistCheckedSetting(
-                allowanceActivationItem,
-                AllowanceActivationItemOnCheckedChanged,
-                enabled => usagePresentations.ActivationEnabled = enabled)
-            && allowanceActivationItem.Checked)
+        usagePresentations.ActivationEnabled = enabled;
+        if (enabled)
         {
             _ = RequestAsync(UsageUpdateIntent.Routine);
         }
     }
 
-    private void AutomaticUpdateItemOnCheckedChanged(object? sender, EventArgs eventArgs)
+    private void SetAllowanceNotificationsEnabled(bool enabled)
     {
-        TryPersistCheckedSetting(
-            automaticUpdateItem,
-            AutomaticUpdateItemOnCheckedChanged,
-            ApplicationUpdateSettings.SetAutomaticCheckEnabled);
-    }
-
-    private void AllowanceNotificationsItemOnCheckedChanged(object? sender, EventArgs eventArgs)
-    {
-        TryPersistCheckedSetting(
-            allowanceNotificationsItem,
-            AllowanceNotificationsItemOnCheckedChanged,
-            enabled => usagePresentations.NotificationsEnabled = enabled);
-    }
-
-    private static bool TryPersistCheckedSetting(
-        ToolStripMenuItem item,
-        EventHandler changedHandler,
-        Action<bool> persist)
-    {
-        try
-        {
-            persist(item.Checked);
-            return true;
-        }
-        catch (Exception exception)
-        {
-            item.CheckedChanged -= changedHandler;
-            item.Checked = !item.Checked;
-            item.CheckedChanged += changedHandler;
-            MessageBox.Show(exception.Message, "Codex usage", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            return false;
-        }
-    }
-
-    private void ShowNotices(IReadOnlyList<UsagePresentation.NoticePresentation> notices)
-    {
-        foreach (var notice in notices)
-        {
-            var icon = notice.Severity switch
-            {
-                UsagePresentation.NoticeSeverity.Information => ToolTipIcon.Info,
-                UsagePresentation.NoticeSeverity.Warning => ToolTipIcon.Warning,
-                _ => ToolTipIcon.None
-            };
-            notifyIcon.ShowBalloonTip(
-                checked((int)notice.Duration.TotalMilliseconds),
-                "Codex usage",
-                notice.Message,
-                icon);
-        }
+        usagePresentations.NotificationsEnabled = enabled;
     }
 
     private static void OpenUsagePage()
@@ -315,23 +129,4 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
             UseShellExecute = true
         });
     }
-
-    private static string TruncateTooltip(string value) => value.Length <= 63 ? value : value[..63];
-
-    internal sealed record ContextMenuItems(
-        ToolStripMenuItem Startup,
-        ToolStripMenuItem AutomaticUpdate,
-        ToolStripMenuItem AllowanceActivation,
-        ToolStripMenuItem AllowanceNotifications,
-        ToolStripMenuItem Update);
-
-    internal sealed record ContextMenuCommands(
-        EventHandler Open,
-        EventHandler Refresh,
-        EventHandler OpenUsagePage,
-        EventHandler OpenProjectReadme,
-        EventHandler OpenLegalNotices,
-        EventHandler CheckForUpdates,
-        EventHandler Exit);
-
 }
