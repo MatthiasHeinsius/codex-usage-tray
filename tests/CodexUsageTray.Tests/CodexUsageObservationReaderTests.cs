@@ -4,6 +4,8 @@ namespace CodexUsageTray.Tests;
 
 public sealed class CodexUsageObservationReaderTests
 {
+    private static readonly DateTimeOffset September7 = new(2026, 9, 7, 12, 0, 0, TimeSpan.Zero);
+
     [Fact]
     public async Task ReadInitializesAppServerAndReadsAllowanceWindows()
     {
@@ -34,7 +36,7 @@ public sealed class CodexUsageObservationReaderTests
     [Fact]
     public async Task ReadRequestsActivityThroughTheSameLineExchange()
     {
-        var today = DateOnly.FromDateTime(DateTime.Now);
+        var today = DateOnly.FromDateTime(September7.DateTime);
         var processes = new ScriptedCodexProcessExecution();
         processes.EnqueueLine("""{"id":1,"result":{}}""");
         processes.EnqueueLine(JsonSerializer.Serialize(new
@@ -62,7 +64,10 @@ public sealed class CodexUsageObservationReaderTests
         processes.EnqueueLine("""
             {"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300}}}}
             """);
-        var reader = new CodexUsageObservationReader(processes);
+        var reader = new CodexUsageObservationReader(
+            processes,
+            new StubLocalTokenUsageReader(1_200),
+            new FixedTimeProvider(September7));
 
         var observations = await reader.ReadAsync(
             UsageObservationRequest.AllowanceWindowsAndActivity,
@@ -77,6 +82,47 @@ public sealed class CodexUsageObservationReaderTests
         var activity = Assert.IsType<AccountActivityObservation.Observed>(observations.Account.Activity);
         Assert.Equal(50, activity.LifetimeTokens);
         Assert.Equal(20, activity.TodayTokens);
+        Assert.Null(observations.Local);
+    }
+
+    [Fact]
+    public async Task ReadUsesLocalActivityWhenTheAccountHasNoTodayBucket()
+    {
+        var reader = new CodexUsageObservationReader(
+            MissingTodayActivityResponses(),
+            new StubLocalTokenUsageReader(1_200),
+            new FixedTimeProvider(September7));
+
+        var observations = await reader.ReadAsync(
+            UsageObservationRequest.AllowanceWindowsAndActivity,
+            CancellationToken.None);
+
+        Assert.Equal(September7, observations.Account.ObservedAt);
+        Assert.Equal(new LocalUsageObservation(new DateOnly(2026, 9, 7), 1_200), observations.Local);
+    }
+
+    [Fact]
+    public async Task ReadContinuesWithoutLocalActivityWhenExpectedFileFailuresOccur()
+    {
+        foreach (var failure in new Exception[]
+                 {
+                     new IOException("local history unavailable"),
+                     new UnauthorizedAccessException("local history unavailable")
+                 })
+        {
+            var reader = new CodexUsageObservationReader(
+                MissingTodayActivityResponses(),
+                new ThrowingLocalTokenUsageReader(failure),
+                new FixedTimeProvider(September7));
+
+            var observations = await reader.ReadAsync(
+                UsageObservationRequest.AllowanceWindowsAndActivity,
+                CancellationToken.None);
+
+            var activity = Assert.IsType<AccountActivityObservation.Observed>(observations.Account.Activity);
+            Assert.Null(activity.TodayTokens);
+            Assert.Null(observations.Local);
+        }
     }
 
     [Fact]
@@ -276,4 +322,33 @@ public sealed class CodexUsageObservationReaderTests
 
     private static string Request(int id, string method) =>
         JsonSerializer.Serialize(new { id, method, @params = (object?)null });
+
+    private static ScriptedCodexProcessExecution MissingTodayActivityResponses()
+    {
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine("""
+            {"id":3,"result":{"summary":{"lifetimeTokens":50},"dailyUsageBuckets":[]}}
+            """);
+        processes.EnqueueLine("""
+            {"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300}}}}
+            """);
+        return processes;
+    }
+
+    private sealed class StubLocalTokenUsageReader(long? todayTokens) : ILocalTokenUsageReader
+    {
+        public long? ReadToday(DateTimeOffset now) => todayTokens;
+    }
+
+    private sealed class ThrowingLocalTokenUsageReader(Exception failure) : ILocalTokenUsageReader
+    {
+        public long? ReadToday(DateTimeOffset now) => throw failure;
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+        public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
+    }
 }

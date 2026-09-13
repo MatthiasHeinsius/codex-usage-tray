@@ -3,7 +3,12 @@ using System.Text.Json;
 
 namespace CodexUsageTray;
 
-internal sealed class LocalTokenUsageReader
+internal interface ILocalTokenUsageReader
+{
+    long? ReadToday(DateTimeOffset now);
+}
+
+internal sealed class LocalTokenUsageReader : ILocalTokenUsageReader
 {
     private readonly string codexHome;
     private readonly Dictionary<string, FileState> files = new(StringComparer.OrdinalIgnoreCase);
