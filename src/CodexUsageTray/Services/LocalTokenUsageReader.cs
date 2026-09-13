@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
@@ -63,32 +62,21 @@ internal sealed class LocalTokenUsageReader
 
     private static IEnumerable<string> FindCandidateFiles(string codexHome, DateOnly localDate)
     {
-        var sessionDirectory = Path.Combine(
-            codexHome,
-            "sessions",
-            localDate.Year.ToString("0000", CultureInfo.InvariantCulture),
-            localDate.Month.ToString("00", CultureInfo.InvariantCulture),
-            localDate.Day.ToString("00", CultureInfo.InvariantCulture));
-        if (Directory.Exists(sessionDirectory))
-        {
-            foreach (var path in Directory.EnumerateFiles(sessionDirectory, "*.jsonl", SearchOption.TopDirectoryOnly))
-            {
-                yield return path;
-            }
-        }
-
-        var archivedDirectory = Path.Combine(codexHome, "archived_sessions");
-        if (!Directory.Exists(archivedDirectory))
-        {
-            yield break;
-        }
-
         var localStart = localDate.ToDateTime(TimeOnly.MinValue);
-        foreach (var path in Directory.EnumerateFiles(archivedDirectory, "*.jsonl", SearchOption.AllDirectories))
+        foreach (var root in new[] { "sessions", "archived_sessions" })
         {
-            if (File.GetLastWriteTime(path) >= localStart)
+            var directory = Path.Combine(codexHome, root);
+            if (!Directory.Exists(directory))
             {
-                yield return path;
+                continue;
+            }
+
+            foreach (var path in Directory.EnumerateFiles(directory, "*.jsonl", SearchOption.AllDirectories))
+            {
+                if (File.GetLastWriteTime(path) >= localStart)
+                {
+                    yield return path;
+                }
             }
         }
     }

@@ -38,7 +38,8 @@ _Avoid_: Expired Allowance Window, unavailable window
 
 **Allowance Window Activation**:
 The transition of an Unused Allowance Window into active use, confirmed when its reset time changes. A successful inference request alone does not confirm activation.
-_Avoid_: Successful request, window start
+_UI label_: Auto-start allowance window
+_Avoid in domain language_: Successful request, window start
 
 **Allowance Window Reset**:
 The natural transition from a Used-up Allowance Window to a new Unused Allowance Window.

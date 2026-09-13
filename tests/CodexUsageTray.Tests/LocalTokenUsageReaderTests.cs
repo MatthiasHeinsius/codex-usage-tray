@@ -82,6 +82,18 @@ public sealed class LocalTokenUsageReaderTests
     }
 
     [Fact]
+    public void ReadTodayIncludesAnActiveSessionThatContinuesPastMidnight()
+    {
+        using var directory = new TemporaryDirectory("local-usage-cross-midnight");
+        var sessionPath = SessionPath(directory, September7.AddDays(-1));
+        File.WriteAllText(sessionPath, UsageLine(September7, 1_200) + "\n", Utf8WithoutByteOrderMark);
+        File.SetLastWriteTime(sessionPath, new DateTime(2026, 9, 7, 13, 0, 0));
+        var reader = new LocalTokenUsageReader(directory.RootPath);
+
+        Assert.Equal(1_200, reader.ReadToday(September7));
+    }
+
+    [Fact]
     public void SumLinesForDateIgnoresOtherDatesRecordTypesAndMalformedJson()
     {
         var lines = new[]
