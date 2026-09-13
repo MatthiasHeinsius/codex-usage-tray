@@ -5,40 +5,67 @@ public sealed class UsagePopupFormTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void FirstShowKeepsTheConfiguredBottomPadding(bool compact)
+    {
+        RunInStaThread(() =>
+        {
+            using var popup = new UsagePopupForm { Opacity = 0 };
+            popup.SetViewModeForScreenshot(compact);
+            popup.CreateControl();
+
+            popup.ShowNearTray();
+            Application.DoEvents();
+
+            Assert.Equal(20, popup.RefreshButtonBottomInset);
+        });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void ReopeningKeepsThePopupAtItsInitialHeightAndVerticalPositionWhenFirstShown(bool compact)
     {
         const int SimulatedDpiHeightIncrease = 56;
+        RunInStaThread(() =>
+        {
+            using var popup = new UsagePopupForm { Opacity = 0 };
+            popup.SetViewModeForScreenshot(compact);
+            popup.CreateControl();
+            var firstShow = true;
+            popup.VisibleChanged += (_, _) =>
+            {
+                if (popup.Visible && firstShow)
+                {
+                    firstShow = false;
+                    popup.Height += SimulatedDpiHeightIncrease;
+                }
+            };
+
+            popup.ShowNearTray();
+            Application.DoEvents();
+            var initialBounds = popup.Bounds;
+            var workingArea = Screen.FromRectangle(initialBounds).WorkingArea;
+            popup.Hide();
+            Application.DoEvents();
+
+            popup.ShowNearTray();
+            Application.DoEvents();
+
+            Assert.Equal(initialBounds.Height, popup.Height);
+            Assert.Equal(initialBounds.Top, popup.Top);
+            Assert.Equal(8, workingArea.Bottom - popup.Bottom);
+        });
+    }
+
+    private static void RunInStaThread(Action action)
+    {
         Exception? failure = null;
         var thread = new Thread(() =>
         {
             try
             {
-                using var popup = new UsagePopupForm { Opacity = 0 };
-                popup.CreateControl();
-                popup.SetViewModeForScreenshot(compact);
-                var firstShow = true;
-                popup.VisibleChanged += (_, _) =>
-                {
-                    if (popup.Visible && firstShow)
-                    {
-                        firstShow = false;
-                        popup.Height += SimulatedDpiHeightIncrease;
-                    }
-                };
-
-                popup.ShowNearTray();
-                Application.DoEvents();
-                var initialBounds = popup.Bounds;
-                var workingArea = Screen.FromRectangle(initialBounds).WorkingArea;
-                popup.Hide();
-                Application.DoEvents();
-
-                popup.ShowNearTray();
-                Application.DoEvents();
-
-                Assert.Equal(initialBounds.Height, popup.Height);
-                Assert.Equal(initialBounds.Top, popup.Top);
-                Assert.Equal(8, workingArea.Bottom - popup.Bottom);
+                Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+                action();
             }
             catch (Exception exception)
             {
