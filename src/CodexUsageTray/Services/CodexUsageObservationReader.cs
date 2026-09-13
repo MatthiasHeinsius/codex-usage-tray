@@ -8,11 +8,25 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
     private static readonly string ClientVersion = typeof(CodexUsageObservationReader).Assembly
         .GetName().Version?.ToString(3) ?? "unknown";
     private readonly ICodexProcessExecution processExecution;
-    private readonly LocalTokenUsageReader localTokenUsage = new();
+    private readonly ILocalTokenUsageReader localTokenUsage;
+    private readonly TimeProvider timeProvider;
 
     internal CodexUsageObservationReader(ICodexProcessExecution processExecution)
+        : this(processExecution, new LocalTokenUsageReader(), TimeProvider.System)
     {
+    }
+
+    internal CodexUsageObservationReader(
+        ICodexProcessExecution processExecution,
+        ILocalTokenUsageReader localTokenUsage,
+        TimeProvider timeProvider)
+    {
+        ArgumentNullException.ThrowIfNull(processExecution);
+        ArgumentNullException.ThrowIfNull(localTokenUsage);
+        ArgumentNullException.ThrowIfNull(timeProvider);
         this.processExecution = processExecution;
+        this.localTokenUsage = localTokenUsage;
+        this.timeProvider = timeProvider;
     }
 
     public Task<UsageObservations> ReadAsync(
@@ -87,7 +101,7 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
                         }
                     }
 
-                    var now = DateTimeOffset.Now;
+                    var now = timeProvider.GetLocalNow();
                     var account = ParseAccountObservation(rateLimits.Value, tokenUsage, now);
                     LocalUsageObservation? local = null;
                     if (account.Activity is AccountActivityObservation.Observed { TodayTokens: null })
