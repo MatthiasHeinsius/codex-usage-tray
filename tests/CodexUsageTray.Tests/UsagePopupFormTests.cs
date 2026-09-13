@@ -16,7 +16,10 @@ public sealed class UsagePopupFormTests
             popup.ShowNearTray();
             Application.DoEvents();
 
-            Assert.Equal(20, popup.RefreshButtonBottomInset);
+            var refreshButton = popup.Controls
+                .Cast<Control>()
+                .Single(control => control.AccessibleName == "Refresh usage");
+            Assert.Equal(20, popup.ClientSize.Height - refreshButton.Bottom);
         });
     }
 
