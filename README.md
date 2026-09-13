@@ -77,7 +77,7 @@ The account service may publish daily token buckets a day late. If today's bucke
 
 The app does not upload the usage data it reads from the account or local history. Update checks contact the GitHub releases API and download release files from GitHub when needed. The optional auto-activation feature only sends the `Hi` request described above.
 
-The app stores its view and window-start settings under `HKEY_CURRENT_USER\Software\CodexUsageTray`. The optional Windows startup shortcut is in the current user's Startup folder.
+The app stores its view, update, allowance activation, and notification preferences under `HKEY_CURRENT_USER\Software\CodexUsageTray`. The optional Windows startup shortcut is in the current user's Startup folder.
 
 ## Build from source
 
