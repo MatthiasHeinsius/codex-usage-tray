@@ -65,6 +65,7 @@ internal sealed partial class UsageUpdates
         }
 
         var now = timeProvider.GetUtcNow();
+        var everyReportedWindowHasAllowance = EveryReportedWindowHasAllowance(snapshot);
         var targets = new List<AllowanceWindowKind>();
         foreach (var (kind, activation) in pendingActivations.ToArray())
         {
@@ -76,15 +77,23 @@ internal sealed partial class UsageUpdates
                     pendingActivations.Remove(kind);
                     break;
                 case PendingActivationAction.Request:
-                    targets.Add(kind);
+                    if (everyReportedWindowHasAllowance)
+                    {
+                        targets.Add(kind);
+                    }
+
                     break;
             }
         }
 
-        targets.AddRange(new[] { AllowanceWindowKind.FiveHour, AllowanceWindowKind.Weekly }
-            .Where(kind => !pendingActivations.ContainsKey(kind)
-                && IsUnusedAndUnconfirmed(kind, Window(snapshot, kind)))
-            .ToArray());
+        if (everyReportedWindowHasAllowance)
+        {
+            targets.AddRange(new[] { AllowanceWindowKind.FiveHour, AllowanceWindowKind.Weekly }
+                .Where(kind => !pendingActivations.ContainsKey(kind)
+                    && IsUnusedAndUnconfirmed(kind, Window(snapshot, kind)))
+                .ToArray());
+        }
+
         if (targets.Count > 0)
         {
             try
@@ -225,6 +234,10 @@ internal sealed partial class UsageUpdates
     private bool IsUnusedAndUnconfirmed(AllowanceWindowKind kind, AllowanceWindow? window) =>
         window is { IsUnused: true, ResetsAt: { } reset }
         && settings.ReadActivatedReset(kind) != reset;
+
+    private static bool EveryReportedWindowHasAllowance(UsageSnapshot snapshot) =>
+        snapshot.FiveHour?.IsUsedUp != true
+        && snapshot.Weekly?.IsUsedUp != true;
 
     private static AllowanceWindows Selection(AllowanceWindowKind kind) =>
         kind == AllowanceWindowKind.FiveHour

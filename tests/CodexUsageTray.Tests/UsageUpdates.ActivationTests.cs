@@ -190,6 +190,61 @@ public sealed partial class UsageUpdatesTests
         Assert.Equal(weeklyReset.AddMinutes(2), settings.ReadActivatedReset(AllowanceWindowKind.Weekly));
     }
 
+    [Theory]
+    [InlineData(0, 100)]
+    [InlineData(100, 0)]
+    public async Task ActivationDoesNotSendRequestWhenEitherWindowIsUsedUp(
+        int fiveHourUsedPercent,
+        int weeklyUsedPercent)
+    {
+        var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
+        var command = new ActivationRecordingCommand();
+        await using var updates = CreateActivationUpdates(
+            new ActivationObservationReader(
+                ObserveAllowance(
+                    now,
+                    fiveHourUsedPercent,
+                    now.AddHours(5),
+                    weeklyUsedPercent,
+                    now.AddDays(7))),
+            command,
+            new ActivationSettings(),
+            new ActivationTimeProvider(now));
+
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, command.CallCount);
+    }
+
+    [Fact]
+    public async Task ActivationWaitsToRetryUntilBothWindowsHaveAllowance()
+    {
+        var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
+        var fiveHourReset = now.AddHours(5);
+        var weeklyReset = now.AddDays(7);
+        var command = new ActivationRecordingCommand();
+        var time = new ActivationTimeProvider(now);
+        await using var updates = CreateActivationUpdates(
+            new ActivationObservationReader(
+                ObserveAllowance(now, 0, fiveHourReset, 50, weeklyReset),
+                ObserveAllowance(now.AddMinutes(1), 0, fiveHourReset, 100, weeklyReset),
+                ObserveAllowance(now.AddMinutes(2), 0, fiveHourReset, 99, weeklyReset)),
+            command,
+            new ActivationSettings(),
+            time);
+
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, command.CallCount);
+
+        time.Advance(TimeSpan.FromMinutes(1));
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(1, command.CallCount);
+
+        time.Advance(TimeSpan.FromMinutes(1));
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(2, command.CallCount);
+    }
+
     [Fact]
     public async Task CommandFailureRetriesAfterFiveMinutesWithoutUsingActivationAttempt()
     {
