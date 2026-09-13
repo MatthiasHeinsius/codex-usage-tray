@@ -164,7 +164,7 @@ public sealed class UpdateInstallerTests
         using var directory = new TemporaryDirectory("installer-launch");
         var stagedPath = directory.FilePath("download.tmp");
         var targetPath = directory.FilePath("CodexUsageTray.exe");
-        var update = new ApplicationUpdate(new Version(1, 4, 0), stagedPath);
+        var update = new StagedApplicationUpdate(new Version(1, 4, 0), stagedPath);
         File.WriteAllText(stagedPath, "replacement executable");
         var interaction = new RecordingInstallerInteraction(
             installerFailure: new InvalidOperationException("installer start failed"));

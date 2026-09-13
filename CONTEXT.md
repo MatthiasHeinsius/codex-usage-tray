@@ -16,6 +16,10 @@ _Avoid_: Usage Snapshot, raw response
 One requested refresh that produces a final Usage Snapshot and its corresponding user-facing presentation after any Allowance Window Activation work finishes.
 _Avoid_: Refresh cycle, display cycle
 
+**Application Update**:
+One requested check that may replace the current Codex Usage Tray release with a newer verified release after user consent.
+_Avoid_: Update check, updater workflow, downloaded update
+
 **Usage Presentation**:
 The complete user-facing state of Codex usage, including loading, current or stale values, failure context, tray display, popup display, and notices.
 _Avoid_: UI state, view model, display data

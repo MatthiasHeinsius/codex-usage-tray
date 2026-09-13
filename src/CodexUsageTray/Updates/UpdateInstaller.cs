@@ -51,11 +51,11 @@ internal static class UpdateInstaller
         return false;
     }
 
-    internal static void Launch(ApplicationUpdate update, int processId, string targetPath) =>
+    internal static void Launch(StagedApplicationUpdate update, int processId, string targetPath) =>
         Launch(update, processId, targetPath, WindowsUpdateInstallerInteraction.Instance);
 
     internal static void Launch(
-        ApplicationUpdate update,
+        StagedApplicationUpdate update,
         int processId,
         string targetPath,
         IUpdateInstallerInteraction interaction)
@@ -83,7 +83,7 @@ internal static class UpdateInstaller
         }
         catch
         {
-            ApplicationUpdater.TryDelete(helperPath);
+            ApplicationUpdateFiles.TryDelete(helperPath);
             throw;
         }
     }
@@ -129,8 +129,8 @@ internal static class UpdateInstaller
                 interaction.StartApplication(targetPath);
             }
 
-            ApplicationUpdater.TryDelete(stagedPath);
-            ApplicationUpdater.TryDelete(backupPath);
+            ApplicationUpdateFiles.TryDelete(stagedPath);
+            ApplicationUpdateFiles.TryDelete(backupPath);
             return UpdateInstallerResult.Succeeded;
         }
         catch (Exception exception)
@@ -156,10 +156,10 @@ internal static class UpdateInstaller
                 }
             }
 
-            ApplicationUpdater.TryDelete(stagedPath);
+            ApplicationUpdateFiles.TryDelete(stagedPath);
             if (canRestart)
             {
-                ApplicationUpdater.TryDelete(backupPath);
+                ApplicationUpdateFiles.TryDelete(backupPath);
             }
 
             interaction.ShowFailure($"The update could not be installed.\n\n{failure.Message}");

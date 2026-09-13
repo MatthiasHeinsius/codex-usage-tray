@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace CodexUsageTray.Tests;
 
-public sealed class ApplicationUpdaterTests
+public sealed class GitHubApplicationUpdateSourceTests
 {
     [Theory]
     [InlineData("{0}  CodexUsageTray.exe")]
@@ -22,14 +22,14 @@ public sealed class ApplicationUpdaterTests
                 string.Format(System.Globalization.CultureInfo.InvariantCulture, checksumLine, expectedHash)),
             ["/downloads/CodexUsageTray.exe"] = ByteResponse(payload)
         });
-        var updater = new ApplicationUpdater(
+        var source = new GitHubApplicationUpdateSource(
             httpClient,
             new Version(1, 2, 0),
             directory.RootPath);
 
-        var availableUpdate = await updater.CheckAsync(TestContext.Current.CancellationToken);
+        var availableUpdate = await source.CheckAsync(TestContext.Current.CancellationToken);
         Assert.NotNull(availableUpdate);
-        var update = await updater.DownloadAsync(
+        var update = await source.DownloadAsync(
             availableUpdate,
             TestContext.Current.CancellationToken);
 
@@ -52,12 +52,12 @@ public sealed class ApplicationUpdaterTests
                 ? JsonResponse(CreateRelease("v1.2.0", includeExecutable: false, includeChecksum: false))
                 : new HttpResponseMessage(HttpStatusCode.NotFound);
         }));
-        var updater = new ApplicationUpdater(
+        var source = new GitHubApplicationUpdateSource(
             httpClient,
             new Version(1, 2, 0),
             directory.RootPath);
 
-        var update = await updater.CheckAsync(TestContext.Current.CancellationToken);
+        var update = await source.CheckAsync(TestContext.Current.CancellationToken);
 
         Assert.Null(update);
         Assert.Equal(1, requestCount);
@@ -75,17 +75,17 @@ public sealed class ApplicationUpdaterTests
             ["/downloads/SHA256SUMS.txt"] = TextResponse($"{new string('0', 64)}  CodexUsageTray.exe\n"),
             ["/downloads/CodexUsageTray.exe"] = ByteResponse(payload)
         });
-        var updater = new ApplicationUpdater(
+        var source = new GitHubApplicationUpdateSource(
             httpClient,
             new Version(1, 2, 0),
             directory.RootPath);
 
-        var availableUpdate = await updater.CheckAsync(TestContext.Current.CancellationToken);
+        var availableUpdate = await source.CheckAsync(TestContext.Current.CancellationToken);
         Assert.NotNull(availableUpdate);
         var exception = await Assert.ThrowsAsync<InvalidDataException>(
-            () => updater.DownloadAsync(availableUpdate, TestContext.Current.CancellationToken));
+            () => source.DownloadAsync(availableUpdate, TestContext.Current.CancellationToken));
 
-        Assert.Contains("failed its SHA-256 check", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("staged executable failed its SHA-256 check", exception.Message, StringComparison.Ordinal);
         Assert.Empty(Directory.EnumerateFiles(directory.RootPath));
     }
 
@@ -101,12 +101,12 @@ public sealed class ApplicationUpdaterTests
                 ? JsonResponse(CreateRelease("v1.3.0"))
                 : throw new InvalidOperationException("The update asset was downloaded during the release check.");
         }));
-        var updater = new ApplicationUpdater(
+        var source = new GitHubApplicationUpdateSource(
             httpClient,
             new Version(1, 2, 0),
             directory.RootPath);
 
-        var update = await updater.CheckAsync(TestContext.Current.CancellationToken);
+        var update = await source.CheckAsync(TestContext.Current.CancellationToken);
 
         Assert.NotNull(update);
         Assert.Equal(new Version(1, 3, 0), update.Version);
@@ -130,10 +130,10 @@ public sealed class ApplicationUpdaterTests
             ["/repos/MatthiasHeinsius/codex-usage-tray/releases/latest"] =
                 JsonResponse(CreateRelease(tag, includeExecutable, includeChecksum))
         });
-        var updater = new ApplicationUpdater(httpClient, new Version(1, 2, 0), directory.RootPath);
+        var source = new GitHubApplicationUpdateSource(httpClient, new Version(1, 2, 0), directory.RootPath);
 
         var exception = await Assert.ThrowsAsync<InvalidDataException>(
-            () => updater.CheckAsync(TestContext.Current.CancellationToken));
+            () => source.CheckAsync(TestContext.Current.CancellationToken));
 
         Assert.Contains(expectedMessage, exception.Message, StringComparison.Ordinal);
     }
@@ -150,12 +150,12 @@ public sealed class ApplicationUpdaterTests
             ["/repos/MatthiasHeinsius/codex-usage-tray/releases/latest"] = JsonResponse(CreateRelease("v1.3.0")),
             ["/downloads/SHA256SUMS.txt"] = TextResponse(manifest)
         });
-        var updater = new ApplicationUpdater(httpClient, new Version(1, 2, 0), directory.RootPath);
-        var availableUpdate = await updater.CheckAsync(TestContext.Current.CancellationToken);
+        var source = new GitHubApplicationUpdateSource(httpClient, new Version(1, 2, 0), directory.RootPath);
+        var availableUpdate = await source.CheckAsync(TestContext.Current.CancellationToken);
         Assert.NotNull(availableUpdate);
 
         var exception = await Assert.ThrowsAsync<InvalidDataException>(
-            () => updater.DownloadAsync(availableUpdate, TestContext.Current.CancellationToken));
+            () => source.DownloadAsync(availableUpdate, TestContext.Current.CancellationToken));
 
         Assert.Equal(
             "SHA256SUMS.txt does not contain a hash for CodexUsageTray.exe.",
