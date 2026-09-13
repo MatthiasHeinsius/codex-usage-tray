@@ -21,94 +21,12 @@ internal static class SelfTest
                 $"tray icon variant {index + 1} uses 32-bit color");
         }
 
-        using var popup = new UsagePopupForm();
-        Assert(popup.IsExtendedView == !PopupViewSettings.IsCompact(), "popup exposes its current view mode");
-        Assert(!popup.HeaderControlsOverlap, "header controls do not overlap");
-        Assert(popup.InferenceDividerPaddingIsBalanced, "inference divider padding is balanced");
-        var screenBounds = new Rectangle(100, 50, 1_000, 750);
-        var workingArea = new Rectangle(100, 50, 1_000, 700);
-        var popupSize = new Size(440, 150);
-        Assert(
-            UsagePopupForm.SnapToScreen(new Point(109, 59), popupSize, screenBounds, workingArea)
-                == new Point(108, 58),
-            "popup snaps eight pixels inside its left and top borders");
-        Assert(
-            UsagePopupForm.SnapToScreen(new Point(101, 51), popupSize, screenBounds, workingArea)
-                == new Point(100, 50),
-            "popup also snaps flush with its left and top borders");
-        Assert(
-            UsagePopupForm.SnapToScreen(new Point(651, 591), popupSize, screenBounds, workingArea)
-                == new Point(652, 592),
-            "popup snaps eight pixels above the taskbar");
-        Assert(
-            UsagePopupForm.SnapToScreen(new Point(300, 599), popupSize, screenBounds, workingArea)
-                == new Point(300, 600),
-            "popup also snaps flush with the taskbar");
-        Assert(
-            UsagePopupForm.SnapToScreen(new Point(300, 620), popupSize, screenBounds, workingArea)
-                == new Point(300, 620),
-            "popup can move across the taskbar");
-        Assert(
-            UsagePopupForm.SnapToScreen(new Point(300, 641), popupSize, screenBounds, workingArea)
-                == new Point(300, 642),
-            "popup snaps eight pixels above the physical screen bottom");
-        Assert(
-            UsagePopupForm.SnapToScreen(new Point(300, 649), popupSize, screenBounds, workingArea)
-                == new Point(300, 650),
-            "popup also snaps flush with the physical screen bottom");
-        Assert(
-            UsagePopupForm.SnapToScreen(new Point(130, 90), popupSize, screenBounds, workingArea)
-                == new Point(130, 90),
-            "popup remains unsnapped away from screen borders");
-        Assert(
-            UsagePopupForm.GetLocationWhenShown(
-                new Point(300, 620),
-                pinned: true,
-                new Point(900, 700),
-                popupSize,
-                workingArea)
-                == new Point(300, 620),
-            "pinned popup keeps its position when reopened");
-        Assert(
-            UsagePopupForm.GetLocationWhenShown(
-                new Point(300, 620),
-                pinned: false,
-                new Point(900, 700),
-                popupSize,
-                workingArea)
-                == new Point(480, 592),
-            "unpinned popup returns to its tray position when reopened");
-        popup.Location = new Point(-10_000, -10_000);
-        popup.Show();
-        try
+        var popupLayoutFailures = UsagePopupForm.RunLayoutDiagnostics();
+        if (popupLayoutFailures.Count > 0)
         {
-            popup.SetViewModeForScreenshot(compact: false);
-            popup.ShowPresentation(UsagePresentation.CreateLoading(previous: null));
-            Assert(!popup.HeaderControlsOverlap, "scaled header controls do not overlap");
-            Assert(popup.ContentPaddingIsUniform, "popup content padding is uniform");
-            Assert(popup.InferenceDividerPaddingIsBalanced, "scaled inference padding is balanced");
-            Assert(
-                popup.StatusTextBottomClearance >= 2,
-                $"loading status keeps descender clearance ({popup.StatusTextBottomClearance}px)");
-            Assert(
-                popup.FixedLabelVerticalClearance >= 4,
-                $"fixed-height labels keep vertical clearance ({popup.FixedLabelVerticalClearance}px)");
-            var extendedRefreshInset = popup.RefreshButtonBottomInset;
-            popup.SetViewModeForScreenshot(compact: true);
-            Assert(popup.CompactRefreshLayoutIsCorrect, "compact refresh button fits without extra height");
-            Assert(popup.RefreshButtonBottomInset == extendedRefreshInset,
-                "refresh button stays fixed when changing view mode");
-            var currentScreen = Screen.FromControl(popup);
-            popup.Location = new Point(
-                currentScreen.WorkingArea.Left + 100,
-                currentScreen.WorkingArea.Top + 8);
-            var snappedTop = popup.Top;
-            popup.SetViewModeForScreenshot(compact: false, preserveBottom: true);
-            Assert(popup.Top == snappedTop, "view mode preserves an eight-pixel top inset");
-        }
-        finally
-        {
-            popup.Hide();
+            throw new InvalidOperationException(
+                "Self-test failed:" + Environment.NewLine
+                + string.Join(Environment.NewLine, popupLayoutFailures.Select(failure => $"- {failure}")));
         }
 
         var startupTestDirectory = Path.Combine(Path.GetTempPath(), $"CodexUsageTray-{Guid.NewGuid():N}");

@@ -1,6 +1,6 @@
 namespace CodexUsageTray;
 
-internal sealed class UsagePopupForm : Form
+internal sealed partial class UsagePopupForm : Form
 {
     private const int BorderInset = 8;
     private const int ContentInset = 20;
@@ -41,46 +41,6 @@ internal sealed class UsagePopupForm : Form
     public event EventHandler? ExtendedViewActivated;
 
     public bool IsExtendedView => !compactView;
-
-    internal bool HeaderControlsOverlap =>
-        title.Left
-        + TextRenderer.MeasureText(title.Text, title.Font, Size.Empty, TextFormatFlags.NoPadding).Width
-        + 8
-        > usagePageButton.Left
-        || statusLabel.Bounds.IntersectsWith(usagePageButton.Bounds)
-        || statusLabel.Bounds.IntersectsWith(viewModeButton.Bounds)
-        || statusLabel.Bounds.IntersectsWith(pinButton.Bounds);
-
-    internal bool InferenceDividerPaddingIsBalanced =>
-        todayTitle.Top - limitsDivider.Bottom == inferenceDivider.Top - lifetimeTitle.Bottom;
-
-    internal bool CompactRefreshLayoutIsCorrect =>
-        compactView
-        && refreshButton.Visible
-        && !updatedLabel.Visible
-        && ClientSize.Width - refreshButton.Right == ContentInset
-        && ClientSize.Height - refreshButton.Bottom == ContentInset
-        && weeklyReset.Right + 10 <= refreshButton.Left;
-
-    internal bool ContentPaddingIsUniform =>
-        fiveHourTitle.Left == Padding.Left
-        && ClientSize.Width - fiveHourBar.Right == Padding.Right
-        && ClientSize.Width - pinButton.Right == Padding.Right
-        && pinButton.Top == Padding.Top
-        && ClientSize.Height - refreshButton.Bottom == Padding.Bottom;
-
-    internal int RefreshButtonBottomInset => ClientSize.Height - refreshButton.Bottom;
-
-    internal int StatusTextBottomClearance => statusLabel.Height - statusLabel.PreferredHeight;
-
-    internal int FixedLabelVerticalClearance => Controls
-        .OfType<Label>()
-        .Where(label => !label.AutoSize)
-        .Min(label => label.Height - TextRenderer.MeasureText(
-            label.Text,
-            label.Font,
-            Size.Empty,
-            TextFormatFlags.NoPadding).Height);
 
     public UsagePopupForm()
     {
@@ -417,7 +377,7 @@ internal sealed class UsagePopupForm : Form
             workingArea);
     }
 
-    internal static Point GetLocationWhenShown(
+    private static Point GetLocationWhenShown(
         Point currentLocation,
         bool pinned,
         Point cursorLocation,
@@ -437,7 +397,7 @@ internal sealed class UsagePopupForm : Form
         return new Point(x, y);
     }
 
-    internal static Point SnapToScreen(
+    private static Point SnapToScreen(
         Point location,
         Size windowSize,
         Rectangle screenBounds,
