@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 
 namespace CodexUsageTray;
 
-internal sealed class ApplicationUpdater
+internal sealed class GitHubApplicationUpdateSource : IApplicationUpdateSource
 {
     private const string ExecutableAssetName = "CodexUsageTray.exe";
     private const string ChecksumAssetName = "SHA256SUMS.txt";
@@ -16,7 +16,7 @@ internal sealed class ApplicationUpdater
     private readonly Version currentVersion;
     private readonly string updateDirectory;
 
-    internal ApplicationUpdater(HttpClient httpClient, Version currentVersion, string updateDirectory)
+    internal GitHubApplicationUpdateSource(HttpClient httpClient, Version currentVersion, string updateDirectory)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(currentVersion);
@@ -26,11 +26,11 @@ internal sealed class ApplicationUpdater
         this.updateDirectory = Path.GetFullPath(updateDirectory);
     }
 
-    internal Version CurrentVersion => currentVersion;
+    public Version CurrentVersion => currentVersion;
 
-    internal static ApplicationUpdater CreateDefault()
+    internal static GitHubApplicationUpdateSource CreateDefault()
     {
-        var version = typeof(ApplicationUpdater).Assembly.GetName().Version
+        var version = typeof(GitHubApplicationUpdateSource).Assembly.GetName().Version
             ?? throw new InvalidOperationException("The application version is unavailable.");
         var client = new HttpClient
         {
@@ -41,17 +41,19 @@ internal sealed class ApplicationUpdater
         client.DefaultRequestHeaders.UserAgent.ParseAdd(
             $"CodexUsageTray/{version.ToString(3)}");
         client.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
-        return new ApplicationUpdater(client, version, Path.GetTempPath());
+        return new GitHubApplicationUpdateSource(client, version, Path.GetTempPath());
     }
 
-    internal async Task<AvailableApplicationUpdate?> CheckAsync(CancellationToken cancellationToken)
+    public async Task<AvailableApplicationUpdate?> CheckAsync(CancellationToken cancellationToken)
     {
-        using var releaseResponse = await httpClient.GetAsync(LatestReleaseUri, cancellationToken);
+        using var releaseResponse = await httpClient.GetAsync(LatestReleaseUri, cancellationToken)
+            .ConfigureAwait(false);
         releaseResponse.EnsureSuccessStatusCode();
-        await using var releaseStream = await releaseResponse.Content.ReadAsStreamAsync(cancellationToken);
+        await using var releaseStream = await releaseResponse.Content.ReadAsStreamAsync(cancellationToken)
+            .ConfigureAwait(false);
         var release = await JsonSerializer.DeserializeAsync<GitHubRelease>(
             releaseStream,
-            cancellationToken: cancellationToken)
+            cancellationToken: cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException("GitHub returned an empty release response.");
 
         var latestVersion = ParseVersion(release.TagName);
@@ -68,28 +70,31 @@ internal sealed class ApplicationUpdater
             checksumAsset.DownloadUrl);
     }
 
-    internal async Task<ApplicationUpdate> DownloadAsync(
+    public async Task<StagedApplicationUpdate> DownloadAsync(
         AvailableApplicationUpdate update,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(update);
-        var expectedHash = await DownloadExpectedHashAsync(update.ChecksumDownloadUrl, cancellationToken);
+        var expectedHash = await DownloadExpectedHashAsync(update.ChecksumDownloadUrl, cancellationToken)
+            .ConfigureAwait(false);
         var stagedPath = CreateStagedPath(update.Version);
         try
         {
-            await DownloadFileAsync(update.ExecutableDownloadUrl, stagedPath, cancellationToken);
-            var actualHash = await ComputeSha256Async(stagedPath, cancellationToken);
+            await DownloadFileAsync(update.ExecutableDownloadUrl, stagedPath, cancellationToken)
+                .ConfigureAwait(false);
+            var actualHash = await ComputeSha256Async(stagedPath, cancellationToken)
+                .ConfigureAwait(false);
             if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidDataException(
-                    $"The downloaded update failed its SHA-256 check. Expected {expectedHash}, got {actualHash}.");
+                    $"The staged executable failed its SHA-256 check. Expected {expectedHash}, got {actualHash}.");
             }
 
-            return new ApplicationUpdate(update.Version, stagedPath);
+            return new StagedApplicationUpdate(update.Version, stagedPath);
         }
         catch
         {
-            TryDelete(stagedPath);
+            ApplicationUpdateFiles.TryDelete(stagedPath);
             throw;
         }
     }
@@ -108,7 +113,7 @@ internal sealed class ApplicationUpdater
 
     private async Task<string> DownloadExpectedHashAsync(Uri uri, CancellationToken cancellationToken)
     {
-        var contents = await httpClient.GetStringAsync(uri, cancellationToken);
+        var contents = await httpClient.GetStringAsync(uri, cancellationToken).ConfigureAwait(false);
         foreach (var line in contents.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
         {
             var fields = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
@@ -126,9 +131,12 @@ internal sealed class ApplicationUpdater
 
     private async Task DownloadFileAsync(Uri uri, string destination, CancellationToken cancellationToken)
     {
-        using var response = await httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await httpClient
+            .GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
+        await using var source = await response.Content.ReadAsStreamAsync(cancellationToken)
+            .ConfigureAwait(false);
         await using var target = new FileStream(
             destination,
             FileMode.CreateNew,
@@ -136,7 +144,7 @@ internal sealed class ApplicationUpdater
             FileShare.None,
             bufferSize: 81_920,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        await source.CopyToAsync(target, cancellationToken);
+        await source.CopyToAsync(target, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<string> ComputeSha256Async(string path, CancellationToken cancellationToken)
@@ -148,7 +156,7 @@ internal sealed class ApplicationUpdater
             FileShare.Read,
             bufferSize: 81_920,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        var hash = await SHA256.HashDataAsync(stream, cancellationToken);
+        var hash = await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
         return Convert.ToHexStringLower(hash);
     }
 
@@ -160,20 +168,6 @@ internal sealed class ApplicationUpdater
         return Path.Combine(updateDirectory, fileName);
     }
 
-    internal static void TryDelete(string path)
-    {
-        try
-        {
-            File.Delete(path);
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-    }
-
     private sealed record GitHubRelease(
         [property: JsonPropertyName("tag_name")] string TagName,
         [property: JsonPropertyName("assets")] GitHubAsset[] Assets);
@@ -182,10 +176,3 @@ internal sealed class ApplicationUpdater
         [property: JsonPropertyName("name")] string Name,
         [property: JsonPropertyName("browser_download_url")] Uri DownloadUrl);
 }
-
-internal sealed record AvailableApplicationUpdate(
-    Version Version,
-    Uri ExecutableDownloadUrl,
-    Uri ChecksumDownloadUrl);
-
-internal sealed record ApplicationUpdate(Version Version, string StagedPath);

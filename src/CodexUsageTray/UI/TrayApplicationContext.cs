@@ -7,17 +7,16 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
     internal const string AllowanceActivationMenuText = "Auto-start allowance window";
     internal const string AllowanceNotificationsMenuText = "Notify on allowance changes";
     internal const string AutomaticUpdateMenuText = "Check for updates on startup";
-    internal const string CheckForUpdatesMenuText = "Check for updates";
+    internal const string CheckForUpdatesMenuText = WinFormsApplicationUpdateInteraction.CheckForUpdatesMenuText;
     internal const string LegalNoticesMenuText = "Open licenses and notices";
     internal const string ProjectReadmeMenuText = "Open README on GitHub";
     internal const string ProjectReadmeUrl =
         "https://github.com/MatthiasHeinsius/codex-usage-tray/blob/main/README.md";
     private readonly UsagePresentations usagePresentations;
-    private readonly ApplicationUpdater applicationUpdater;
+    private readonly ApplicationUpdates applicationUpdates;
     private readonly NotifyIcon notifyIcon;
     private readonly UsagePopupForm popup = new();
     private readonly System.Windows.Forms.Timer refreshTimer;
-    private readonly CancellationTokenSource updateCancellation = new();
     private readonly ToolStripMenuItem startupItem;
     private readonly ToolStripMenuItem automaticUpdateItem;
     private readonly ToolStripMenuItem allowanceActivationItem;
@@ -25,7 +24,6 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
     private readonly ToolStripMenuItem updateItem;
     private Icon currentIcon;
     private bool popupVisibleWhenTrayMousePressed;
-    private bool updateCheckRunning;
     private bool exiting;
     private long? lastHandledTrayClickTimestamp;
 
@@ -40,7 +38,6 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
             Text = "Codex usage · connecting"
         };
         usagePresentations = createPresentations(this);
-        applicationUpdater = ApplicationUpdater.CreateDefault();
         startupItem = new ToolStripMenuItem("Start with Windows")
         {
             Checked = StartupRegistration.IsEnabled(),
@@ -66,6 +63,8 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
         };
         allowanceNotificationsItem.CheckedChanged += AllowanceNotificationsItemOnCheckedChanged;
         updateItem = new ToolStripMenuItem(CheckForUpdatesMenuText);
+        applicationUpdates = ApplicationUpdates.CreateDefault(
+            new WinFormsApplicationUpdateInteraction(popup, updateItem, ExitThread));
 
         var menu = CreateContextMenu(
             new ContextMenuItems(
@@ -80,7 +79,8 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
                 OpenUsagePage: (_, _) => OpenUsagePage(),
                 OpenProjectReadme: (_, _) => OpenWebPage(ProjectReadmeUrl),
                 OpenLegalNotices: (_, _) => LegalNotices.Open(),
-                CheckForUpdates: async (_, _) => await CheckForUpdatesAsync(UpdateCheckIntent.Manual),
+                CheckForUpdates: async (_, _) =>
+                    await RequestApplicationUpdateAsync(ApplicationUpdateIntent.Manual),
                 Exit: (_, _) => ExitThread()));
 
         notifyIcon.ContextMenuStrip = menu;
@@ -120,21 +120,20 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
         _ = RequestAsync(UsageUpdateIntent.Routine);
         if (automaticUpdateItem.Checked)
         {
-            _ = CheckForUpdatesAsync(UpdateCheckIntent.Automatic);
+            _ = RequestApplicationUpdateAsync(ApplicationUpdateIntent.Automatic);
         }
     }
 
     protected override void ExitThreadCore()
     {
         exiting = true;
-        updateCancellation.Cancel();
         refreshTimer.Stop();
         notifyIcon.Visible = false;
+        applicationUpdates.DisposeAsync().AsTask().GetAwaiter().GetResult();
         usagePresentations.DisposeAsync().AsTask().GetAwaiter().GetResult();
         notifyIcon.Dispose();
         currentIcon.Dispose();
         popup.Dispose();
-        updateCancellation.Dispose();
         base.ExitThreadCore();
     }
 
@@ -147,6 +146,18 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
         catch (OperationCanceledException) when (exiting)
         {
             // Disposal cancels active and queued Usage Updates.
+        }
+    }
+
+    private async Task RequestApplicationUpdateAsync(ApplicationUpdateIntent intent)
+    {
+        try
+        {
+            await applicationUpdates.RequestAsync(intent);
+        }
+        catch (OperationCanceledException) when (exiting)
+        {
+            // Disposal cancels the active Application Update.
         }
     }
 
@@ -305,96 +316,7 @@ internal sealed class TrayApplicationContext : ApplicationContext, IUsagePresent
         });
     }
 
-    private async Task CheckForUpdatesAsync(UpdateCheckIntent intent)
-    {
-        if (updateCheckRunning)
-        {
-            return;
-        }
-
-        updateCheckRunning = true;
-        updateItem.Enabled = false;
-        updateItem.Text = "Checking for updates...";
-        ApplicationUpdate? update = null;
-        var installerStarted = false;
-        var userAcceptedUpdate = false;
-        try
-        {
-            var availableUpdate = await applicationUpdater.CheckAsync(updateCancellation.Token);
-            if (availableUpdate is null)
-            {
-                if (intent == UpdateCheckIntent.Manual)
-                {
-                    MessageBox.Show(
-                        $"Version {applicationUpdater.CurrentVersion.ToString(3)} is up to date.",
-                        "Codex usage update",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Information);
-                }
-
-                return;
-            }
-
-            var choice = MessageBox.Show(
-                $"Version {availableUpdate.Version.ToString(3)} is available. "
-                    + $"You are using version {applicationUpdater.CurrentVersion.ToString(3)}.\n\n"
-                    + "Download and install the update now?",
-                "Codex usage update",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Question,
-                MessageBoxDefaultButton.Button2);
-            if (choice != DialogResult.Yes)
-            {
-                return;
-            }
-
-            userAcceptedUpdate = true;
-            updateItem.Text = $"Downloading version {availableUpdate.Version.ToString(3)}...";
-            update = await applicationUpdater.DownloadAsync(availableUpdate, updateCancellation.Token);
-            updateItem.Text = $"Installing version {update.Version.ToString(3)}...";
-            var processPath = Environment.ProcessPath
-                ?? throw new InvalidOperationException("The application executable path is unavailable.");
-            UpdateInstaller.Launch(update, Environment.ProcessId, processPath);
-            installerStarted = true;
-            ExitThread();
-        }
-        catch (OperationCanceledException) when (exiting)
-        {
-        }
-        catch (Exception exception)
-        {
-            if (intent == UpdateCheckIntent.Manual || userAcceptedUpdate)
-            {
-                MessageBox.Show(
-                    $"The update failed.\n\n{exception.Message}",
-                    "Codex usage update",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
-            }
-        }
-        finally
-        {
-            if (!installerStarted && update is not null)
-            {
-                ApplicationUpdater.TryDelete(update.StagedPath);
-            }
-
-            if (!exiting)
-            {
-                updateCheckRunning = false;
-                updateItem.Enabled = true;
-                updateItem.Text = CheckForUpdatesMenuText;
-            }
-        }
-    }
-
     private static string TruncateTooltip(string value) => value.Length <= 63 ? value : value[..63];
-
-    private enum UpdateCheckIntent
-    {
-        Automatic,
-        Manual
-    }
 
     internal sealed record ContextMenuItems(
         ToolStripMenuItem Startup,
