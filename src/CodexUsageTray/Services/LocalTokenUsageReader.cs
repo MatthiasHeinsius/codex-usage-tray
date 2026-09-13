@@ -6,8 +6,20 @@ namespace CodexUsageTray;
 
 internal sealed class LocalTokenUsageReader
 {
+    private readonly string codexHome;
     private readonly Dictionary<string, FileState> files = new(StringComparer.OrdinalIgnoreCase);
     private DateOnly cachedDate;
+
+    public LocalTokenUsageReader()
+        : this(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex"))
+    {
+    }
+
+    internal LocalTokenUsageReader(string codexHome)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(codexHome);
+        this.codexHome = Path.GetFullPath(codexHome);
+    }
 
     public long? ReadToday(DateTimeOffset now)
     {
@@ -18,7 +30,9 @@ internal sealed class LocalTokenUsageReader
             files.Clear();
         }
 
-        var paths = FindCandidateFiles(localDate).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var paths = FindCandidateFiles(codexHome, localDate)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         long total = 0;
         var found = false;
         foreach (var path in paths)
@@ -47,9 +61,8 @@ internal sealed class LocalTokenUsageReader
         return (total, found);
     }
 
-    private static IEnumerable<string> FindCandidateFiles(DateOnly localDate)
+    private static IEnumerable<string> FindCandidateFiles(string codexHome, DateOnly localDate)
     {
-        var codexHome = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
         var sessionDirectory = Path.Combine(
             codexHome,
             "sessions",

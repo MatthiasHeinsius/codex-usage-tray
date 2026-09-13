@@ -15,7 +15,7 @@ public sealed partial class UsageUpdatesTests
             new ActivationSettings(),
             new ActivationTimeProvider(now));
 
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(1, command.CallCount);
     }
@@ -37,9 +37,9 @@ public sealed partial class UsageUpdatesTests
             settings,
             time))
         {
-            await updates.RefreshAsync();
+            await updates.RefreshAsync(TestContext.Current.CancellationToken);
             time.Advance(TimeSpan.FromMinutes(1));
-            await updates.RefreshAsync();
+            await updates.RefreshAsync(TestContext.Current.CancellationToken);
         }
 
         var afterRestartCommand = new ActivationRecordingCommand();
@@ -48,7 +48,7 @@ public sealed partial class UsageUpdatesTests
             afterRestartCommand,
             settings,
             time);
-        await afterRestart.RefreshAsync();
+        await afterRestart.RefreshAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(1, command.CallCount);
         Assert.Equal(0, afterRestartCommand.CallCount);
@@ -78,7 +78,7 @@ public sealed partial class UsageUpdatesTests
                 time.Advance(TimeSpan.FromMinutes(1));
             }
 
-            await updates.RefreshAsync();
+            await updates.RefreshAsync(TestContext.Current.CancellationToken);
         }
 
         Assert.Equal(4, command.CallCount);
@@ -98,9 +98,9 @@ public sealed partial class UsageUpdatesTests
         var time = new ActivationTimeProvider(now);
         await using var updates = CreateActivationUpdates(reader, command, new ActivationSettings(), time);
 
-        var recovered = await updates.RefreshAsync();
+        var recovered = await updates.RefreshAsync(TestContext.Current.CancellationToken);
         time.Advance(TimeSpan.FromMinutes(5));
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(1, command.CallCount);
         Assert.Equal(3, reader.CallCount);
@@ -127,10 +127,10 @@ public sealed partial class UsageUpdatesTests
             settings,
             new ActivationTimeProvider(now));
 
-        var initial = await updates.RefreshAsync();
-        var usedUp = await updates.RefreshAsync();
-        var repeated = await updates.RefreshAsync();
-        var naturalReset = await updates.RefreshAsync();
+        var initial = await updates.RefreshAsync(TestContext.Current.CancellationToken);
+        var usedUp = await updates.RefreshAsync(TestContext.Current.CancellationToken);
+        var repeated = await updates.RefreshAsync(TestContext.Current.CancellationToken);
+        var naturalReset = await updates.RefreshAsync(TestContext.Current.CancellationToken);
 
         Assert.Empty(initial.Notices);
         Assert.Equal("5-hour allowance used up.", Assert.Single(usedUp.Notices).Message);
@@ -152,9 +152,9 @@ public sealed partial class UsageUpdatesTests
             new ActivationSettings(),
             new ActivationTimeProvider(now));
 
-        var first = updates.RefreshAsync();
-        await command.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        var second = updates.RefreshAsync();
+        var first = updates.RefreshAsync(TestContext.Current.CancellationToken);
+        await command.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var second = updates.RefreshAsync(TestContext.Current.CancellationToken);
         command.Completion.TrySetResult();
         await Task.WhenAll(first, second);
 
@@ -179,11 +179,11 @@ public sealed partial class UsageUpdatesTests
             settings,
             time);
 
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
         time.Advance(TimeSpan.FromMinutes(1));
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
         time.Advance(TimeSpan.FromMinutes(1));
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, command.CallCount);
         Assert.Equal(fiveHourReset.AddMinutes(1), settings.ReadActivatedReset(AllowanceWindowKind.FiveHour));
@@ -208,11 +208,11 @@ public sealed partial class UsageUpdatesTests
             new ActivationSettings(),
             time);
 
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
         time.Advance(TimeSpan.FromMinutes(4));
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
         time.Advance(TimeSpan.FromMinutes(1));
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, command.CallCount);
     }
@@ -232,11 +232,11 @@ public sealed partial class UsageUpdatesTests
         var time = new ActivationTimeProvider(now);
         await using var updates = CreateActivationUpdates(reader, command, new ActivationSettings(), time);
 
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
         time.Advance(TimeSpan.FromMinutes(4));
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
         time.Advance(TimeSpan.FromMinutes(1));
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, command.CallCount);
     }
@@ -256,9 +256,9 @@ public sealed partial class UsageUpdatesTests
             new ActivationSettings(),
             time);
 
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
         time.Advance(TimeSpan.FromMinutes(1));
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(1, command.CallCount);
     }
@@ -281,10 +281,10 @@ public sealed partial class UsageUpdatesTests
             settings,
             time);
 
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
         command.FailNext(new InvalidOperationException("synthetic retry failure"));
         time.Advance(TimeSpan.FromMinutes(1));
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(2, command.CallCount);
         Assert.Equal(changedReset, settings.ReadActivatedReset(AllowanceWindowKind.FiveHour));
@@ -307,7 +307,7 @@ public sealed partial class UsageUpdatesTests
             settings,
             new ActivationTimeProvider(now));
 
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(1, command.CallCount);
         Assert.Equal(changedReset, settings.ReadActivatedReset(AllowanceWindowKind.FiveHour));
@@ -326,7 +326,7 @@ public sealed partial class UsageUpdatesTests
             settings,
             new ActivationTimeProvider(now)))
         {
-            await first.RefreshAsync();
+            await first.RefreshAsync(TestContext.Current.CancellationToken);
         }
 
         var restartedCommand = new ActivationRecordingCommand();
@@ -335,7 +335,7 @@ public sealed partial class UsageUpdatesTests
             restartedCommand,
             settings,
             new ActivationTimeProvider(now));
-        await restarted.RefreshAsync();
+        await restarted.RefreshAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(1, firstCommand.CallCount);
         Assert.Equal(1, restartedCommand.CallCount);
@@ -352,7 +352,7 @@ public sealed partial class UsageUpdatesTests
             new ActivationSettings(),
             new ActivationTimeProvider(now));
 
-        await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(0, command.CallCount);
     }
@@ -377,9 +377,9 @@ public sealed partial class UsageUpdatesTests
             settings,
             new ActivationTimeProvider(now));
 
-        await updates.RefreshAsync();
-        var usedUp = await updates.RefreshAsync();
-        var reset = await updates.RefreshAsync();
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
+        var usedUp = await updates.RefreshAsync(TestContext.Current.CancellationToken);
+        var reset = await updates.RefreshAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal("5-hour and weekly allowance used up.", Assert.Single(usedUp.Notices).Message);
         Assert.Equal("5-hour and weekly allowance reset.", Assert.Single(reset.Notices).Message);

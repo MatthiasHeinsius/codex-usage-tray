@@ -5,7 +5,7 @@ namespace CodexUsageTray.Tests;
 public sealed class UsagePresentationTests
 {
     [Fact]
-    public void CreateDerivesPopupAndTrayPresentation()
+    public void CreateMapsCompleteSnapshotToPopupAndTray()
     {
         var now = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
         var fiveHourReset = now.AddHours(3).AddMinutes(12);

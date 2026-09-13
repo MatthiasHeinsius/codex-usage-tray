@@ -22,19 +22,25 @@ public sealed class CodexWindowStarterTests
         Assert.Equal(CancellationToken.None, processes.CaptureCancellationToken);
     }
 
-    [Fact]
-    public async Task SendHiReportsTheLastStandardErrorLine()
+    [Theory]
+    [InlineData("output detail", "first error\r\nlast error\r\n", "last error")]
+    [InlineData("first output\r\nlast output\r\n", "", "last output")]
+    [InlineData("", "", "exit code 7")]
+    public async Task SendHiReportsTheMostUsefulFailureDetail(
+        string standardOutput,
+        string standardError,
+        string expectedDetail)
     {
         var processes = new ScriptedCodexProcessExecution
         {
-            CapturedOutput = new CodexProcessOutput(7, "output detail", "first error\r\nlast error\r\n")
+            CapturedOutput = new CodexProcessOutput(7, standardOutput, standardError)
         };
         var starter = new CodexWindowStarter(processes);
 
         var failure = await Assert.ThrowsAsync<InvalidOperationException>(
             () => starter.SendHiAsync(CancellationToken.None));
 
-        Assert.Equal("The automatic Codex request failed: last error", failure.Message);
+        Assert.Equal($"The automatic Codex request failed: {expectedDetail}", failure.Message);
     }
 
     [Fact]

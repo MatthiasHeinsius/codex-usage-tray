@@ -1,0 +1,12 @@
+{
+  "xUnit": {
+    "culture": "invariant",
+    "diagnosticMessages": true,
+    "failSkips": true,
+    "failWarns": true,
+    "longRunningTestSeconds": 10,
+    "methodDisplayOptions": "removeAsyncSuffix",
+    "parallelMode": "collections",
+    "preEnumerateTheories": true
+  }
+}

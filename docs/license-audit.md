@@ -1,6 +1,6 @@
 # Third-party license audit
 
-Audit date: 2026-09-12
+Audit date: 2026-09-13
 
 This report records the license sources needed to build the repository's third-party notice file. It separates software embedded in the released executable from tools used only to build or test the source. The upstream license and notice files linked below are the text to preserve. This report is not a substitute for those files.
 
@@ -12,12 +12,10 @@ The test project directly references these packages:
 
 | Package | Version | Role |
 | --- | ---: | --- |
-| `coverlet.collector` | 6.0.4 | Test-only coverage collector |
-| `Microsoft.NET.Test.Sdk` | 17.14.1 | Test-only build and execution support |
-| `xunit` | 2.9.3 | Test-only framework |
-| `xunit.runner.visualstudio` | 3.1.4 | Test-only adapter |
+| `Microsoft.Testing.Extensions.CodeCoverage` | 18.11.2 | Test-only coverage extension |
+| `xunit.v3.mtp-v2` | 4.0.1 | Test framework and Microsoft Testing Platform v2 runner |
 
-The restored `tests/CodexUsageTray.Tests/obj/project.assets.json` also contains `Microsoft.CodeCoverage` 17.14.1, `Microsoft.TestPlatform.ObjectModel` 17.14.1, `Microsoft.TestPlatform.TestHost` 17.14.1, `Newtonsoft.Json` 13.0.3, `xunit.abstractions` 2.0.3, `xunit.analyzers` 1.18.0, `xunit.assert` 2.9.3, `xunit.core` 2.9.3, `xunit.extensibility.core` 2.9.3, and `xunit.extensibility.execution` 2.9.3.
+The restored `tests/CodexUsageTray.Tests/obj/project.assets.json` also contains Microsoft Testing Platform 2.4.0, its MSBuild and telemetry extensions, Microsoft Application Insights 2.23.0, Microsoft Code Coverage dependencies, xUnit.net 4.0.1 runner components, and xUnit analyzers 2.1.0. Use `dotnet list tests/CodexUsageTray.Tests/CodexUsageTray.Tests.csproj package --include-transitive` to reproduce the exact graph.
 
 The screenshot generator has no external package references. It only references the application project.
 
@@ -47,41 +45,23 @@ The three linked MIT files have the same license text and copyright line. A comp
 
 These packages are present in the source and test dependency graph, but `build-release.cmd` does not publish the test project. They are not part of `CodexUsageTray.exe`. Keep their notices in the repository-wide notice inventory. They do not need to be represented as components of the released application unless the distribution also contains test binaries or test tooling.
 
-### Coverlet 6.0.4
+### Microsoft Testing Platform 2.4.0
 
-The [6.0.4 package](https://www.nuget.org/packages/coverlet.collector/6.0.4) declares MIT. Its package metadata identifies source commit `90b21079d43cffae3a18f264e00962b9c8a1d57a`.
+`xunit.v3.mtp-v2` brings in `Microsoft.Testing.Platform`, `Microsoft.Testing.Platform.MSBuild`, `Microsoft.Testing.Extensions.Telemetry`, and `Microsoft.Testing.Extensions.TrxReport.Abstractions` 2.4.0. These packages come from [Microsoft TestFX](https://github.com/microsoft/testfx), declare MIT, and identify `Copyright (c) Microsoft Corporation`.
 
-- Preserve Coverlet's [MIT license](https://raw.githubusercontent.com/coverlet-coverage/coverlet/90b21079d43cffae3a18f264e00962b9c8a1d57a/LICENSE), including `Copyright (c) 2018 Toni Solarin-Sodara`.
-- Preserve Coverlet's [complete third-party notice](https://raw.githubusercontent.com/coverlet-coverage/coverlet/90b21079d43cffae3a18f264e00962b9c8a1d57a/THIRD-PARTY-NOTICES.txt), which contains the ConsoleTables MIT notice and `Copyright (c) 2012 Khalid Abuhakmeh`.
+The telemetry extension brings in Microsoft Application Insights 2.23.0 and supporting Microsoft libraries. Their package metadata declares MIT. Preserve the common Microsoft MIT attribution already included in the notice file.
 
-### Microsoft test platform 17.14.1
+### Microsoft Code Coverage 18.11.2
 
-`Microsoft.NET.Test.Sdk` depends on `Microsoft.TestPlatform.TestHost` and `Microsoft.CodeCoverage`. `TestHost` depends on `Microsoft.TestPlatform.ObjectModel` and `Newtonsoft.Json`. The [17.14.1 SDK package](https://www.nuget.org/packages/Microsoft.NET.Test.Sdk/17.14.1) and all three Microsoft packages point to VSTest commit `490850ae3fdc1b470e3804ceab4f6a41cf89ae51` and declare MIT.
+The [Microsoft.Testing.Extensions.CodeCoverage 18.11.2 package](https://www.nuget.org/packages/Microsoft.Testing.Extensions.CodeCoverage/18.11.2) uses the Microsoft .NET Library license. Its package contains `License.txt` and `ThirdPartyNotices.txt`; preserve both files. The third-party notice identifies Mono.Cecil 0.11.3, Serilog 2.10.0, Serilog.Sinks.File 4.1.0, and Coverlet collector 3.1.2.
 
-- Preserve the VSTest [MIT license](https://raw.githubusercontent.com/microsoft/vstest/490850ae3fdc1b470e3804ceab4f6a41cf89ae51/LICENSE), including `Copyright (c) Microsoft Corporation`.
-- Preserve the [VSTest package notice](https://raw.githubusercontent.com/microsoft/vstest/490850ae3fdc1b470e3804ceab4f6a41cf89ae51/src/package/ThirdPartyNotices.txt). It includes notices for Newtonsoft.Json 13.0.3, Mono.Cecil 0.11.3, and NuGet.Client 6.8.0.117.
-- Preserve the separate [Microsoft.CodeCoverage package notice](https://raw.githubusercontent.com/microsoft/vstest/490850ae3fdc1b470e3804ceab4f6a41cf89ae51/src/package/Microsoft.CodeCoverage/ThirdPartyNoticesCodeCoverage.txt). It contains the Mono.Cecil notice with `Copyright (c) 2008 - 2015 Jb Evain` and `Copyright (c) 2008 - 2011 Novell, Inc.`
-- `Newtonsoft.Json` 13.0.3 also appears as a restored package. Preserve its [MIT license](https://raw.githubusercontent.com/JamesNK/Newtonsoft.Json/0a2e291c0d9c0c7675d445703e51750363a549ef/LICENSE.md), including `Copyright (c) 2007 James Newton-King`. The package's own metadata says `Copyright © James Newton-King 2008`; the license file is the controlling notice to reproduce.
+### xUnit.net 4.0.1 and analyzers 2.1.0
 
-The notice files inside the restored 17.14.1 packages match the linked VSTest source files. Their SHA-256 values in the audited restore were:
+The [xunit.v3.mtp-v2 4.0.1 package](https://www.nuget.org/packages/xunit.v3.mtp-v2/4.0.1) restores the xUnit.net assertion library, core, extensibility, common runner, and in-process runner at 4.0.1. It also restores xUnit analyzers 2.1.0. The packages declare Apache-2.0 and identify `Copyright (C) .NET Foundation`.
 
-- `Microsoft.CodeCoverage/17.14.1/ThirdPartyNotices.txt`: `4FC4244935BBE3516164402C573F053A5D246571ED4D357E6CCCD8EBEC296BBC`
-- `Microsoft.TestPlatform.TestHost/17.14.1/ThirdPartyNotices.txt`: `E2CE7628E0F67D0D724EEA9D9286A6938BF1EEDD253FC84B23D72AE54778A5F7`
-
-### xUnit.net 2.9.3 and analyzers 1.18.0
-
-The [xunit 2.9.3 package](https://www.nuget.org/packages/xunit/2.9.3) is a metapackage. It restores `xunit.assert`, `xunit.core`, `xunit.extensibility.core`, `xunit.extensibility.execution`, `xunit.abstractions`, and `xunit.analyzers`. The 2.9.3 packages point to xUnit commit `9712244020d385955d33136b3fe3e87de43539cd` and declare Apache-2.0. Their NuGet copyright field says `Copyright (C) .NET Foundation`.
-
-- Include one complete copy of the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0.txt). The xUnit attribution files quote the standard notice but do not reproduce all nine sections of the license.
-- Preserve xUnit's [complete license file](https://raw.githubusercontent.com/xunit/xunit/9712244020d385955d33136b3fe3e87de43539cd/license.txt). Its main notice says `Copyright (c) .NET Foundation and Contributors` under Apache-2.0. The same file contains an MIT notice, `Copyright (c) 2015 .NET Foundation`, for imported .NET platform-abstractions and dependency-model code.
-- `xunit.abstractions` 2.0.3 has no SPDX expression in its old package metadata. Its `licenseUrl` points to the same xUnit license file, so group it under the preceding complete text.
-- Preserve the analyzer package's [complete license file](https://raw.githubusercontent.com/xunit/xunit.analyzers/2620a4ddabcba16ceb64ea9ad19c566252015fe8/LICENSE). It has the same .NET Foundation Apache-2.0 notice and a .NET Foundation MIT notice for code adapted from the Roslyn SDK.
-
-### xUnit Visual Studio runner 3.1.4
-
-The [runner package](https://www.nuget.org/packages/xunit.runner.visualstudio/3.1.4) declares Apache-2.0 and points to source commit `50e68bbb8b9ddd4b1bbb95d062b62010caf99909`. Its NuGet copyright field says `Copyright (C) .NET Foundation`.
-
-Preserve the runner's [complete license file](https://raw.githubusercontent.com/xunit/visualstudio.xunit/50e68bbb8b9ddd4b1bbb95d062b62010caf99909/License.txt). It contains the main `Copyright (c) .NET Foundation and Contributors` Apache-2.0 notice and an MIT notice, `Copyright (c) 2015 .NET Foundation`, for imported platform-abstractions and dependency-model code.
+- Include one complete copy of the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0.txt).
+- Preserve xUnit's license and the MIT notice for code adapted from MSBuild.
+- Preserve the analyzer license and its MIT notice for code adapted from the Roslyn SDK.
 
 ## Continuous-integration dependencies
 
@@ -103,6 +83,6 @@ Record Codex CLI as an external prerequisite, not as redistributed software. Its
 
 For the current binary release, include the .NET Library License, one labeled copy of the shared .NET MIT license, and the complete 10.0.12 Runtime, WinForms, and WPF third-party notice files. The project embeds these texts in the executable, exposes them through the tray menu, and copies both legal files beside the executable. The release workflow uploads the sidecar files as separate release assets.
 
-For the repository-wide inventory, add the full Coverlet, VSTest, Microsoft.CodeCoverage, Newtonsoft.Json, xUnit, xUnit analyzer, and xUnit Visual Studio runner texts listed above. Include the full Apache License 2.0 once. Mark that section as test and development tooling. Avoid replacing any full upstream notice with this report's summaries.
+For the repository-wide inventory, add the Microsoft Testing Platform, Microsoft Code Coverage, xUnit.net, and xUnit analyzer texts listed above. Include the full Apache License 2.0 once. Mark that section as test and development tooling.
 
 Before each release, verify the resolved runtime-pack version and inspect the publish output for newly added restricted .NET or Windows SDK binaries. Regenerate the notice file if any direct package, transitive package, target framework, runtime identifier, or publish setting changes.

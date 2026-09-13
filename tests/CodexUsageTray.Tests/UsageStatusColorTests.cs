@@ -9,7 +9,7 @@ public sealed class UsageStatusColorTests
     [InlineData(50, 234, 179, 8)]
     [InlineData(25, 245, 158, 11)]
     [InlineData(10, 239, 68, 68)]
-    public void UsesRequestedColorStops(int remaining, int red, int green, int blue)
+    public void RemainingPercentUsesDefinedColorStops(int remaining, int red, int green, int blue)
     {
         Assert.Equal(
             Color.FromArgb(red, green, blue).ToArgb(),
@@ -20,7 +20,21 @@ public sealed class UsageStatusColorTests
     [InlineData(75, 125, 182, 68)]
     [InlineData(37, 240, 168, 10)]
     [InlineData(17, 242, 110, 41)]
-    public void InterpolatesBetweenColorStops(int remaining, int red, int green, int blue)
+    public void RemainingPercentInterpolatesBetweenColorStops(int remaining, int red, int green, int blue)
+    {
+        Assert.Equal(
+            Color.FromArgb(red, green, blue).ToArgb(),
+            UsageStatusColor.ForRemainingPercent(remaining).ToArgb());
+    }
+
+    [Theory]
+    [InlineData(-1, 239, 68, 68)]
+    [InlineData(101, 16, 185, 129)]
+    public void ClampsRemainingPercentOutsideTheSupportedRange(
+        int remaining,
+        int red,
+        int green,
+        int blue)
     {
         Assert.Equal(
             Color.FromArgb(red, green, blue).ToArgb(),

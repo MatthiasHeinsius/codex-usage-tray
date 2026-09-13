@@ -13,11 +13,11 @@ public sealed partial class UsageUpdatesTests
         await using var updates = CreateRefreshUpdates(observations);
 
         var canceledRefresh = updates.RefreshAsync(callerCancellation.Token);
-        await observations.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await observations.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         callerCancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledRefresh);
 
-        var survivingRefresh = updates.RefreshAsync();
+        var survivingRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
         observations.Completion.TrySetResult(ObserveRefresh(observedAt, usedPercent: 20));
         var presentation = await survivingRefresh;
 
@@ -37,13 +37,13 @@ public sealed partial class UsageUpdatesTests
         await using var updates = CreateRefreshUpdates(observations);
 
         var canceledRoutine = updates.RefreshAsync(routineCancellation.Token);
-        await routineRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await routineRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         routineCancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledRoutine);
 
-        var activityUpdate = updates.RefreshWithActivityAsync();
+        var activityUpdate = updates.RefreshWithActivityAsync(TestContext.Current.CancellationToken);
         routineRead.Succeed(ObserveRefresh(observedAt, usedPercent: 20));
-        await activityRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await activityRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         activityRead.Succeed(ObserveRefresh(observedAt.AddSeconds(1), usedPercent: 21, includeActivity: true));
 
         var presentation = await activityUpdate;
@@ -66,13 +66,13 @@ public sealed partial class UsageUpdatesTests
         await using var updates = CreateRefreshUpdates(observations);
 
         var canceledRoutine = updates.RefreshAsync(routineCancellation.Token);
-        await routineRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await routineRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         routineCancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledRoutine);
 
-        var activityUpdate = updates.RefreshWithActivityAsync();
+        var activityUpdate = updates.RefreshWithActivityAsync(TestContext.Current.CancellationToken);
         routineRead.Fail(new IOException("routine observation failed"));
-        await activityRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await activityRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         activityRead.Succeed(ObserveRefresh(observedAt, usedPercent: 21, includeActivity: true));
 
         var presentation = await activityUpdate;
@@ -93,17 +93,17 @@ public sealed partial class UsageUpdatesTests
         await using var updates = CreateRefreshUpdates(observations);
 
         var canceledRoutine = updates.RefreshAsync(routineCancellation.Token);
-        await routineRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await routineRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         routineCancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledRoutine);
 
         var canceledActivity = updates.RefreshWithActivityAsync(activityCancellation.Token);
         activityCancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledActivity);
-        var survivingUpdate = updates.RefreshAsync();
+        var survivingUpdate = updates.RefreshAsync(TestContext.Current.CancellationToken);
 
         routineRead.Succeed(ObserveRefresh(observedAt, usedPercent: 20));
-        await activityRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await activityRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         activityRead.Succeed(ObserveRefresh(observedAt.AddSeconds(1), usedPercent: 21, includeActivity: true));
 
         var presentation = await survivingUpdate;
@@ -124,20 +124,20 @@ public sealed partial class UsageUpdatesTests
         await using var updates = CreateRefreshUpdates(observations);
 
         var canceledRoutine = updates.RefreshAsync(routineCancellation.Token);
-        await routineRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await routineRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         routineCancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledRoutine);
 
-        var failedActivity = updates.RefreshWithActivityAsync();
+        var failedActivity = updates.RefreshWithActivityAsync(TestContext.Current.CancellationToken);
         routineRead.Succeed(ObserveRefresh(observedAt, usedPercent: 20));
-        await activityRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await activityRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         activityRead.Fail(new IOException("activity observation failed"));
 
         var failure = await Assert.ThrowsAsync<UsageSnapshotRefreshException>(() => failedActivity);
         Assert.Equal("activity observation failed", failure.Message);
 
-        var nextUpdate = updates.RefreshAsync();
-        await nextRoutineRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var nextUpdate = updates.RefreshAsync(TestContext.Current.CancellationToken);
+        await nextRoutineRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         nextRoutineRead.Succeed(ObserveRefresh(observedAt.AddMinutes(1), usedPercent: 30));
 
         var presentation = await nextUpdate;
@@ -151,19 +151,19 @@ public sealed partial class UsageUpdatesTests
         var observations = new CancellationIgnoringObservationReader();
         var updates = CreateRefreshUpdates(observations);
 
-        var refresh = updates.RefreshAsync();
-        await observations.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var refresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
+        await observations.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         var disposal = updates.DisposeAsync().AsTask();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => refresh.WaitAsync(TimeSpan.FromSeconds(5)));
+            () => refresh.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
         Assert.True(observations.AdapterCancellation.IsCancellationRequested);
         Assert.False(disposal.IsCompleted);
 
         observations.Completion.TrySetResult(ObserveRefresh(observedAt, usedPercent: 20));
         await disposal;
 
-        await Assert.ThrowsAsync<ObjectDisposedException>(() => updates.RefreshAsync());
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => updates.RefreshAsync(TestContext.Current.CancellationToken));
     }
 
     private static UsageUpdates CreateRefreshUpdates(IUsageObservationReader observations) =>
@@ -304,18 +304,4 @@ public sealed partial class UsageUpdatesTests
         }
     }
 
-    private sealed class NoOpActivationCommand : IAllowanceWindowActivationCommand
-    {
-        public Task SendHiAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-    }
-
-    private sealed class DisabledActivationSettings : IAllowanceWindowActivationSettings
-    {
-        public bool ActivationEnabled { get; set; }
-        public bool NotificationsEnabled { get; set; }
-        public DateTimeOffset? ReadActivatedReset(AllowanceWindowKind window) => null;
-        public void WriteActivatedReset(AllowanceWindowKind window, DateTimeOffset reset)
-        {
-        }
-    }
 }

@@ -3,7 +3,7 @@ namespace CodexUsageTray.Tests;
 public sealed class TrayApplicationContextTests
 {
     [Fact]
-    public void MenuLabelsUseRequestedWording()
+    public void MenuConstantsMatchVisibleLabelsAndReadmeUrl()
     {
         Assert.Equal(
             "Auto-start allowance window",
@@ -38,7 +38,7 @@ public sealed class TrayApplicationContextTests
     }
 
     [Fact]
-    public void ContextMenuIncludesWorkingProjectReadmeItem()
+    public void ProjectReadmeMenuItemInvokesItsCommand()
     {
         var readmeRequested = false;
         using var menu = TrayApplicationContext.CreateContextMenu(
@@ -54,7 +54,7 @@ public sealed class TrayApplicationContextTests
     }
 
     [Fact]
-    public void ContextMenuIncludesLegalNoticesItem()
+    public void LegalNoticesMenuItemInvokesItsCommand()
     {
         var noticesRequested = false;
         using var menu = TrayApplicationContext.CreateContextMenu(
