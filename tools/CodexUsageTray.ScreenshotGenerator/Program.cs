@@ -87,42 +87,7 @@ internal static class Program
 
     private static void SaveContextMenu(CodexUsageTray.UsagePresentation.TrayPresentation presentation, string path)
     {
-        using var startupItem = new ToolStripMenuItem("Start with Windows")
-        {
-            CheckOnClick = true
-        };
-        using var automaticUpdateItem = new ToolStripMenuItem(
-            CodexUsageTray.TrayApplicationContext.AutomaticUpdateMenuText)
-        {
-            CheckOnClick = true
-        };
-        using var allowanceActivationItem = new ToolStripMenuItem(
-            CodexUsageTray.TrayApplicationContext.AllowanceActivationMenuText)
-        {
-            CheckOnClick = true
-        };
-        using var allowanceNotificationsItem = new ToolStripMenuItem(
-            CodexUsageTray.TrayApplicationContext.AllowanceNotificationsMenuText)
-        {
-            CheckOnClick = true
-        };
-        using var updateItem = new ToolStripMenuItem(
-            CodexUsageTray.TrayApplicationContext.CheckForUpdatesMenuText);
-        using var menu = CodexUsageTray.TrayApplicationContext.CreateContextMenu(
-            new CodexUsageTray.TrayApplicationContext.ContextMenuItems(
-                startupItem,
-                automaticUpdateItem,
-                allowanceActivationItem,
-                allowanceNotificationsItem,
-                updateItem),
-            new CodexUsageTray.TrayApplicationContext.ContextMenuCommands(
-                Open: (_, _) => { },
-                Refresh: (_, _) => { },
-                OpenUsagePage: (_, _) => { },
-                OpenProjectReadme: (_, _) => { },
-                OpenLegalNotices: (_, _) => { },
-                CheckForUpdates: (_, _) => { },
-                Exit: (_, _) => { }));
+        using var menu = CodexUsageTray.WinFormsApplicationShell.CreateContextMenuForScreenshot();
         menu.CreateControl();
         menu.PerformLayout();
         menu.Size = menu.GetPreferredSize(Size.Empty);
