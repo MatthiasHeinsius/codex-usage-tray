@@ -120,7 +120,14 @@ internal sealed class WindowsCodexProcessExecution : ICodexProcessExecution
             if (!process.WaitForExit(500))
             {
                 process.Kill(entireProcessTree: true);
+                if (!process.WaitForExit(500))
+                {
+                    return;
+                }
             }
+
+            // The timed overload can return before asynchronous error handlers finish.
+            process.WaitForExit();
         }
         catch
         {
