@@ -94,8 +94,9 @@ public sealed class LocalTokenUsageReaderTests
     }
 
     [Fact]
-    public void SumLinesForDateIgnoresOtherDatesRecordTypesAndMalformedJson()
+    public void ReadTodayIgnoresOtherDatesRecordTypesAndMalformedJson()
     {
+        using var directory = new TemporaryDirectory("local-usage-filtering");
         var lines = new[]
         {
             UsageLine(September7, 1_200),
@@ -103,22 +104,23 @@ public sealed class LocalTokenUsageReaderTests
             "{\"timestamp\":\"2026-09-07T09:00:00Z\",\"type\":\"event_msg\",\"payload\":{}}",
             "not JSON"
         };
+        File.WriteAllLines(SessionPath(directory, September7), lines, Utf8WithoutByteOrderMark);
+        var reader = new LocalTokenUsageReader(directory.RootPath);
 
-        var result = LocalTokenUsageReader.SumLinesForDate(lines, new DateOnly(2026, 9, 7));
-
-        Assert.True(result.Found);
-        Assert.Equal(1_200, result.Tokens);
+        Assert.Equal(1_200, reader.ReadToday(September7));
     }
 
     [Fact]
-    public void SumLinesForDateReturnsNotFoundWhenNoMatchingRecordExists()
+    public void ReadTodayReturnsNullWhenNoMatchingRecordExists()
     {
-        var result = LocalTokenUsageReader.SumLinesForDate(
-            [UsageLine(September7.AddDays(-1), 100)],
-            new DateOnly(2026, 9, 7));
+        using var directory = new TemporaryDirectory("local-usage-not-found");
+        File.WriteAllText(
+            SessionPath(directory, September7),
+            UsageLine(September7.AddDays(-1), 100) + "\n",
+            Utf8WithoutByteOrderMark);
+        var reader = new LocalTokenUsageReader(directory.RootPath);
 
-        Assert.False(result.Found);
-        Assert.Equal(0, result.Tokens);
+        Assert.Null(reader.ReadToday(September7));
     }
 
     private static string SessionPath(TemporaryDirectory directory, DateTimeOffset timestamp)

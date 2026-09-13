@@ -44,22 +44,6 @@ internal sealed class LocalTokenUsageReader
         return found ? total : null;
     }
 
-    internal static (long Tokens, bool Found) SumLinesForDate(IEnumerable<string> lines, DateOnly localDate)
-    {
-        long total = 0;
-        var found = false;
-        foreach (var line in lines)
-        {
-            if (TryReadUsage(line, localDate, out var tokens))
-            {
-                total = checked(total + tokens);
-                found = true;
-            }
-        }
-
-        return (total, found);
-    }
-
     private static IEnumerable<string> FindCandidateFiles(string codexHome, DateOnly localDate)
     {
         var localStart = localDate.ToDateTime(TimeOnly.MinValue);
@@ -102,7 +86,8 @@ internal sealed class LocalTokenUsageReader
 
         stream.Position = state.Offset;
         using var memory = new MemoryStream();
-        state.Offset = CopyUnreadBytes(stream, memory);
+        stream.CopyTo(memory);
+        state.Offset = stream.Position;
         var appended = Encoding.UTF8.GetString(memory.GetBuffer(), 0, checked((int)memory.Length));
         var combined = state.PartialLine + appended;
         var lines = combined.Split('\n');
@@ -119,12 +104,6 @@ internal sealed class LocalTokenUsageReader
         }
 
         return state;
-    }
-
-    internal static long CopyUnreadBytes(Stream source, Stream destination)
-    {
-        source.CopyTo(destination);
-        return source.Position;
     }
 
     private static bool TryReadUsage(string line, DateOnly localDate, out long tokens)
