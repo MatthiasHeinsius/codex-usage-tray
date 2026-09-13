@@ -92,8 +92,9 @@ dotnet run --project .\src\CodexUsageTray\CodexUsageTray.csproj -c Release --no-
 The test project uses xUnit.net 4 and Microsoft Testing Platform v2. To collect a Cobertura report with the MTP coverage extension, run:
 
 ```powershell
-dotnet test --project .\tests\CodexUsageTray.Tests\CodexUsageTray.Tests.csproj `
+dotnet test --solution .\CodexUsageTray.slnx `
   -c Release `
+  --results-directory .\TestResults `
   --coverage `
   --coverage-output-format cobertura
 ```

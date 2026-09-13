@@ -1,4 +1,8 @@
 {
+  "commandLineOptions": {
+    "timeout": "10m",
+    "zero-tests-policy": "strict"
+  },
   "xUnit": {
     "culture": "invariant",
     "diagnosticMessages": true,

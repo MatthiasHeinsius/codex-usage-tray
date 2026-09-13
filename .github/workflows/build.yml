@@ -10,6 +10,7 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
@@ -26,8 +27,28 @@ jobs:
       - name: Build
         run: dotnet build .\CodexUsageTray.slnx -c Release --no-restore
 
+      - name: Check formatting
+        run: dotnet format .\CodexUsageTray.slnx --verify-no-changes --no-restore
+
       - name: Run tests
-        run: dotnet test --project .\tests\CodexUsageTray.Tests\CodexUsageTray.Tests.csproj -c Release --no-build --no-restore
+        run: >-
+          dotnet test
+          --solution .\CodexUsageTray.slnx
+          -c Release
+          --no-build
+          --no-restore
+          --results-directory .\TestResults
+          --coverage
+          --coverage-output-format cobertura
+          --report-xunit-trx
+
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: test-results
+          path: TestResults/
+          if-no-files-found: warn
 
       - name: Run self-tests
         run: dotnet run --project .\src\CodexUsageTray\CodexUsageTray.csproj -c Release --no-build -- --self-test

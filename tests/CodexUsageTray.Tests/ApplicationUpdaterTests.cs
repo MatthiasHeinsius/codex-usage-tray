@@ -138,14 +138,17 @@ public sealed class ApplicationUpdaterTests
         Assert.Contains(expectedMessage, exception.Message, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task DownloadRejectsChecksumManifestWithoutExecutableHash()
+    [Theory]
+    [InlineData("not-a-sha256  CodexUsageTray.exe")]
+    [InlineData("gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg  CodexUsageTray.exe")]
+    [InlineData("0000000000000000000000000000000000000000000000000000000000000000  another.exe")]
+    public async Task DownloadRejectsChecksumManifestWithoutAValidExecutableHash(string manifest)
     {
         using var directory = new TemporaryDirectory("missing-checksum");
         using var httpClient = CreateHttpClient(new Dictionary<string, HttpResponseMessage>
         {
             ["/repos/MatthiasHeinsius/codex-usage-tray/releases/latest"] = JsonResponse(CreateRelease("v1.3.0")),
-            ["/downloads/SHA256SUMS.txt"] = TextResponse($"{new string('0', 64)}  another.exe\n")
+            ["/downloads/SHA256SUMS.txt"] = TextResponse(manifest)
         });
         var updater = new ApplicationUpdater(httpClient, new Version(1, 2, 0), directory.RootPath);
         var availableUpdate = await updater.CheckAsync(TestContext.Current.CancellationToken);
