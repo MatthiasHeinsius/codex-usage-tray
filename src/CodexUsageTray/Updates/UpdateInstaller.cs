@@ -174,7 +174,7 @@ internal static class UpdateInstaller
         }
     }
 
-    internal static bool HasWriteAccess(string targetPath)
+    private static bool HasWriteAccess(string targetPath)
     {
         try
         {
@@ -217,7 +217,7 @@ internal static class UpdateInstaller
         return exitCode;
     }
 
-    internal static ProcessStartInfo CreateElevatedInstallerStartInfo(
+    private static ProcessStartInfo CreateElevatedInstallerStartInfo(
         string helperPath,
         int processId,
         string stagedPath,
@@ -254,7 +254,7 @@ internal static class UpdateInstaller
         }
     }
 
-    internal static void ReplaceFileContentsWhenAvailable(string sourcePath, string targetPath)
+    private static void ReplaceFileContentsWhenAvailable(string sourcePath, string targetPath)
     {
         RetryFileOperation(() =>
         {
