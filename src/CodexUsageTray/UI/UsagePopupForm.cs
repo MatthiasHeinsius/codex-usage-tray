@@ -247,10 +247,11 @@ internal sealed class UsagePopupForm : Form
         RenderPresentation(presentation.Popup);
     }
 
-    protected override void OnHandleCreated(EventArgs eventArgs)
+    protected override void OnLoad(EventArgs eventArgs)
     {
-        base.OnHandleCreated(eventArgs);
+        // Borderless client metrics still include the temporary window frame during handle creation.
         ApplyViewMode(compactView, preserveBottom: false);
+        base.OnLoad(eventArgs);
     }
 
     protected override void OnDpiChanged(DpiChangedEventArgs eventArgs)
