@@ -4,6 +4,13 @@ using System.Security.Cryptography;
 
 namespace CodexUsageTray;
 
+internal enum UpdateInstallerResult
+{
+    Succeeded = 0,
+    RecoverableFailure = 1,
+    UnrecoverableFailure = 2
+}
+
 internal static class UpdateInstaller
 {
     private const string ApplyArgument = "--apply-update";
@@ -12,18 +19,26 @@ internal static class UpdateInstaller
     private const int FileOperationAttempts = 50;
     private static readonly TimeSpan FileOperationRetryDelay = TimeSpan.FromMilliseconds(100);
 
-    internal static bool TryHandleCommandLine(string[] args, out int exitCode)
+    internal static bool TryHandleCommandLine(string[] args, out int exitCode) =>
+        TryHandleCommandLine(args, out exitCode, WindowsUpdateInstallerInteraction.Instance);
+
+    internal static bool TryHandleCommandLine(
+        string[] args,
+        out int exitCode,
+        IUpdateInstallerInteraction interaction)
     {
+        ArgumentNullException.ThrowIfNull(interaction);
         if (args is [ApplyArgument or ApplyElevatedArgument, var processIdText, var stagedPath, var targetPath]
             && int.TryParse(processIdText, NumberStyles.None, CultureInfo.InvariantCulture, out var processId))
         {
             var elevated = string.Equals(args[0], ApplyElevatedArgument, StringComparison.Ordinal);
-            exitCode = Apply(
+            exitCode = (int)Apply(
                 processId,
                 stagedPath,
                 targetPath,
                 allowElevation: !elevated,
-                restartApplication: !elevated);
+                restartApplication: !elevated,
+                interaction);
             return true;
         }
 
@@ -36,10 +51,18 @@ internal static class UpdateInstaller
         return false;
     }
 
-    internal static void Launch(ApplicationUpdate update, int processId, string targetPath)
+    internal static void Launch(ApplicationUpdate update, int processId, string targetPath) =>
+        Launch(update, processId, targetPath, WindowsUpdateInstallerInteraction.Instance);
+
+    internal static void Launch(
+        ApplicationUpdate update,
+        int processId,
+        string targetPath,
+        IUpdateInstallerInteraction interaction)
     {
         ArgumentNullException.ThrowIfNull(update);
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
+        ArgumentNullException.ThrowIfNull(interaction);
         var helperPath = Path.Combine(
             Path.GetTempPath(),
             $"CodexUsageTray-update-helper-{Guid.NewGuid():N}.exe");
@@ -56,8 +79,7 @@ internal static class UpdateInstaller
             startInfo.ArgumentList.Add(processId.ToString(CultureInfo.InvariantCulture));
             startInfo.ArgumentList.Add(Path.GetFullPath(update.StagedPath));
             startInfo.ArgumentList.Add(Path.GetFullPath(targetPath));
-            _ = Process.Start(startInfo)
-                ?? throw new InvalidOperationException("The update installer did not start.");
+            interaction.StartInstaller(startInfo);
         }
         catch
         {
@@ -66,12 +88,13 @@ internal static class UpdateInstaller
         }
     }
 
-    private static int Apply(
+    private static UpdateInstallerResult Apply(
         int processId,
         string stagedPath,
         string targetPath,
         bool allowElevation,
-        bool restartApplication)
+        bool restartApplication,
+        IUpdateInstallerInteraction interaction)
     {
         var backupPath = Path.Combine(
             Path.GetTempPath(),
@@ -86,7 +109,7 @@ internal static class UpdateInstaller
             {
                 if (allowElevation)
                 {
-                    return ApplyWithElevation(processId, stagedPath, targetPath);
+                    return ApplyWithElevation(processId, stagedPath, targetPath, interaction);
                 }
 
                 throw new UnauthorizedAccessException(
@@ -103,12 +126,12 @@ internal static class UpdateInstaller
 
             if (restartApplication)
             {
-                StartApplication(targetPath);
+                interaction.StartApplication(targetPath);
             }
 
             ApplicationUpdater.TryDelete(stagedPath);
             ApplicationUpdater.TryDelete(backupPath);
-            return 0;
+            return UpdateInstallerResult.Succeeded;
         }
         catch (Exception exception)
         {
@@ -139,17 +162,15 @@ internal static class UpdateInstaller
                 ApplicationUpdater.TryDelete(backupPath);
             }
 
-            MessageBox.Show(
-                $"The update could not be installed.\n\n{failure.Message}",
-                "Codex usage update",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Error);
+            interaction.ShowFailure($"The update could not be installed.\n\n{failure.Message}");
             if (restartApplication && canRestart)
             {
-                TryRestartExistingApplication(targetPath);
+                TryRestartExistingApplication(targetPath, interaction);
             }
 
-            return canRestart ? 1 : 2;
+            return canRestart
+                ? UpdateInstallerResult.RecoverableFailure
+                : UpdateInstallerResult.UnrecoverableFailure;
         }
     }
 
@@ -170,7 +191,11 @@ internal static class UpdateInstaller
         }
     }
 
-    private static int ApplyWithElevation(int processId, string stagedPath, string targetPath)
+    private static UpdateInstallerResult ApplyWithElevation(
+        int processId,
+        string stagedPath,
+        string targetPath,
+        IUpdateInstallerInteraction interaction)
     {
         var helperPath = Environment.ProcessPath
             ?? throw new InvalidOperationException("The update helper path is unavailable.");
@@ -179,19 +204,17 @@ internal static class UpdateInstaller
             processId,
             stagedPath,
             targetPath);
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("The elevated update installer did not start.");
-        process.WaitForExit();
-        if (process.ExitCode == 0)
+        var exitCode = interaction.RunElevatedInstaller(startInfo);
+        if (exitCode == UpdateInstallerResult.Succeeded)
         {
-            StartApplication(targetPath);
+            interaction.StartApplication(targetPath);
         }
-        else if (process.ExitCode == 1)
+        else if (exitCode == UpdateInstallerResult.RecoverableFailure)
         {
-            TryRestartExistingApplication(targetPath);
+            TryRestartExistingApplication(targetPath, interaction);
         }
 
-        return process.ExitCode;
+        return exitCode;
     }
 
     internal static ProcessStartInfo CreateElevatedInstallerStartInfo(
@@ -329,13 +352,15 @@ internal static class UpdateInstaller
             ?? throw new InvalidOperationException("The application did not restart.");
     }
 
-    private static void TryRestartExistingApplication(string targetPath)
+    private static void TryRestartExistingApplication(
+        string targetPath,
+        IUpdateInstallerInteraction interaction)
     {
         try
         {
             if (File.Exists(targetPath))
             {
-                StartApplication(targetPath);
+                interaction.StartApplication(targetPath);
             }
         }
         catch
@@ -343,4 +368,39 @@ internal static class UpdateInstaller
             // The error dialog still tells the user that the update failed.
         }
     }
+
+    private sealed class WindowsUpdateInstallerInteraction : IUpdateInstallerInteraction
+    {
+        public static WindowsUpdateInstallerInteraction Instance { get; } = new();
+
+        public void StartInstaller(ProcessStartInfo startInfo)
+        {
+            _ = Process.Start(startInfo)
+                ?? throw new InvalidOperationException("The update installer did not start.");
+        }
+
+        public UpdateInstallerResult RunElevatedInstaller(ProcessStartInfo startInfo)
+        {
+            using var process = Process.Start(startInfo)
+                ?? throw new InvalidOperationException("The elevated update installer did not start.");
+            process.WaitForExit();
+            return (UpdateInstallerResult)process.ExitCode;
+        }
+
+        public void StartApplication(string targetPath) => UpdateInstaller.StartApplication(targetPath);
+
+        public void ShowFailure(string message) => MessageBox.Show(
+            message,
+            "Codex usage update",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Error);
+    }
+}
+
+internal interface IUpdateInstallerInteraction
+{
+    void StartInstaller(ProcessStartInfo startInfo);
+    UpdateInstallerResult RunElevatedInstaller(ProcessStartInfo startInfo);
+    void StartApplication(string targetPath);
+    void ShowFailure(string message);
 }

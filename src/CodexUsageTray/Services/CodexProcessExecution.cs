@@ -73,7 +73,7 @@ internal sealed class WindowsCodexProcessExecution : ICodexProcessExecution
         {
             await process.WaitForExitAsync(timeoutCancellation.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
             TryStopCapturedProcess(process);
             throw;
