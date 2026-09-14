@@ -70,7 +70,7 @@ The executable is not code-signed, so Windows SmartScreen or antivirus software 
 
 ### Verify a download
 
-Releases produced after the security-infrastructure update include a GitHub build-provenance attestation. With the GitHub CLI installed, verify a downloaded executable before running it:
+Releases from v1.5.5 onward include a GitHub build-provenance attestation. With the GitHub CLI installed, verify a downloaded executable before running it:
 
 ```powershell
 gh attestation verify .\CodexUsageTray.exe `
