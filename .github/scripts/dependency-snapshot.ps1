@@ -19,9 +19,11 @@ foreach ($project in $solution.Solution.Project) {
     $projectDirectory = Split-Path (Join-Path $repositoryRoot $projectPath)
     $assetsPath = Join-Path $projectDirectory 'obj/project.assets.json'
     $assets = Get-Content -LiteralPath $assetsPath -Raw | ConvertFrom-Json -AsHashtable
-    $directNames = @{}
-    $downloadDependencies = @{}
-    foreach ($framework in $assets.project.frameworks.Values) {
+    foreach ($targetName in $assets.targets.Keys) {
+        $framework = $assets.project.frameworks[$targetName.Split('/')[0]]
+        if (!$framework) { throw "No framework metadata for target $targetName in $projectPath." }
+        $directNames = @{}
+        $downloadDependencies = @{}
         foreach ($name in $framework.dependencies.Keys) { $directNames[$name] = $true }
         foreach ($download in $framework.downloadDependencies) {
             if ($download.version -notmatch '^\[(\d+\.\d+\.\d+(?:[-.][0-9A-Za-z.-]+)?)(?:,\s*\1)?\]$') {
@@ -30,9 +32,6 @@ foreach ($project in $solution.Solution.Project) {
             $version = $Matches[1]
             $downloadDependencies["$($download.name)/$version"] = $download
         }
-    }
-
-    foreach ($targetName in $assets.targets.Keys) {
         $target = $assets.targets[$targetName]
         $resolved = @{}
         $packageIds = @{}
@@ -40,7 +39,22 @@ foreach ($project in $solution.Solution.Project) {
         foreach ($key in (@($packageKeys) + @($downloadDependencies.Keys) | Sort-Object -Unique)) {
             $name, $version = $key.Split('/', 2)
             $isDownload = $downloadDependencies.ContainsKey($key)
-            $scope = if ($projectPath.StartsWith('src/') -and (!$isDownload -or $name -like '*.Runtime.*')) { 'runtime' } else { 'development' }
+            $hasRuntimeAssets = $false
+            if ($isDownload) {
+                # A restored pack can be unused, such as ASP.NET in this WinForms app.
+                if ($name -match '^(.+)\.Runtime\.') {
+                    $packFramework = $Matches[1]
+                    $hasRuntimeAssets = @($framework.frameworkReferences.Keys | Where-Object {
+                        $_ -eq $packFramework -or $_.StartsWith("$packFramework.")
+                    }).Count -gt 0
+                }
+            }
+            else {
+                # Build/analyzer-only packages, including ILLink, are not shipped.
+                $runtimeAssets = @($target[$key].runtime.Keys) + @($target[$key].native.Keys) + @($target[$key].runtimeTargets.Keys)
+                $hasRuntimeAssets = @($runtimeAssets | Where-Object { $_ -and $_ -notmatch '(^|/)_\._$' }).Count -gt 0
+            }
+            $scope = if ($projectPath.StartsWith('src/') -and $hasRuntimeAssets) { 'runtime' } else { 'development' }
             $relationship = if ($directNames.ContainsKey($name) -or $isDownload) { 'direct' } else { 'indirect' }
             $resolved[$key] = @{
                 package_url = 'pkg:nuget/{0}@{1}' -f [Uri]::EscapeDataString($name), [Uri]::EscapeDataString($version)
@@ -80,7 +94,7 @@ $snapshot = @{
     }
     detector = @{
         name = 'codex-usage-tray-nuget-assets'
-        version = '1.0.0'
+        version = '1.1.0'
         url = 'https://github.com/MatthiasHeinsius/codex-usage-tray'
     }
     manifests = $manifests
