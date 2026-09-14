@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 
 namespace CodexUsageTray.Tests;
@@ -36,7 +37,9 @@ public sealed class WindowsCodexProcessExecutionTests
             @echo off
             set /p request=
             echo reply:%request%
+            1>&2 echo earlier diagnostic
             1>&2 echo diagnostic
+            1>&2 echo.
             """,
             async execution =>
             {
@@ -57,8 +60,10 @@ public sealed class WindowsCodexProcessExecutionTests
             });
     }
 
-    [Fact]
-    public async Task CaptureCancellationStopsTheCommandProcess()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CaptureCancellationStopsTheCommandProcess(bool timeout)
     {
         await WithCommandAsync(
             """
@@ -73,15 +78,200 @@ public sealed class WindowsCodexProcessExecutionTests
                 using var cancellation = new CancellationTokenSource();
                 var capture = execution.CaptureAsync(
                     $"\"{markerPath}\"",
-                    TimeSpan.FromSeconds(5),
+                    timeout ? TimeSpan.FromMilliseconds(500) : TimeSpan.FromSeconds(5),
                     cancellation.Token);
                 await WaitForFileAsync(markerPath + ".started");
 
-                cancellation.Cancel();
+                if (!timeout)
+                {
+                    cancellation.Cancel();
+                }
 
-                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => capture);
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                    () => capture.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
                 await Task.Delay(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
                 Assert.False(File.Exists(markerPath + ".finished"));
+            });
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ExchangeCancellationStopsBlockedIoAndTheChildProcess(bool write, bool timeout)
+    {
+        await WithCommandAsync(
+            """
+            @echo off
+            set "CODEX_USAGE_TEST_PID_PATH=%~1"
+            powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$path = $env:CODEX_USAGE_TEST_PID_PATH; $PID | Set-Content -LiteralPath ($path + '.tmp'); Move-Item -LiteralPath ($path + '.tmp') -Destination $path; Write-Output 'ready'; Start-Sleep -Seconds 20"
+            """,
+            async (execution, directory) =>
+            {
+                var pidPath = directory.FilePath("child.pid");
+                var ioStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                Process? child = null;
+                using var cancellation = new CancellationTokenSource();
+                var exchange = execution.ExchangeLinesAsync(
+                    $"\"{pidPath}\"",
+                    timeout ? TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(30),
+                    async lines =>
+                    {
+                        Assert.Equal("ready", await lines.ReadLineAsync());
+                        child = Process.GetProcessById(int.Parse(
+                            await File.ReadAllTextAsync(pidPath, TestContext.Current.CancellationToken),
+                            System.Globalization.CultureInfo.InvariantCulture));
+                        var pendingIo = write
+                            ? lines.WriteLineAsync(new string('x', 1_000_000))
+                            : lines.ReadLineAsync().AsTask();
+                        ioStarted.TrySetResult();
+                        await pendingIo;
+                        return true;
+                    },
+                    cancellation.Token);
+
+                try
+                {
+                    await ioStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+                    Assert.NotNull(child);
+                    if (!timeout)
+                    {
+                        cancellation.Cancel();
+                    }
+
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                        () => exchange.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+                    await child.WaitForExitAsync(TestContext.Current.CancellationToken)
+                        .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+                }
+                finally
+                {
+                    cancellation.Cancel();
+                    try
+                    {
+                        if (child is { HasExited: false })
+                        {
+                            child.Kill(entireProcessTree: true);
+                        }
+
+                        await exchange.WaitAsync(TimeSpan.FromSeconds(25));
+                    }
+                    catch (Exception exception) when (exception is OperationCanceledException or IOException)
+                    {
+                        // Observe the operation and let its bounded child exit even if an assertion fails.
+                    }
+                    finally
+                    {
+                        child?.Dispose();
+                    }
+                }
+            });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExitedCommandWithInheritedPipesDoesNotBlockCompletion(bool capture)
+    {
+        await WithCommandAsync(
+            """
+            @echo off
+            set "CODEX_USAGE_TEST_PID_PATH=%~1"
+            start "" /b powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$path = $env:CODEX_USAGE_TEST_PID_PATH; $PID | Set-Content -LiteralPath ($path + '.tmp'); Move-Item -LiteralPath ($path + '.tmp') -Destination $path; Write-Output 'ready'; Start-Sleep -Seconds 20"
+            """,
+            async (execution, directory) =>
+            {
+                var pidPath = directory.FilePath("child.pid");
+                using var cancellation = new CancellationTokenSource();
+                Task operation = capture
+                    ? execution.CaptureAsync($"\"{pidPath}\"", TimeSpan.FromSeconds(5), cancellation.Token)
+                    : execution.ExchangeLinesAsync(
+                        $"\"{pidPath}\"",
+                        TimeSpan.FromSeconds(10),
+                        async lines =>
+                        {
+                            Assert.Equal("ready", await lines.ReadLineAsync());
+                            return true;
+                        },
+                        cancellation.Token);
+                Process? child = null;
+                try
+                {
+                    await WaitForFileAsync(pidPath);
+                    child = Process.GetProcessById(int.Parse(
+                        await File.ReadAllTextAsync(pidPath, TestContext.Current.CancellationToken),
+                        System.Globalization.CultureInfo.InvariantCulture));
+                    if (capture)
+                    {
+                        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                            () => operation.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+                    }
+                    else
+                    {
+                        await operation.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+                    }
+                }
+                finally
+                {
+                    cancellation.Cancel();
+                    if (child is { HasExited: false })
+                    {
+                        child.Kill(entireProcessTree: true);
+                        await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                    }
+
+                    child?.Dispose();
+                    try
+                    {
+                        await operation.WaitAsync(TimeSpan.FromSeconds(5));
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Observe canceled capture after the fixture's descendant has stopped.
+                    }
+                }
+            });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AlreadyCanceledOperationDoesNotLaunchTheCommand(bool exchangeLines)
+    {
+        await WithCommandAsync(
+            """
+            @echo off
+            > "%~1" echo launched
+            """,
+            async (execution, directory) =>
+            {
+                var markerPath = directory.FilePath("launched");
+                var cancellationToken = new CancellationToken(canceled: true);
+                var previousInterpreter = Environment.GetEnvironmentVariable("ComSpec");
+                try
+                {
+                    // A launch attempt must fail even if the child would be killed
+                    // before it could write the marker.
+                    Environment.SetEnvironmentVariable("ComSpec", directory.FilePath("missing-interpreter.exe"));
+                    Task operation = exchangeLines
+                        ? execution.ExchangeLinesAsync<bool>(
+                            $"\"{markerPath}\"",
+                            TimeSpan.FromSeconds(5),
+                            _ => throw new InvalidOperationException("A canceled exchange must not run."),
+                            cancellationToken)
+                        : execution.CaptureAsync(
+                            $"\"{markerPath}\"",
+                            TimeSpan.FromSeconds(5),
+                            cancellationToken);
+
+                    await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
+                    Assert.False(File.Exists(markerPath));
+                }
+                finally
+                {
+                    Environment.SetEnvironmentVariable("ComSpec", previousInterpreter);
+                }
             });
     }
 
