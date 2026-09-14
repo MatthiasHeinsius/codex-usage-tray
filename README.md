@@ -13,7 +13,7 @@ This is an unofficial community project. It is not affiliated with OpenAI.
 - Total inference tokens reported for the account
 - Live countdowns in a compact view
 
-The tray icon uses an outer ring for the 5-hour allowance and an inner ring for the weekly allowance. It omits a ring when the account does not report that allowance. The popup also omits the matching section and resizes to fit. The rings and extended-view bars change color continuously from green at 100% remaining through yellow near 50%, orange at 25%, and red at 10%. The app refreshes the limits and countdowns once a minute. It refreshes daily and lifetime activity when you open or switch to the extended view.
+The tray icon uses an outer ring for the 5-hour allowance and an inner ring for the weekly allowance. When the account reports only one allowance, that allowance uses a single outer ring. The popup omits allowances the account does not report and resizes to fit. The rings and extended-view bars change color continuously from green at 100% remaining through yellow near 50%, orange at 25%, and red at 10%. The app refreshes the limits and countdowns once a minute. It refreshes daily and lifetime activity when you open or switch to the extended view.
 
 ## Screenshots
 
@@ -90,7 +90,7 @@ If Windows denies access to saved preferences, the app uses the first-launch def
 
 ## Build from source
 
-Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), then run:
+Install [.NET SDK 10.0.401](https://dotnet.microsoft.com/download/dotnet/10.0), the exact version pinned in [`global.json`](global.json). SDK roll-forward is disabled, so another .NET 10 SDK version alone is insufficient. Then run:
 
 ```powershell
 dotnet build .\CodexUsageTray.slnx -c Release
@@ -110,16 +110,10 @@ dotnet test --solution .\CodexUsageTray.slnx `
 To create the self-contained Windows x64 executable, double-click `build-release.cmd` or run:
 
 ```powershell
-dotnet publish .\src\CodexUsageTray\CodexUsageTray.csproj `
-  -c Release `
-  -r win-x64 `
-  --self-contained true `
-  -p:PublishSingleFile=true `
-  -p:DebugType=None `
-  -p:DebugSymbols=false `
-  -o .\artifacts\win-x64
-.\artifacts\win-x64\CodexUsageTray.exe --self-test
+powershell -NoProfile -ExecutionPolicy Bypass -File .\build-release.ps1
 ```
+
+The script checks the SDK selected by `global.json`, clears `artifacts/win-x64`, publishes the application, and runs its smoke test. Both CI workflows use this same script and install the SDK from `global.json`. The release workflow additionally writes `SHA256SUMS.txt` and uploads the release assets.
 
 The `--self-test` command is intentionally a small smoke test for the published
 artifact. It verifies that the packaged executable can create its popup and tray

@@ -1,12 +1,12 @@
 # Third-party license audit
 
-Audit date: 2026-09-13
+Audit date: 2026-09-13. CI action inventory updated: 2026-09-14.
 
 This report records the license sources needed to build the repository's third-party notice file. It separates software embedded in the released executable from tools used only to build or test the source. The upstream license and notice files linked below are the text to preserve. This report is not a substitute for those files.
 
 ## Repository evidence
 
-The application project, `src/CodexUsageTray/CodexUsageTray.csproj`, has no `PackageReference` entries. `build-release.cmd` publishes it for `win-x64` with `--self-contained true` and `PublishSingleFile=true`. The executable therefore embeds .NET runtime and Windows Desktop Framework binaries.
+The application project, `src/CodexUsageTray/CodexUsageTray.csproj`, has no `PackageReference` entries. `build-release.ps1`, also invoked by `build-release.cmd` and both CI workflows, publishes it for `win-x64` with `--self-contained true` and `PublishSingleFile=true`. The executable therefore embeds .NET runtime and Windows Desktop Framework binaries.
 
 The test project directly references these packages:
 
@@ -43,7 +43,7 @@ The three linked MIT files have the same license text and copyright line. A comp
 
 ## Test and development dependencies
 
-These packages are present in the source and test dependency graph, but `build-release.cmd` does not publish the test project. They are not part of `CodexUsageTray.exe`. Keep their notices in the repository-wide notice inventory. They do not need to be represented as components of the released application unless the distribution also contains test binaries or test tooling.
+These packages are present in the source and test dependency graph, but `build-release.ps1` does not publish the test project. They are not part of `CodexUsageTray.exe`. Keep their notices in the repository-wide notice inventory. They do not need to be represented as components of the released application unless the distribution also contains test binaries or test tooling.
 
 ### Microsoft Testing Platform 2.4.0
 
@@ -65,7 +65,7 @@ The [xunit.v3.mtp-v2 4.0.1 package](https://www.nuget.org/packages/xunit.v3.mtp-
 
 ## Continuous-integration dependencies
 
-The build and release workflows reference `actions/checkout` v6, `actions/setup-dotnet` v5, and `actions/upload-artifact` v6. Each uses the MIT license with `Copyright (c) 2018 GitHub, Inc. and contributors`. Preserve one copy of that common text. The tag-specific sources are the [checkout license](https://raw.githubusercontent.com/actions/checkout/v6/LICENSE), [setup-dotnet license](https://raw.githubusercontent.com/actions/setup-dotnet/v5/LICENSE), and [upload-artifact license](https://raw.githubusercontent.com/actions/upload-artifact/v6/LICENSE).
+The build and release workflows reference `actions/checkout` v6, `actions/setup-dotnet` v5, `actions/upload-artifact` v6, and `actions/download-artifact` v7. Each uses the MIT license with `Copyright (c) 2018 GitHub, Inc. and contributors`. Preserve one copy of that common text. The tag-specific sources are the [checkout license](https://raw.githubusercontent.com/actions/checkout/v6/LICENSE), [setup-dotnet license](https://raw.githubusercontent.com/actions/setup-dotnet/v5/LICENSE), [upload-artifact license](https://raw.githubusercontent.com/actions/upload-artifact/v6/LICENSE), and [download-artifact license at the workflow's pinned commit](https://github.com/actions/download-artifact/blob/37930b1c2abaa49bbe596cd826c3c89aef350131/LICENSE).
 
 ## External software that the app invokes
 

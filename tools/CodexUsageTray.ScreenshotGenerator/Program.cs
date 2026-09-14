@@ -34,9 +34,8 @@ internal static class Program
             now,
             CultureInfo.CurrentCulture);
 
-        using var popup = new CodexUsageTray.UsagePopupForm();
-        var sink = new ScreenshotUsagePresentationSink(popup);
-        sink.Present(presentation);
+        using var popup = new CodexUsageTray.UsagePopupForm(initialCompactView: false);
+        popup.ShowPresentation(presentation);
         popup.Location = new Point(-10_000, -10_000);
         popup.Show();
         try
@@ -53,7 +52,7 @@ internal static class Program
                 CreateWeeklyOnlySnapshot(now),
                 now,
                 CultureInfo.CurrentCulture);
-            sink.Present(weeklyOnlyPresentation);
+            popup.ShowPresentation(weeklyOnlyPresentation);
             popup.SetViewModeForScreenshot(compact: false);
             Application.DoEvents();
             Save(popup, Path.Combine(outputDirectory, "weekly-only.png"));
@@ -186,13 +185,6 @@ internal static class Program
         graphics.DrawImage(
             iconBitmap,
             new Rectangle((width - 32) / 2, height - taskbarHeight + 10, 32, 32));
-    }
-
-    private sealed class ScreenshotUsagePresentationSink(CodexUsageTray.UsagePopupForm popup)
-        : CodexUsageTray.IUsagePresentationSink
-    {
-        public void Present(CodexUsageTray.UsagePresentation presentation) =>
-            popup.ShowPresentation(presentation);
     }
 
 }

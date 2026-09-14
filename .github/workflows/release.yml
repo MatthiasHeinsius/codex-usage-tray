@@ -20,7 +20,7 @@ jobs:
       - name: Install .NET 10 SDK
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
-          dotnet-version: 10.0.401
+          global-json-file: global.json
 
       - name: Check tag matches application version
         shell: pwsh
@@ -33,26 +33,14 @@ jobs:
       - name: Validate solution
         uses: ./.github/actions/validate
 
-      - name: Publish portable executable
-        run: >-
-          dotnet publish .\src\CodexUsageTray\CodexUsageTray.csproj
-          -c Release
-          -r win-x64
-          --self-contained true
-          -p:PublishSingleFile=true
-          -p:DebugType=None
-          -p:DebugSymbols=false
-          -o .\artifacts\win-x64
+      - name: Publish and test portable executable
+        shell: pwsh
+        run: .\build-release.ps1
 
-      - name: Test release executable and write checksum
+      - name: Write release checksum
         shell: pwsh
         run: |
           $exe = Resolve-Path .\artifacts\win-x64\CodexUsageTray.exe
-          $process = Start-Process -FilePath $exe -ArgumentList "--self-test" -WindowStyle Hidden -Wait -PassThru
-          if ($process.ExitCode -ne 0) {
-            throw "Release self-test failed with exit code $($process.ExitCode)."
-          }
-
           $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  CodexUsageTray.exe" | Set-Content -LiteralPath .\artifacts\win-x64\SHA256SUMS.txt -Encoding ascii
 
