@@ -226,20 +226,11 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
 
     private static JsonElement SelectCodexLimits(JsonElement response)
     {
-        if (response.TryGetProperty("rateLimitsByLimitId", out var byId) && byId.ValueKind == JsonValueKind.Object)
+        if (response.TryGetProperty("rateLimitsByLimitId", out var byId)
+            && byId.ValueKind == JsonValueKind.Object
+            && byId.TryGetProperty("codex", out var codex))
         {
-            if (byId.TryGetProperty("codex", out var codex))
-            {
-                return codex;
-            }
-
-            foreach (var property in byId.EnumerateObject())
-            {
-                if (property.Name.Contains("codex", StringComparison.OrdinalIgnoreCase))
-                {
-                    return property.Value;
-                }
-            }
+            return codex;
         }
 
         if (!response.TryGetProperty("rateLimits", out var limits))

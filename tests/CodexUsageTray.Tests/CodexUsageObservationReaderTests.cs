@@ -266,6 +266,33 @@ public sealed class CodexUsageObservationReaderTests
     }
 
     [Fact]
+    public void ParseAccountObservationIgnoresModelSpecificCodexAllowanceWindows()
+    {
+        const string json = """
+            {
+              "rateLimits": {
+                "primary": { "usedPercent": 24, "windowDurationMins": 300 }
+              },
+              "rateLimitsByLimitId": {
+                "codex_bengalfox": {
+                  "primary": { "usedPercent": 80, "windowDurationMins": 10080 }
+                }
+              }
+            }
+            """;
+        using var response = JsonDocument.Parse(json);
+
+        var observation = CodexUsageObservationReader.ParseAccountObservation(
+            response.RootElement,
+            usageResponse: null,
+            DateTimeOffset.UtcNow);
+
+        var window = Assert.Single(observation.AllowanceWindows);
+        Assert.Equal(24, window.UsedPercent);
+        Assert.Equal(TimeSpan.FromHours(5), window.Duration);
+    }
+
+    [Fact]
     public void ParseAccountObservationTranslatesAccountActivity()
     {
         const string limitsJson = """
