@@ -60,14 +60,30 @@ public sealed class TrayIconRendererTests
     }
 
     [Fact]
-    public void MissingFiveHourAllowanceOmitsTheOuterRing()
+    public void WeeklyAllowanceUsesOuterRingWhenItIsTheOnlyWindow()
     {
         using var stream = new MemoryStream(TrayIconRenderer.RenderPng(256, null, 100));
         using var bitmap = new Bitmap(stream);
 
-        Assert.Equal(0, bitmap.GetPixel(20, 128).A);
         Assert.Equal(
             UsageStatusColor.ForRemainingPercent(100).ToArgb(),
-            bitmap.GetPixel(60, 128).ToArgb());
+            bitmap.GetPixel(24, 128).ToArgb());
+        Assert.Equal(0, bitmap.GetPixel(60, 128).A);
+    }
+
+    [Fact]
+    public void SingleAllowanceWindowUsesThickerRing()
+    {
+        using var singleStream = new MemoryStream(TrayIconRenderer.RenderPng(256, 100, null));
+        using var singleBitmap = new Bitmap(singleStream);
+        using var twoWindowStream = new MemoryStream(TrayIconRenderer.RenderPng(256, 100, 0));
+        using var twoWindowBitmap = new Bitmap(twoWindowStream);
+
+        Assert.Equal(
+            UsageStatusColor.ForRemainingPercent(100).ToArgb(),
+            singleBitmap.GetPixel(46, 128).ToArgb());
+        Assert.Equal(
+            Color.FromArgb(66, 73, 86).ToArgb(),
+            twoWindowBitmap.GetPixel(46, 128).ToArgb());
     }
 }
