@@ -157,6 +157,133 @@ public sealed class CodexUsageObservationReaderTests
     }
 
     [Fact]
+    public async Task ReadExplainsHowToRefreshExpiredAuthentication()
+    {
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine(
+            """{"id":2,"error":{"message":"Provided authentication token is expired"}}""");
+        var reader = new CodexUsageObservationReader(processes);
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => reader.ReadAsync(UsageObservationRequest.AllowanceWindows, CancellationToken.None));
+
+        Assert.Equal(
+            "Codex sign-in expired. Run codex logout, then codex login. Refresh again.",
+            failure.Message);
+    }
+
+    [Fact]
+    public async Task ReadRefreshesExpiredAuthenticationAndRetries()
+    {
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine(
+            """{"id":2,"error":{"message":"Provided authentication token is expired"}}""");
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine("""{"id":2,"result":{"account":{"type":"chatgpt"}}}""");
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine(
+            """{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300}}}}""");
+        var reader = new CodexUsageObservationReader(processes);
+
+        var observations = await reader.ReadAsync(
+            UsageObservationRequest.AllowanceWindows,
+            CancellationToken.None);
+
+        Assert.Equal(25, Assert.Single(observations.Account.AllowanceWindows).UsedPercent);
+        Assert.Equal(
+            1,
+            processes.WrittenLines.Count(line => line.Contains(
+                "\"account/read\"",
+                StringComparison.Ordinal)));
+        Assert.Contains(
+            processes.WrittenLines,
+            line => line.Contains("\"refreshToken\":true", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ReadOffersBrowserSignInWhenTokenRefreshFails()
+    {
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine(
+            """{"id":2,"error":{"message":"Provided authentication token is expired"}}""");
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine("""{"id":2,"error":{"message":"refresh failed"}}""");
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine(
+            """{"id":2,"result":{"type":"chatgpt","loginId":"login-1","authUrl":"https://chatgpt.com/auth"}}""");
+        processes.EnqueueLine(
+            """{"method":"account/login/completed","params":{"loginId":"login-1","success":true,"error":null}}""");
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine(
+            """{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300}}}}""");
+        var interaction = new RecordingAuthenticationInteraction(confirm: true);
+        var reader = new CodexUsageObservationReader(processes, interaction);
+
+        var observations = await reader.ReadAsync(
+            UsageObservationRequest.AllowanceWindows,
+            CancellationToken.None);
+
+        Assert.Equal(25, Assert.Single(observations.Account.AllowanceWindows).UsedPercent);
+        Assert.Equal(new Uri("https://chatgpt.com/auth"), Assert.Single(interaction.SignInPages));
+        Assert.Contains(
+            processes.WrittenLines,
+            line => line.Contains("\"account/login/start\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ReadDoesNotRepeatBrowserSignInAfterTheUserDeclines()
+    {
+        var processes = new ScriptedCodexProcessExecution();
+        EnqueueExpiredReadAndFailedRefresh(processes);
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine(
+            """{"id":2,"result":{"type":"chatgpt","loginId":"login-1","authUrl":"https://chatgpt.com/auth"}}""");
+        EnqueueExpiredReadAndFailedRefresh(processes);
+        var interaction = new RecordingAuthenticationInteraction(confirm: false);
+        var reader = new CodexUsageObservationReader(processes, interaction);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => reader.ReadAsync(UsageObservationRequest.AllowanceWindows, CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => reader.ReadAsync(UsageObservationRequest.AllowanceWindows, CancellationToken.None));
+
+        Assert.Single(interaction.SignInPages);
+    }
+
+    [Fact]
+    public async Task ReadOffersBrowserSignInAgainAfterAuthenticationRecovers()
+    {
+        var processes = new ScriptedCodexProcessExecution();
+        EnqueueExpiredReadAndFailedRefresh(processes);
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine(
+            """{"id":2,"result":{"type":"chatgpt","loginId":"login-1","authUrl":"https://chatgpt.com/auth"}}""");
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine(
+            """{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300}}}}""");
+        EnqueueExpiredReadAndFailedRefresh(processes);
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine(
+            """{"id":2,"result":{"type":"chatgpt","loginId":"login-2","authUrl":"https://chatgpt.com/auth"}}""");
+        var interaction = new RecordingAuthenticationInteraction(confirm: false);
+        var reader = new CodexUsageObservationReader(processes, interaction);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => reader.ReadAsync(UsageObservationRequest.AllowanceWindows, CancellationToken.None));
+        var recovered = await reader.ReadAsync(
+            UsageObservationRequest.AllowanceWindows,
+            CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => reader.ReadAsync(UsageObservationRequest.AllowanceWindows, CancellationToken.None));
+
+        Assert.Equal(25, Assert.Single(recovered.Account.AllowanceWindows).UsedPercent);
+        Assert.Equal(2, interaction.SignInPages.Count);
+    }
+
+    [Fact]
     public async Task ReadIgnoresNotificationsAndIncompleteResponses()
     {
         var processes = new ScriptedCodexProcessExecution();
@@ -363,6 +490,15 @@ public sealed class CodexUsageObservationReaderTests
         return processes;
     }
 
+    private static void EnqueueExpiredReadAndFailedRefresh(ScriptedCodexProcessExecution processes)
+    {
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine(
+            """{"id":2,"error":{"message":"Provided authentication token is expired"}}""");
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine("""{"id":2,"error":{"message":"refresh failed"}}""");
+    }
+
     private sealed class StubLocalTokenUsageReader(long? todayTokens) : ILocalTokenUsageReader
     {
         public long? ReadToday(DateTimeOffset now) => todayTokens;
@@ -377,5 +513,20 @@ public sealed class CodexUsageObservationReaderTests
     {
         public override DateTimeOffset GetUtcNow() => now;
         public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
+    }
+
+    private sealed class RecordingAuthenticationInteraction(bool confirm)
+        : ICodexAuthenticationInteraction
+    {
+        public List<Uri> SignInPages { get; } = [];
+
+        public ValueTask<bool> ConfirmAndOpenSignInAsync(
+            Uri signInPage,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            SignInPages.Add(signInPage);
+            return ValueTask.FromResult(confirm);
+        }
     }
 }

@@ -1,18 +1,33 @@
 using System.Text.Json;
+using static CodexUsageTray.CodexAppServerProtocol;
 
 namespace CodexUsageTray;
 
 internal sealed class CodexUsageObservationReader : IUsageObservationReader
 {
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(45);
-    private static readonly string ClientVersion = typeof(CodexUsageObservationReader).Assembly
-        .GetName().Version?.ToString(3) ?? "unknown";
     private readonly ICodexProcessExecution processExecution;
     private readonly ILocalTokenUsageReader localTokenUsage;
     private readonly TimeProvider timeProvider;
+    private readonly CodexAuthenticationRecovery authenticationRecovery;
 
     internal CodexUsageObservationReader(ICodexProcessExecution processExecution)
-        : this(processExecution, new LocalTokenUsageReader(), TimeProvider.System)
+        : this(
+            processExecution,
+            new LocalTokenUsageReader(),
+            TimeProvider.System,
+            new CodexAuthenticationRecovery(processExecution, interaction: null))
+    {
+    }
+
+    internal CodexUsageObservationReader(
+        ICodexProcessExecution processExecution,
+        ICodexAuthenticationInteraction authenticationInteraction)
+        : this(
+            processExecution,
+            new LocalTokenUsageReader(),
+            TimeProvider.System,
+            new CodexAuthenticationRecovery(processExecution, authenticationInteraction))
     {
     }
 
@@ -20,19 +35,47 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
         ICodexProcessExecution processExecution,
         ILocalTokenUsageReader localTokenUsage,
         TimeProvider timeProvider)
+        : this(
+            processExecution,
+            localTokenUsage,
+            timeProvider,
+            new CodexAuthenticationRecovery(processExecution, interaction: null))
+    {
+    }
+
+    internal CodexUsageObservationReader(
+        ICodexProcessExecution processExecution,
+        ILocalTokenUsageReader localTokenUsage,
+        TimeProvider timeProvider,
+        CodexAuthenticationRecovery authenticationRecovery)
     {
         ArgumentNullException.ThrowIfNull(processExecution);
         ArgumentNullException.ThrowIfNull(localTokenUsage);
         ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(authenticationRecovery);
         this.processExecution = processExecution;
         this.localTokenUsage = localTokenUsage;
         this.timeProvider = timeProvider;
+        this.authenticationRecovery = authenticationRecovery;
     }
 
-    public Task<UsageObservations> ReadAsync(
+    public async Task<UsageObservations> ReadAsync(
         UsageObservationRequest request,
-        CancellationToken cancellationToken) =>
-        ReadUsageAsync(request == UsageObservationRequest.AllowanceWindowsAndActivity, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var includeActivity = request == UsageObservationRequest.AllowanceWindowsAndActivity;
+        try
+        {
+            return await authenticationRecovery.RunAsync(
+                    token => ReadUsageAsync(includeActivity, token),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (CodexAuthenticationExpiredException exception)
+        {
+            throw new InvalidOperationException(CodexAuthenticationRecovery.FailureMessage, exception);
+        }
+    }
 
     private async Task<UsageObservations> ReadUsageAsync(bool includeActivity, CancellationToken cancellationToken)
     {
@@ -43,24 +86,7 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
             {
                 try
                 {
-                    await SendAsync(lines, new
-                    {
-                        id = 1,
-                        method = "initialize",
-                        @params = new
-                        {
-                            clientInfo = new
-                            {
-                                name = "codex-usage-tray",
-                                title = "Codex Usage Tray",
-                                version = ClientVersion
-                            },
-                            capabilities = new { experimentalApi = true }
-                        }
-                    }).ConfigureAwait(false);
-
-                    await ReadResponseAsync(lines, 1).ConfigureAwait(false);
-                    await SendAsync(lines, new { method = "initialized" }).ConfigureAwait(false);
+                    await InitializeAsync(lines).ConfigureAwait(false);
                     await SendAsync(
                         lines,
                         new { id = 2, method = "account/rateLimits/read", @params = (object?)null })
@@ -272,48 +298,5 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
-
-    private static Task SendAsync(ICodexLineExchange lines, object message) =>
-        lines.WriteLineAsync(JsonSerializer.Serialize(message));
-
-    private static async Task<JsonElement> ReadResponseAsync(
-        ICodexLineExchange lines,
-        int expectedId)
-    {
-        while (true)
-        {
-            var response = await ReadNextMessageAsync(lines).ConfigureAwait(false);
-            if (response.TryGetProperty("id", out var id) && id.TryGetInt32(out var number) && number == expectedId)
-            {
-                ThrowIfProtocolError(response);
-                return response;
-            }
-        }
-    }
-
-    private static async Task<JsonElement> ReadNextMessageAsync(ICodexLineExchange lines)
-    {
-        var line = await lines.ReadLineAsync().ConfigureAwait(false);
-        if (line is null)
-        {
-            throw new InvalidOperationException("The Codex app-server closed before returning usage data.");
-        }
-
-        using var document = JsonDocument.Parse(line);
-        return document.RootElement.Clone();
-    }
-
-    private static void ThrowIfProtocolError(JsonElement response)
-    {
-        if (!response.TryGetProperty("error", out var error))
-        {
-            return;
-        }
-
-        var message = error.TryGetProperty("message", out var messageElement)
-            ? messageElement.GetString()
-            : error.ToString();
-        throw new InvalidOperationException($"Codex returned an error: {message}");
-    }
 
 }
