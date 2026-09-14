@@ -8,13 +8,12 @@ This is an unofficial community project. It is not affiliated with OpenAI.
 
 ## What it shows
 
-- Remaining 5-hour allowance and its reset time
-- Remaining weekly allowance and its reset time
+- Remaining 5-hour and weekly allowances reported for the account, with their reset times
 - Inference tokens used today
 - Total inference tokens reported for the account
 - Live countdowns in a compact view
 
-The tray icon has two rings. The outer ring shows the 5-hour allowance. The inner ring shows the weekly allowance. The rings and extended-view bars change color continuously from green at 100% remaining through yellow near 50%, orange at 25%, and red at 10%. The app refreshes the limits and countdowns once a minute. It refreshes daily and lifetime activity when you open or switch to the extended view.
+The tray icon uses an outer ring for the 5-hour allowance and an inner ring for the weekly allowance. It omits a ring when the account does not report that allowance. The popup also omits the matching section and resizes to fit. The rings and extended-view bars change color continuously from green at 100% remaining through yellow near 50%, orange at 25%, and red at 10%. The app refreshes the limits and countdowns once a minute. It refreshes daily and lifetime activity when you open or switch to the extended view.
 
 ## Screenshots
 
@@ -63,7 +62,7 @@ The executable is not code-signed, so Windows SmartScreen or antivirus software 
 
 ## Features
 
-Use the view button to switch between compact and extended modes. Compact mode shows each allowance and its countdown. Extended mode adds reset times, progress bars, and inference totals.
+Use the view button to switch between compact and extended modes. Compact mode shows each reported allowance and its countdown. Extended mode adds reset times, progress bars, and inference totals.
 
 The pin button keeps the popup open and above other windows. While pinned, drag the background or text to move it. The popup snaps either flush with the screen and taskbar edges or with an eight-pixel gap. A pinned popup keeps its position when hidden. An unpinned popup opens next to the tray.
 

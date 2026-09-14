@@ -58,4 +58,16 @@ public sealed class TrayIconRendererTests
             UsageStatusColor.ForRemainingPercent(25).ToArgb(),
             bitmap.GetPixel(130, 20).ToArgb());
     }
+
+    [Fact]
+    public void MissingFiveHourAllowanceOmitsTheOuterRing()
+    {
+        using var stream = new MemoryStream(TrayIconRenderer.RenderPng(256, null, 100));
+        using var bitmap = new Bitmap(stream);
+
+        Assert.Equal(0, bitmap.GetPixel(20, 128).A);
+        Assert.Equal(
+            UsageStatusColor.ForRemainingPercent(100).ToArgb(),
+            bitmap.GetPixel(60, 128).ToArgb());
+    }
 }

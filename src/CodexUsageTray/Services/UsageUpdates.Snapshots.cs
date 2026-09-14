@@ -179,13 +179,15 @@ internal sealed partial class UsageUpdates
         var fiveHour = account.AllowanceWindows
             .FirstOrDefault(window => window.Duration is { } duration
                 && duration >= MinimumFiveHourDuration
-                && duration <= MaximumFiveHourDuration)
-            ?? account.AllowanceWindows.OrderBy(window => window.Duration ?? TimeSpan.MaxValue).FirstOrDefault();
+                && duration <= MaximumFiveHourDuration);
         var weekly = account.AllowanceWindows
             .FirstOrDefault(window => window.Duration is { } duration
                 && duration >= MinimumWeeklyDuration
-                && duration <= MaximumWeeklyDuration)
-            ?? account.AllowanceWindows
+                && duration <= MaximumWeeklyDuration);
+        fiveHour ??= account.AllowanceWindows
+            .OrderBy(window => window.Duration ?? TimeSpan.MaxValue)
+            .FirstOrDefault(window => window != weekly);
+        weekly ??= account.AllowanceWindows
                 .OrderByDescending(window => window.Duration ?? TimeSpan.MinValue)
                 .FirstOrDefault(window => window != fiveHour);
 

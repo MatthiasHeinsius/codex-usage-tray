@@ -9,7 +9,7 @@ internal static class TrayIconRenderer
     internal const int StaticWeeklyRemaining = 75;
     private static readonly int[] IconSizes = [16, 20, 24, 32, 40, 48, 64, 128, 256];
 
-    public static Icon Create(int fiveHourRemaining, int weeklyRemaining)
+    public static Icon Create(int? fiveHourRemaining, int? weeklyRemaining)
     {
         var size = Math.Max(SystemInformation.SmallIconSize.Width, SystemInformation.SmallIconSize.Height);
         using var stream = new MemoryStream(CreateIcoData([size], fiveHourRemaining, weeklyRemaining));
@@ -17,7 +17,7 @@ internal static class TrayIconRenderer
         return (Icon)icon.Clone();
     }
 
-    internal static byte[] CreateIcoData(int fiveHourRemaining, int weeklyRemaining) =>
+    internal static byte[] CreateIcoData(int? fiveHourRemaining, int? weeklyRemaining) =>
         CreateIcoData(IconSizes, fiveHourRemaining, weeklyRemaining);
 
     internal static byte[] CreateStaticIcoData() =>
@@ -25,8 +25,8 @@ internal static class TrayIconRenderer
 
     private static byte[] CreateIcoData(
         int[] sizes,
-        int fiveHourRemaining,
-        int weeklyRemaining)
+        int? fiveHourRemaining,
+        int? weeklyRemaining)
     {
         var images = sizes
             .Select(size => RenderPng(size, fiveHourRemaining, weeklyRemaining))
@@ -62,7 +62,7 @@ internal static class TrayIconRenderer
         return stream.ToArray();
     }
 
-    internal static byte[] RenderPng(int size, int fiveHourRemaining, int weeklyRemaining)
+    internal static byte[] RenderPng(int size, int? fiveHourRemaining, int? weeklyRemaining)
     {
         using var bitmap = new Bitmap(size, size, PixelFormat.Format32bppArgb);
         using var graphics = Graphics.FromImage(bitmap);
@@ -71,8 +71,15 @@ internal static class TrayIconRenderer
         graphics.Clear(Color.Transparent);
 
         var scale = size / 32f;
-        DrawRing(graphics, Scale(new RectangleF(2.5f, 2.5f, 27f, 27f), scale), 5f * scale, fiveHourRemaining);
-        DrawRing(graphics, Scale(new RectangleF(7.5f, 7.5f, 17f, 17f), scale), 5f * scale, weeklyRemaining);
+        if (fiveHourRemaining is { } fiveHour)
+        {
+            DrawRing(graphics, Scale(new RectangleF(2.5f, 2.5f, 27f, 27f), scale), 5f * scale, fiveHour);
+        }
+
+        if (weeklyRemaining is { } weekly)
+        {
+            DrawRing(graphics, Scale(new RectangleF(7.5f, 7.5f, 17f, 17f), scale), 5f * scale, weekly);
+        }
 
         using var stream = new MemoryStream();
         bitmap.Save(stream, ImageFormat.Png);

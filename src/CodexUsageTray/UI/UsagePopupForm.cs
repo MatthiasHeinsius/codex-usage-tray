@@ -8,14 +8,8 @@ internal sealed class UsagePopupForm : Form
     private const int ContentWidth = PopupWidth - (2 * ContentInset);
     private readonly Label title;
     private readonly Label statusLabel;
-    private readonly Label fiveHourTitle;
-    private readonly Label fiveHourValue;
-    private readonly Label fiveHourReset;
-    private readonly UsageProgressBar fiveHourBar;
-    private readonly Label weeklyTitle;
-    private readonly Label weeklyValue;
-    private readonly Label weeklyReset;
-    private readonly UsageProgressBar weeklyBar;
+    private readonly AllowanceControls fiveHourAllowance;
+    private readonly AllowanceControls weeklyAllowance;
     private readonly Panel limitsDivider;
     private readonly Label todayTitle;
     private readonly Label todayTokens;
@@ -169,15 +163,8 @@ internal sealed class UsagePopupForm : Form
         refreshButton.FlatAppearance.BorderColor = Color.FromArgb(61, 68, 82);
         refreshButton.Click += (_, _) => RefreshRequested?.Invoke(this, EventArgs.Empty);
 
-        fiveHourTitle = MakeSectionTitle("5-hour limit");
-        fiveHourValue = MakeValueLabel();
-        fiveHourReset = MakeMutedLabel("Reset time unavailable");
-        fiveHourBar = new UsageProgressBar { Value = 0 };
-
-        weeklyTitle = MakeSectionTitle("Weekly limit");
-        weeklyValue = MakeValueLabel();
-        weeklyReset = MakeMutedLabel("Reset time unavailable");
-        weeklyBar = new UsageProgressBar { Value = 0 };
+        fiveHourAllowance = new AllowanceControls("5-hour limit");
+        weeklyAllowance = new AllowanceControls("Weekly limit");
 
         limitsDivider = new Panel
         {
@@ -196,8 +183,8 @@ internal sealed class UsagePopupForm : Form
         updatedLabel.Font = new Font("Segoe UI", 8f);
         Controls.AddRange([
             title, usagePageButton, statusLabel, viewModeButton, pinButton, refreshButton,
-            fiveHourTitle, fiveHourValue, fiveHourReset, fiveHourBar,
-            weeklyTitle, weeklyValue, weeklyReset, weeklyBar,
+            .. fiveHourAllowance.All,
+            .. weeklyAllowance.All,
             limitsDivider, todayTitle, todayTokens, lifetimeTitle, lifetimeTokens, inferenceDivider, updatedLabel
         ]);
         AddDragHandlers(this);
@@ -208,7 +195,7 @@ internal sealed class UsagePopupForm : Form
     {
         displayedPresentation = presentation.Popup;
         refreshButton.Enabled = presentation is not UsagePresentation.Loading;
-        RenderPresentation(presentation.Popup);
+        ApplyViewMode(compactView, preserveBottom: Visible);
     }
 
     protected override void OnLoad(EventArgs eventArgs)
@@ -233,16 +220,8 @@ internal sealed class UsagePopupForm : Form
     private void RenderPresentation(UsagePresentation.PopupPresentation presentation)
     {
         statusLabel.Text = presentation.AccountStatus;
-        fiveHourValue.Text = presentation.FiveHour.RemainingText;
-        fiveHourReset.Text = compactView
-            ? presentation.FiveHour.CompactResetText
-            : presentation.FiveHour.ResetText;
-        fiveHourBar.Value = presentation.FiveHour.ProgressValue;
-        weeklyValue.Text = presentation.Weekly.RemainingText;
-        weeklyReset.Text = compactView
-            ? presentation.Weekly.CompactResetText
-            : presentation.Weekly.ResetText;
-        weeklyBar.Value = presentation.Weekly.ProgressValue;
+        fiveHourAllowance.Render(presentation.FiveHour, compactView);
+        weeklyAllowance.Render(presentation.Weekly, compactView);
         todayTokens.Text = presentation.TodayTokens;
         lifetimeTokens.Text = presentation.LifetimeTokens;
         updatedLabel.Text = presentation.UpdatedText;
@@ -253,12 +232,15 @@ internal sealed class UsagePopupForm : Form
         var previousBounds = Bounds;
         var previousBottom = Bottom;
         var targetHeight = compact ? 141 : 411;
+        var fiveHourVisible = displayedPresentation?.FiveHour.IsVisible ?? true;
+        var weeklyVisible = displayedPresentation?.Weekly.IsVisible ?? true;
+        var visibleAllowanceCount = (fiveHourVisible ? 1 : 0) + (weeklyVisible ? 1 : 0);
         compactView = compact;
 
         statusLabel.Visible = !compact;
-        fiveHourBar.Visible = !compact;
-        weeklyBar.Visible = !compact;
-        limitsDivider.Visible = !compact;
+        fiveHourAllowance.SetVisibility(fiveHourVisible, compact);
+        weeklyAllowance.SetVisibility(weeklyVisible, compact);
+        limitsDivider.Visible = !compact && visibleAllowanceCount > 0;
         todayTitle.Visible = !compact;
         todayTokens.Visible = !compact;
         lifetimeTitle.Visible = !compact;
@@ -269,51 +251,58 @@ internal sealed class UsagePopupForm : Form
 
         if (compact)
         {
-            fiveHourTitle.Location = new Point(ContentInset, 64);
-            fiveHourValue.Location = new Point(136, 62);
-            fiveHourValue.Size = new Size(112, LabelHeight(fiveHourValue, 24));
-            fiveHourReset.Location = new Point(264, 64);
-            fiveHourReset.Size = new Size(144, LabelHeight(fiveHourReset, 24));
+            var row = 0;
+            if (fiveHourVisible)
+            {
+                fiveHourAllowance.LayoutCompact(row++, sharesRefreshRow: !weeklyVisible);
+            }
 
-            weeklyTitle.Location = new Point(ContentInset, 100);
-            weeklyValue.Location = new Point(136, 98);
-            weeklyValue.Size = new Size(112, LabelHeight(weeklyValue, 24));
-            weeklyReset.Location = new Point(264, 100);
-            weeklyReset.Size = new Size(100, LabelHeight(weeklyReset, 24));
+            if (weeklyVisible)
+            {
+                weeklyAllowance.LayoutCompact(row++, sharesRefreshRow: true);
+            }
+
+            var contentBottom = 0;
+            if (fiveHourVisible)
+            {
+                contentBottom = fiveHourAllowance.ContentBottom;
+            }
+
+            if (weeklyVisible)
+            {
+                contentBottom = Math.Max(contentBottom, weeklyAllowance.ContentBottom);
+            }
+
             targetHeight = Math.Max(
-                141,
-                Math.Max(weeklyValue.Bottom, weeklyReset.Bottom) + ContentInset);
+                105,
+                Math.Max(69 + (36 * visibleAllowanceCount), contentBottom + ContentInset));
         }
         else
         {
             statusLabel.Location = new Point(21, 46);
             statusLabel.Size = new Size(261, LabelHeight(statusLabel, 28));
 
-            fiveHourTitle.Location = new Point(ContentInset, 86);
-            fiveHourValue.Location = new Point(258, 86);
-            fiveHourValue.Size = new Size(150, LabelHeight(fiveHourValue, 24));
-            fiveHourReset.Location = new Point(ContentInset, 117);
-            fiveHourReset.Size = new Size(ContentWidth, LabelHeight(fiveHourReset, 24));
-            fiveHourBar.Location = new Point(ContentInset, 145);
-            fiveHourBar.Width = ContentWidth;
+            var section = 0;
+            if (fiveHourVisible)
+            {
+                fiveHourAllowance.LayoutExtended(section++);
+            }
 
-            weeklyTitle.Location = new Point(ContentInset, 176);
-            weeklyValue.Location = new Point(258, 176);
-            weeklyValue.Size = new Size(150, LabelHeight(weeklyValue, 24));
-            weeklyReset.Location = new Point(ContentInset, 207);
-            weeklyReset.Size = new Size(ContentWidth, LabelHeight(weeklyReset, 24));
-            weeklyBar.Location = new Point(ContentInset, 235);
-            weeklyBar.Width = ContentWidth;
+            if (weeklyVisible)
+            {
+                weeklyAllowance.LayoutExtended(section++);
+            }
 
-            limitsDivider.Location = new Point(ContentInset, 264);
+            var allowanceShift = 90 * (2 - visibleAllowanceCount);
+            limitsDivider.Location = new Point(ContentInset, 264 - allowanceShift);
             limitsDivider.Size = new Size(ContentWidth, 1);
-            todayTitle.Location = new Point(ContentInset, 281);
+            todayTitle.Location = new Point(ContentInset, 281 - allowanceShift);
             todayTitle.Size = new Size(220, LabelHeight(todayTitle, 24));
-            todayTokens.Location = new Point(248, 281);
+            todayTokens.Location = new Point(248, 281 - allowanceShift);
             todayTokens.Size = new Size(160, LabelHeight(todayTokens, 24));
-            lifetimeTitle.Location = new Point(ContentInset, 311);
+            lifetimeTitle.Location = new Point(ContentInset, 311 - allowanceShift);
             lifetimeTitle.Size = new Size(220, LabelHeight(lifetimeTitle, 24));
-            lifetimeTokens.Location = new Point(248, 311);
+            lifetimeTokens.Location = new Point(248, 311 - allowanceShift);
             lifetimeTokens.Size = new Size(160, LabelHeight(lifetimeTokens, 24));
             inferenceDivider.Location = new Point(
                 ContentInset,
@@ -321,7 +310,9 @@ internal sealed class UsagePopupForm : Form
             inferenceDivider.Size = new Size(ContentWidth, 1);
             updatedLabel.Location = new Point(ContentInset, inferenceDivider.Bottom + 15);
             updatedLabel.Size = new Size(338, LabelHeight(updatedLabel, 24));
-            targetHeight = Math.Max(411, updatedLabel.Bottom + ContentInset);
+            targetHeight = Math.Max(
+                411 - allowanceShift,
+                updatedLabel.Bottom + ContentInset);
         }
 
         refreshButton.Location = new Point(
@@ -454,6 +445,62 @@ internal sealed class UsagePopupForm : Form
 
     private static int LabelHeight(Label label, int minimum) =>
         Math.Max(minimum, label.PreferredHeight + 4);
+
+    private sealed class AllowanceControls
+    {
+        public AllowanceControls(string title)
+        {
+            Title = MakeSectionTitle(title);
+            Value = MakeValueLabel();
+            Reset = MakeMutedLabel("Reset time unavailable");
+            Bar = new UsageProgressBar { Value = 0 };
+            All = [Title, Value, Reset, Bar];
+        }
+
+        public Label Title { get; }
+        public Label Value { get; }
+        public Label Reset { get; }
+        public UsageProgressBar Bar { get; }
+        public Control[] All { get; }
+        public int ContentBottom => Math.Max(Title.Bottom, Math.Max(Value.Bottom, Reset.Bottom));
+
+        public void Render(UsagePresentation.AllowancePresentation presentation, bool compact)
+        {
+            Value.Text = presentation.RemainingText;
+            Reset.Text = compact ? presentation.CompactResetText : presentation.ResetText;
+            Bar.Value = presentation.ProgressValue;
+        }
+
+        public void SetVisibility(bool visible, bool compact)
+        {
+            Title.Visible = visible;
+            Value.Visible = visible;
+            Reset.Visible = visible;
+            Bar.Visible = visible && !compact;
+        }
+
+        public void LayoutCompact(int row, bool sharesRefreshRow)
+        {
+            var top = 64 + (36 * row);
+            Title.Location = new Point(ContentInset, top);
+            Value.Location = new Point(136, top - 2);
+            Value.Size = new Size(112, LabelHeight(Value, 24));
+            Reset.Location = new Point(264, top);
+            Reset.Size = new Size(sharesRefreshRow ? 100 : 144, LabelHeight(Reset, 24));
+        }
+
+        public void LayoutExtended(int section)
+        {
+            var top = 86 + (90 * section);
+            Title.Location = new Point(ContentInset, top);
+            Value.Location = new Point(258, top);
+            Value.Size = new Size(150, LabelHeight(Value, 24));
+            Reset.Location = new Point(ContentInset, top + 31);
+            Reset.Size = new Size(ContentWidth, LabelHeight(Reset, 24));
+            Bar.Location = new Point(ContentInset, top + 59);
+            Bar.Width = ContentWidth;
+        }
+    }
 
     private void AddDragHandlers(Control control)
     {
