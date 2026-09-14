@@ -75,14 +75,16 @@ internal sealed class GitHubApplicationUpdateSource : IApplicationUpdateSource
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(update);
-        var expectedHash = await DownloadExpectedHashAsync(update.ChecksumDownloadUrl, cancellationToken)
-            .ConfigureAwait(false);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(httpClient.Timeout);
         var stagedPath = CreateStagedPath(update.Version);
         try
         {
-            await DownloadFileAsync(update.ExecutableDownloadUrl, stagedPath, cancellationToken)
+            var expectedHash = await DownloadExpectedHashAsync(update.ChecksumDownloadUrl, deadline.Token)
                 .ConfigureAwait(false);
-            var actualHash = await ComputeSha256Async(stagedPath, cancellationToken)
+            await DownloadFileAsync(update.ExecutableDownloadUrl, stagedPath, deadline.Token)
+                .ConfigureAwait(false);
+            var actualHash = await ComputeSha256Async(stagedPath, deadline.Token)
                 .ConfigureAwait(false);
             if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
             {
@@ -92,9 +94,16 @@ internal sealed class GitHubApplicationUpdateSource : IApplicationUpdateSource
 
             return new StagedApplicationUpdate(update.Version, stagedPath);
         }
-        catch
+        catch (Exception exception)
         {
             ApplicationUpdateFiles.TryDelete(stagedPath);
+            if (exception is OperationCanceledException
+                && !cancellationToken.IsCancellationRequested
+                && deadline.IsCancellationRequested)
+            {
+                throw new TimeoutException("The update download timed out. Try again.", exception);
+            }
+
             throw;
         }
     }
