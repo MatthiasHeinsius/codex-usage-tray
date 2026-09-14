@@ -401,12 +401,10 @@ public sealed class UsagePresentationsTests
             return step;
         }
 
-        public Task<UsagePresentation.Ready> RefreshAsync(CancellationToken cancellationToken = default) =>
-            RunAsync(UsageUpdateIntent.Routine, cancellationToken);
-
-        public Task<UsagePresentation.Ready> RefreshWithActivityAsync(
+        public Task<UsagePresentation.Ready> RequestAsync(
+            UsageUpdateIntent intent,
             CancellationToken cancellationToken = default) =>
-            RunAsync(UsageUpdateIntent.Activity, cancellationToken);
+            RunAsync(intent, cancellationToken);
 
         public ValueTask DisposeAsync()
         {

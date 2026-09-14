@@ -1,19 +1,9 @@
 namespace CodexUsageTray;
 
-internal enum UsageUpdateIntent
-{
-    Routine,
-    Activity
-}
-
 internal interface IUsagePresentationSink
 {
     void Present(UsagePresentation presentation);
 }
-
-internal interface IUsageApplicationInteraction :
-    IUsagePresentationSink,
-    ICodexAuthenticationInteraction;
 
 internal sealed class UsagePresentations : IAsyncDisposable
 {
@@ -33,9 +23,6 @@ internal sealed class UsagePresentations : IAsyncDisposable
         this.sink = sink;
         sink.Present(UsagePresentation.CreateInitial());
     }
-
-    public static UsagePresentations CreateDefault(IUsageApplicationInteraction interaction) =>
-        new(UsageUpdates.CreateDefault(interaction), interaction);
 
     public bool ActivationEnabled
     {
@@ -80,12 +67,7 @@ internal sealed class UsagePresentations : IAsyncDisposable
         UsagePresentation.Ready presentation;
         try
         {
-            presentation = intent switch
-            {
-                UsageUpdateIntent.Routine => await updates.RefreshAsync(cancellationToken),
-                UsageUpdateIntent.Activity => await updates.RefreshWithActivityAsync(cancellationToken),
-                _ => throw new ArgumentOutOfRangeException(nameof(intent), intent, "Unknown Usage Update intent.")
-            };
+            presentation = await updates.RequestAsync(intent, cancellationToken);
         }
         catch (OperationCanceledException)
             when (cancellationToken.IsCancellationRequested || Volatile.Read(ref disposed) != 0)

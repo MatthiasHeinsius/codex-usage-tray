@@ -31,7 +31,7 @@ internal static class Program
         }
 
         ApplicationConfiguration.Initialize();
-        Application.Run(new TrayApplicationContext(UsagePresentations.CreateDefault));
+        Application.Run(new TrayApplicationContext());
         GC.KeepAlive(singleInstance);
         return 0;
     }

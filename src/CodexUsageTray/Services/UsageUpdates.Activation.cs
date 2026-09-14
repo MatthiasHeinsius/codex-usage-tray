@@ -106,7 +106,9 @@ internal sealed partial class UsageUpdates
                 UsageSnapshot? fresh = null;
                 try
                 {
-                    fresh = await RefreshSnapshotAsync(includeActivity: false, cancellationToken)
+                    fresh = await RequestSnapshotAsync(
+                            UsageObservationRequest.AllowanceWindows,
+                            cancellationToken)
                         .ConfigureAwait(false);
                     finalSnapshot = fresh;
                     var freshTransitions = DetectAllowanceWindowTransitions(fresh);
