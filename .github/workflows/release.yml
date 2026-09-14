@@ -6,19 +6,19 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  build:
     runs-on: windows-latest
     timeout-minutes: 15
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Install .NET 10 SDK
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
         with:
           dotnet-version: 10.0.401
 
@@ -29,6 +29,9 @@ jobs:
           if ("v$version" -ne $env:GITHUB_REF_NAME) {
             throw "Tag $env:GITHUB_REF_NAME does not match project version $version."
           }
+
+      - name: Validate solution
+        uses: ./.github/actions/validate
 
       - name: Publish portable executable
         run: >-
@@ -53,21 +56,38 @@ jobs:
           $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  CodexUsageTray.exe" | Set-Content -LiteralPath .\artifacts\win-x64\SHA256SUMS.txt -Encoding ascii
 
+      - name: Upload release artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: release-win-x64
+          path: .\artifacts\win-x64
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download release artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: release-win-x64
+          path: artifacts/win-x64
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: pwsh
+          GH_REPO: ${{ github.repository }}
         run: |
-          $notes = ".\.github\release-notes\$($env:GITHUB_REF_NAME).md"
-          if (-not (Test-Path -LiteralPath $notes)) {
-            throw "Release notes not found: $notes"
-          }
-
-          gh release create $env:GITHUB_REF_NAME `
-            .\artifacts\win-x64\CodexUsageTray.exe `
-            .\artifacts\win-x64\LICENSE.txt `
-            .\artifacts\win-x64\SHA256SUMS.txt `
-            .\artifacts\win-x64\THIRD-PARTY-NOTICES.txt `
-            --notes-file $notes `
-            --title "Codex Usage Tray $env:GITHUB_REF_NAME" `
+          gh release create "$GITHUB_REF_NAME" \
+            artifacts/win-x64/CodexUsageTray.exe \
+            artifacts/win-x64/LICENSE.txt \
+            artifacts/win-x64/SHA256SUMS.txt \
+            artifacts/win-x64/THIRD-PARTY-NOTICES.txt \
+            --generate-notes \
+            --fail-on-no-commits \
+            --title "Codex Usage Tray $GITHUB_REF_NAME" \
             --verify-tag

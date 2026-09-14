@@ -1,0 +1,30 @@
+name: Validate solution
+description: Restore, build, format, and test the solution.
+
+runs:
+  using: composite
+  steps:
+    - name: Restore
+      shell: pwsh
+      run: dotnet restore .\CodexUsageTray.slnx
+
+    - name: Build
+      shell: pwsh
+      run: dotnet build .\CodexUsageTray.slnx -c Release --no-restore
+
+    - name: Check formatting
+      shell: pwsh
+      run: dotnet format .\CodexUsageTray.slnx --verify-no-changes --no-restore
+
+    - name: Run tests
+      shell: pwsh
+      run: >-
+        dotnet test
+        --solution .\CodexUsageTray.slnx
+        -c Release
+        --no-build
+        --no-restore
+        --results-directory .\TestResults
+        --coverage
+        --coverage-output-format cobertura
+        --report-xunit-trx
