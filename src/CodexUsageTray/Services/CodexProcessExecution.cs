@@ -39,21 +39,33 @@ internal sealed class WindowsCodexProcessExecution : ICodexProcessExecution
         Func<ICodexLineExchange, Task<TResult>> exchange,
         CancellationToken cancellationToken)
     {
-        var codexPath = CodexCommandLocator.Find();
-        using var process = Start(codexPath, codexArguments, redirectStandardInput: true);
+        cancellationToken.ThrowIfCancellationRequested();
         using var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCancellation.CancelAfter(timeout);
+        var codexPath = CodexCommandLocator.Find();
+        timeoutCancellation.Token.ThrowIfCancellationRequested();
+        using var process = Start(codexPath, codexArguments, redirectStandardInput: true);
         var lines = new WindowsCodexLineExchange(process, timeoutCancellation.Token);
-        process.ErrorDataReceived += lines.RecordStandardError;
-        process.BeginErrorReadLine();
-
+        var completed = false;
         try
         {
-            return await exchange(lines).ConfigureAwait(false);
+            process.ErrorDataReceived += lines.RecordStandardError;
+            process.BeginErrorReadLine();
+            var result = await exchange(lines).ConfigureAwait(false);
+            timeoutCancellation.Token.ThrowIfCancellationRequested();
+            completed = true;
+            return result;
         }
         finally
         {
-            TryStopLineExchange(process);
+            if (!completed)
+            {
+                // Closing stdin can flush buffered data. Stop a failed exchange first
+                // so cleanup cannot block on a child that no longer reads input.
+                TryStopProcess(process);
+            }
+
+            await TryStopLineExchangeAsync(process).ConfigureAwait(false);
         }
     }
 
@@ -62,27 +74,31 @@ internal sealed class WindowsCodexProcessExecution : ICodexProcessExecution
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
-        var codexPath = CodexCommandLocator.Find();
-        using var process = Start(codexPath, codexArguments, redirectStandardInput: false);
-        var standardOutput = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var standardError = process.StandardError.ReadToEndAsync(cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         using var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutCancellation.CancelAfter(timeout);
+        var codexPath = CodexCommandLocator.Find();
+        timeoutCancellation.Token.ThrowIfCancellationRequested();
+        using var process = Start(codexPath, codexArguments, redirectStandardInput: false);
 
         try
         {
-            await process.WaitForExitAsync(timeoutCancellation.Token).ConfigureAwait(false);
+            var standardOutput = process.StandardOutput.ReadToEndAsync(timeoutCancellation.Token);
+            var standardError = process.StandardError.ReadToEndAsync(timeoutCancellation.Token);
+            await Task.WhenAll(
+                standardOutput,
+                standardError,
+                process.WaitForExitAsync(timeoutCancellation.Token)).ConfigureAwait(false);
+            return new CodexProcessOutput(
+                process.ExitCode,
+                await standardOutput.ConfigureAwait(false),
+                await standardError.ConfigureAwait(false));
         }
-        catch (OperationCanceledException)
+        catch
         {
-            TryStopCapturedProcess(process);
+            TryStopProcess(process);
             throw;
         }
-
-        return new CodexProcessOutput(
-            process.ExitCode,
-            await standardOutput.ConfigureAwait(false),
-            await standardError.ConfigureAwait(false));
     }
 
     private static Process Start(
@@ -112,22 +128,22 @@ internal sealed class WindowsCodexProcessExecution : ICodexProcessExecution
             ?? throw new InvalidOperationException("Windows could not start the Codex CLI.");
     }
 
-    private static void TryStopLineExchange(Process process)
+    private static async Task TryStopLineExchangeAsync(Process process)
     {
         try
         {
             process.StandardInput.Close();
-            if (!process.WaitForExit(500))
+            using var cleanupCancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            try
             {
-                process.Kill(entireProcessTree: true);
-                if (!process.WaitForExit(500))
-                {
-                    return;
-                }
+                // Include stderr completion in the grace period: an exited command
+                // can leave a child holding its inherited stderr pipe open.
+                await process.WaitForExitAsync(cleanupCancellation.Token).ConfigureAwait(false);
             }
-
-            // The timed overload can return before asynchronous error handlers finish.
-            process.WaitForExit();
+            catch (OperationCanceledException)
+            {
+                TryStopProcess(process);
+            }
         }
         catch
         {
@@ -135,13 +151,14 @@ internal sealed class WindowsCodexProcessExecution : ICodexProcessExecution
         }
     }
 
-    private static void TryStopCapturedProcess(Process process)
+    private static void TryStopProcess(Process process)
     {
         try
         {
             if (!process.HasExited)
             {
                 process.Kill(entireProcessTree: true);
+                process.WaitForExit(500);
             }
         }
         catch
@@ -152,29 +169,20 @@ internal sealed class WindowsCodexProcessExecution : ICodexProcessExecution
 
     private sealed class WindowsCodexLineExchange(
         Process process,
-        CancellationToken readCancellation) : ICodexLineExchange
+        CancellationToken cancellationToken) : ICodexLineExchange
     {
-        private readonly List<string> standardErrorLines = [];
+        private string? lastStandardErrorLine;
 
-        public string? LastStandardErrorLine
-        {
-            get
-            {
-                lock (standardErrorLines)
-                {
-                    return standardErrorLines.LastOrDefault();
-                }
-            }
-        }
+        public string? LastStandardErrorLine => Volatile.Read(ref lastStandardErrorLine);
 
         public async Task WriteLineAsync(string line)
         {
-            await process.StandardInput.WriteLineAsync(line).ConfigureAwait(false);
-            await process.StandardInput.FlushAsync().ConfigureAwait(false);
+            await process.StandardInput.WriteLineAsync(line.AsMemory(), cancellationToken).ConfigureAwait(false);
+            await process.StandardInput.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
 
         public ValueTask<string?> ReadLineAsync() =>
-            process.StandardOutput.ReadLineAsync(readCancellation);
+            process.StandardOutput.ReadLineAsync(cancellationToken);
 
         public void RecordStandardError(object sender, DataReceivedEventArgs eventArgs)
         {
@@ -183,10 +191,7 @@ internal sealed class WindowsCodexProcessExecution : ICodexProcessExecution
                 return;
             }
 
-            lock (standardErrorLines)
-            {
-                standardErrorLines.Add(eventArgs.Data);
-            }
+            Volatile.Write(ref lastStandardErrorLine, eventArgs.Data);
         }
     }
 }
