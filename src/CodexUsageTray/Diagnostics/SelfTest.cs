@@ -36,13 +36,13 @@ internal static class SelfTest
             var shortcutPath = Path.Combine(startupTestDirectory, "Codex Usage Tray.lnk");
             var executablePath = Environment.ProcessPath
                 ?? throw new InvalidOperationException("Self-test process path is unavailable.");
-            Assert(!StartupShortcut.TargetsExecutable(shortcutPath, executablePath),
+            Assert(!StartupRegistration.IsEnabled(shortcutPath, executablePath),
                 "missing startup shortcut is disabled");
-            StartupShortcut.Create(shortcutPath, executablePath);
+            StartupRegistration.SetEnabled(enabled: true, shortcutPath, executablePath);
             Assert(File.Exists(shortcutPath), "startup shortcut is created");
-            Assert(StartupShortcut.TargetsExecutable(shortcutPath, executablePath),
+            Assert(StartupRegistration.IsEnabled(shortcutPath, executablePath),
                 "startup shortcut targets this executable");
-            var shortcut = StartupShortcut.Read(shortcutPath);
+            var shortcut = StartupRegistration.ReadShortcut(shortcutPath);
             Assert(shortcut is { IconIndex: 0 }
                 && string.Equals(shortcut.Value.IconPath, executablePath, StringComparison.OrdinalIgnoreCase),
                 "startup shortcut uses the executable icon");
