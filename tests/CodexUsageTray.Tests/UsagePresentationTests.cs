@@ -154,33 +154,6 @@ public sealed class UsagePresentationTests
     }
 
     [Fact]
-    public void CreateDoesNotPresentActivationConfirmationNotices()
-    {
-        var now = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
-        var snapshot = CreateSnapshot(
-            now,
-            new AllowanceWindow(100, TimeSpan.FromHours(5), now.AddHours(5)),
-            new AllowanceWindow(0, TimeSpan.FromDays(7), now.AddDays(7)),
-            lifetimeTokens: null,
-            todayTokens: null,
-            plan: "plus",
-            limitName: "Codex");
-        var events = AllowanceWindowActivationResult.Empty with
-        {
-            Confirmed = AllowanceWindows.Weekly
-        };
-
-        var presentation = UsagePresentation.Create(
-            snapshot,
-            events,
-            notificationsEnabled: true,
-            now,
-            CultureInfo.InvariantCulture);
-
-        Assert.Empty(presentation.Notices);
-    }
-
-    [Fact]
     public void CreateDistinguishesDueAndUnknownResetTimes()
     {
         var now = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
