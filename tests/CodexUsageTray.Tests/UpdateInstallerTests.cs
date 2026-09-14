@@ -22,6 +22,53 @@ public sealed class UpdateInstallerTests
     }
 
     [Fact]
+    public void CleanupArgumentWaitsForARunningHelperToExitBeforeDeletingIt()
+    {
+        using var directory = new TemporaryDirectory("installer-running-cleanup");
+        var helperPath = directory.FilePath("update-helper.exe");
+        File.Copy(Path.Combine(Environment.SystemDirectory, "ping.exe"), helperPath);
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = helperPath,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        startInfo.ArgumentList.Add("-n");
+        startInfo.ArgumentList.Add("2");
+        startInfo.ArgumentList.Add("127.0.0.1");
+        using var helper = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("The cleanup test helper did not start.");
+        try
+        {
+            Assert.False(helper.WaitForExit(milliseconds: 100));
+
+            var handled = UpdateInstaller.TryHandleCommandLine(
+                ["--cleanup-update", helperPath],
+                out var exitCode);
+
+            Assert.False(handled);
+            Assert.Equal(0, exitCode);
+            Assert.True(helper.HasExited);
+            Assert.False(File.Exists(helperPath));
+        }
+        finally
+        {
+            if (!helper.HasExited)
+            {
+                helper.Kill();
+                helper.WaitForExit();
+            }
+
+            if (File.Exists(helperPath))
+            {
+                File.Delete(helperPath);
+            }
+        }
+    }
+
+    [Fact]
     public void ElevatedApplyReplacesTheExecutableAndCleansTheStagedUpdate()
     {
         using var directory = new TemporaryDirectory("installer-apply");
@@ -46,6 +93,77 @@ public sealed class UpdateInstallerTests
     }
 
     [Fact]
+    public void ApplyReplacesAnExecutableThatIsOpenForReadingButAllowsRename()
+    {
+        using var directory = new TemporaryDirectory("installer-open-target");
+        const string replacementText = "verified replacement executable";
+        var (stagedPath, targetPath) = CreateInstallerFiles(
+            directory,
+            replacementText,
+            "old executable");
+        var interaction = new RecordingInstallerInteraction();
+        using var targetLock = new FileStream(
+            targetPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read | FileShare.Delete);
+
+        var handled = UpdateInstaller.TryHandleCommandLine(
+            ["--apply-update-elevated", "2147483647", stagedPath, targetPath],
+            out var exitCode,
+            interaction);
+
+        Assert.True(handled);
+        Assert.Equal(0, exitCode);
+        Assert.Equal(Encoding.UTF8.GetBytes(replacementText), File.ReadAllBytes(targetPath));
+        Assert.False(File.Exists(stagedPath));
+        Assert.Null(interaction.FailureMessage);
+    }
+
+    [Fact]
+    public async Task ApplyWaitsForAnExecutableLockThatTemporarilyDeniesRename()
+    {
+        using var directory = new TemporaryDirectory("installer-temporary-lock");
+        const string replacementText = "verified replacement executable";
+        var (stagedPath, targetPath) = CreateInstallerFiles(
+            directory,
+            replacementText,
+            "old executable");
+        var interaction = new RecordingInstallerInteraction();
+        var targetLock = new FileStream(
+            targetPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read);
+        var releaseLock = Task.Run(
+            async () =>
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250), TestContext.Current.CancellationToken);
+                targetLock.Dispose();
+            },
+            TestContext.Current.CancellationToken);
+
+        try
+        {
+            var handled = UpdateInstaller.TryHandleCommandLine(
+                ["--apply-update-elevated", "2147483647", stagedPath, targetPath],
+                out var exitCode,
+                interaction);
+
+            Assert.True(handled);
+            Assert.Equal(0, exitCode);
+            Assert.Equal(Encoding.UTF8.GetBytes(replacementText), File.ReadAllBytes(targetPath));
+            Assert.False(File.Exists(stagedPath));
+            Assert.Null(interaction.FailureMessage);
+        }
+        finally
+        {
+            targetLock.Dispose();
+            await releaseLock;
+        }
+    }
+
+    [Fact]
     public void FailedRestartRestoresThePreviousExecutableAndReportsARecoverableFailure()
     {
         using var directory = new TemporaryDirectory("installer-rollback");
@@ -64,6 +182,36 @@ public sealed class UpdateInstallerTests
         Assert.False(File.Exists(stagedPath));
         Assert.Equal(2, interaction.RestartAttempts);
         Assert.Null(interaction.ElevatedStartInfo);
+        Assert.Contains("restart failed", interaction.FailureMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FailedRestartRestoresThePreviousExecutableWhenTheUpdatedTargetDisappears()
+    {
+        using var directory = new TemporaryDirectory("installer-missing-target-rollback");
+        var (stagedPath, targetPath) = CreateInstallerFiles(directory);
+        var targetDeleted = false;
+        var interaction = new RecordingInstallerInteraction(
+            restartFailure: new InvalidOperationException("restart failed"),
+            beforeRestart: path =>
+            {
+                if (!targetDeleted)
+                {
+                    File.Delete(path);
+                    targetDeleted = true;
+                }
+            });
+
+        var handled = UpdateInstaller.TryHandleCommandLine(
+            ["--apply-update", "2147483647", stagedPath, targetPath],
+            out var exitCode,
+            interaction);
+
+        Assert.True(handled);
+        Assert.Equal(1, exitCode);
+        Assert.Equal("previous executable", File.ReadAllText(targetPath));
+        Assert.False(File.Exists(stagedPath));
+        Assert.Equal(2, interaction.RestartAttempts);
         Assert.Contains("restart failed", interaction.FailureMessage, StringComparison.Ordinal);
     }
 

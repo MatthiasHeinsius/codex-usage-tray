@@ -17,6 +17,9 @@ internal static class UpdateInstaller
     private const string ApplyElevatedArgument = "--apply-update-elevated";
     private const string CleanupArgument = "--cleanup-update";
     private const int FileOperationAttempts = 50;
+    private const int SharingViolationError = 32;
+    private const int LockViolationError = 33;
+    private const int UnableToRemoveReplacedError = 1175;
     private static readonly TimeSpan FileOperationRetryDelay = TimeSpan.FromMilliseconds(100);
 
     internal static bool TryHandleCommandLine(string[] args, out int exitCode) =>
@@ -96,16 +99,18 @@ internal static class UpdateInstaller
         bool restartApplication,
         IUpdateInstallerInteraction interaction)
     {
-        var backupPath = Path.Combine(
-            Path.GetTempPath(),
-            $"CodexUsageTray-update-backup-{Guid.NewGuid():N}.exe");
+        var targetDirectory = Path.GetDirectoryName(Path.GetFullPath(targetPath))
+            ?? throw new InvalidOperationException("The application directory is unavailable.");
+        var updateId = Guid.NewGuid().ToString("N");
+        var preparedPath = Path.Combine(targetDirectory, $".CodexUsageTray-update-{updateId}.tmp");
+        var backupPath = Path.Combine(targetDirectory, $".CodexUsageTray-backup-{updateId}.exe");
         var applicationExited = false;
         var backupReady = false;
         try
         {
             WaitForProcessToExit(processId);
             applicationExited = true;
-            if (!HasWriteAccess(targetPath))
+            if (RequiresElevation(targetPath))
             {
                 if (allowElevation)
                 {
@@ -116,9 +121,32 @@ internal static class UpdateInstaller
                     "Administrator access was granted, but the installed executable is still read-only.");
             }
 
-            File.Copy(targetPath, backupPath, overwrite: false);
-            backupReady = true;
-            ReplaceFileContentsWhenAvailable(stagedPath, targetPath);
+            try
+            {
+                CopyFileContents(stagedPath, preparedPath);
+                if (!FilesMatch(stagedPath, preparedPath))
+                {
+                    throw new InvalidDataException("The prepared executable does not match the downloaded update.");
+                }
+
+                try
+                {
+                    ReplaceFileWhenAvailable(preparedPath, targetPath, backupPath);
+                    backupReady = true;
+                }
+                catch
+                {
+                    // ReplaceFileW can move the old target to the backup path before reporting failure.
+                    backupReady = File.Exists(backupPath);
+                    throw;
+                }
+            }
+            catch (UnauthorizedAccessException) when (allowElevation && !backupReady)
+            {
+                TryDeleteFileWhenAvailable(preparedPath);
+                return ApplyWithElevation(processId, stagedPath, targetPath, interaction);
+            }
+
             if (!FilesMatch(stagedPath, targetPath))
             {
                 throw new InvalidDataException("The installed executable does not match the downloaded update.");
@@ -130,7 +158,8 @@ internal static class UpdateInstaller
             }
 
             ApplicationUpdateFiles.TryDelete(stagedPath);
-            ApplicationUpdateFiles.TryDelete(backupPath);
+            TryDeleteFileWhenAvailable(preparedPath);
+            TryDeleteFileWhenAvailable(backupPath);
             return UpdateInstallerResult.Succeeded;
         }
         catch (Exception exception)
@@ -141,7 +170,7 @@ internal static class UpdateInstaller
             {
                 try
                 {
-                    ReplaceFileContentsWhenAvailable(backupPath, targetPath);
+                    RestoreBackupWhenAvailable(backupPath, targetPath);
                 }
                 catch (Exception restoreException)
                 {
@@ -157,9 +186,10 @@ internal static class UpdateInstaller
             }
 
             ApplicationUpdateFiles.TryDelete(stagedPath);
+            TryDeleteFileWhenAvailable(preparedPath);
             if (canRestart)
             {
-                ApplicationUpdateFiles.TryDelete(backupPath);
+                TryDeleteFileWhenAvailable(backupPath);
             }
 
             interaction.ShowFailure($"The update could not be installed.\n\n{failure.Message}");
@@ -174,7 +204,7 @@ internal static class UpdateInstaller
         }
     }
 
-    private static bool HasWriteAccess(string targetPath)
+    private static bool RequiresElevation(string targetPath)
     {
         try
         {
@@ -183,10 +213,15 @@ internal static class UpdateInstaller
                 FileMode.Open,
                 FileAccess.Write,
                 FileShare.ReadWrite | FileShare.Delete);
-            return true;
+            return false;
         }
         catch (UnauthorizedAccessException)
         {
+            return true;
+        }
+        catch (IOException)
+        {
+            // A sharing violation does not prevent an atomic replacement when the owner allows rename.
             return false;
         }
     }
@@ -254,26 +289,51 @@ internal static class UpdateInstaller
         }
     }
 
-    private static void ReplaceFileContentsWhenAvailable(string sourcePath, string targetPath)
+    private static void CopyFileContents(string sourcePath, string targetPath)
+    {
+        using var source = new FileStream(
+            sourcePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 81_920,
+            FileOptions.SequentialScan);
+        using var target = new FileStream(
+            targetPath,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 81_920,
+            FileOptions.SequentialScan);
+        source.CopyTo(target);
+        target.Flush(flushToDisk: true);
+    }
+
+    private static void ReplaceFileWhenAvailable(
+        string sourcePath,
+        string targetPath,
+        string? destinationBackupPath) =>
+        RetryFileOperation(() => File.Replace(
+            sourcePath,
+            targetPath,
+            destinationBackupPath,
+            ignoreMetadataErrors: false));
+
+    private static void RestoreBackupWhenAvailable(string backupPath, string targetPath)
     {
         RetryFileOperation(() =>
         {
-            using var source = new FileStream(
-                sourcePath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read,
-                bufferSize: 81_920,
-                FileOptions.SequentialScan);
-            using var target = new FileStream(
-                targetPath,
-                FileMode.Create,
-                FileAccess.Write,
-                FileShare.None,
-                bufferSize: 81_920,
-                FileOptions.SequentialScan);
-            source.CopyTo(target);
-            target.Flush(flushToDisk: true);
+            if (File.Exists(targetPath))
+            {
+                File.Replace(
+                    backupPath,
+                    targetPath,
+                    destinationBackupFileName: null,
+                    ignoreMetadataErrors: false);
+                return;
+            }
+
+            File.Move(backupPath, targetPath);
         });
     }
 
@@ -304,9 +364,14 @@ internal static class UpdateInstaller
 
     private static void DeleteHelperWhenAvailable(string helperPath)
     {
+        TryDeleteFileWhenAvailable(helperPath);
+    }
+
+    private static void TryDeleteFileWhenAvailable(string path)
+    {
         try
         {
-            RetryFileOperation(() => File.Delete(helperPath));
+            RetryFileOperation(() => File.Delete(path), retryAccessDenied: true);
         }
         catch (IOException)
         {
@@ -316,7 +381,7 @@ internal static class UpdateInstaller
         }
     }
 
-    private static void RetryFileOperation(Action operation)
+    private static void RetryFileOperation(Action operation, bool retryAccessDenied = false)
     {
         for (var attempt = 1; ; attempt++)
         {
@@ -325,12 +390,26 @@ internal static class UpdateInstaller
                 operation();
                 return;
             }
-            catch (IOException) when (attempt < FileOperationAttempts)
+            catch (IOException exception) when (
+                attempt < FileOperationAttempts
+                && IsRetryableFileError(exception))
+            {
+                Thread.Sleep(FileOperationRetryDelay);
+            }
+            catch (UnauthorizedAccessException) when (
+                attempt < FileOperationAttempts
+                && retryAccessDenied)
             {
                 Thread.Sleep(FileOperationRetryDelay);
             }
         }
     }
+
+    private static bool IsRetryableFileError(IOException exception) =>
+        (exception.HResult & 0xffff) is
+            SharingViolationError
+            or LockViolationError
+            or UnableToRemoveReplacedError;
 
     private static void StartApplication(string targetPath)
     {
