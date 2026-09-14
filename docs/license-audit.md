@@ -1,6 +1,6 @@
 # Third-party license audit
 
-Audit date: 2026-09-13. CI action inventory updated: 2026-09-14.
+Audit date: 2026-09-13. CI action inventory updated: 2026-09-15.
 
 This report records the license sources needed to build the repository's third-party notice file. It separates software embedded in the released executable from tools used only to build or test the source. The upstream license and notice files linked below are the text to preserve. This report is not a substitute for those files.
 
@@ -66,6 +66,8 @@ The [xunit.v3.mtp-v2 4.0.1 package](https://www.nuget.org/packages/xunit.v3.mtp-
 ## Continuous-integration dependencies
 
 The build and release workflows reference `actions/checkout` v6, `actions/setup-dotnet` v5, `actions/upload-artifact` v6, and `actions/download-artifact` v7. Each uses the MIT license with `Copyright (c) 2018 GitHub, Inc. and contributors`. Preserve one copy of that common text. The tag-specific sources are the [checkout license](https://raw.githubusercontent.com/actions/checkout/v6/LICENSE), [setup-dotnet license](https://raw.githubusercontent.com/actions/setup-dotnet/v5/LICENSE), [upload-artifact license](https://raw.githubusercontent.com/actions/upload-artifact/v6/LICENSE), and [download-artifact license at the workflow's pinned commit](https://github.com/actions/download-artifact/blob/37930b1c2abaa49bbe596cd826c3c89aef350131/LICENSE).
+
+The release workflow also uses `actions/attest` v4, whose [MIT license](https://github.com/actions/attest/blob/1e69f48acb82d1966a394da916b4c1698aa569d6/LICENSE) states `Copyright GitHub`. This attribution accompanies the shared MIT license in the notice inventory. The action runs in CI and is not bundled into the executable.
 
 ## External software that the app invokes
 

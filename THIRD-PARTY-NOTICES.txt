@@ -156,12 +156,15 @@ GitHub Actions
     actions/setup-dotnet v5
     actions/upload-artifact v6
     actions/download-artifact v7
+    actions/attest v4
   Projects:
     https://github.com/actions/checkout
     https://github.com/actions/setup-dotnet
     https://github.com/actions/upload-artifact
     https://github.com/actions/download-artifact
+    https://github.com/actions/attest
   Copyright (c) 2018 GitHub, Inc. and contributors
+  Copyright GitHub (actions/attest)
   License: MIT
 
 
@@ -172,6 +175,7 @@ MIT LICENSE FOR GITHUB ACTIONS
 The MIT License (MIT)
 
 Copyright (c) 2018 GitHub, Inc. and contributors
+Copyright GitHub
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
