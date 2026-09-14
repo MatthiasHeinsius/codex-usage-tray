@@ -16,11 +16,9 @@ internal enum AllowanceWindows
 
 internal sealed record AllowanceWindowActivationResult(
     AllowanceWindows Reset,
-    AllowanceWindows UsedUp,
-    AllowanceWindows Confirmed)
+    AllowanceWindows UsedUp)
 {
     public static AllowanceWindowActivationResult Empty { get; } = new(
-        AllowanceWindows.None,
         AllowanceWindows.None,
         AllowanceWindows.None);
 }
@@ -59,8 +57,7 @@ internal sealed partial class UsageUpdates
                 AllowanceWindowActivationResult.Empty with
                 {
                     Reset = reset,
-                    UsedUp = usedUp,
-                    Confirmed = confirmed
+                    UsedUp = usedUp
                 });
         }
 
@@ -159,8 +156,7 @@ internal sealed partial class UsageUpdates
                     AllowanceWindowActivationResult.Empty with
                     {
                         Reset = reset,
-                        UsedUp = usedUp,
-                        Confirmed = confirmed
+                        UsedUp = usedUp
                     });
             }
 
@@ -178,8 +174,7 @@ internal sealed partial class UsageUpdates
             AllowanceWindowActivationResult.Empty with
             {
                 Reset = reset,
-                UsedUp = usedUp,
-                Confirmed = confirmed
+                UsedUp = usedUp
             });
     }
 
