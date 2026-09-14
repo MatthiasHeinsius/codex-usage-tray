@@ -1,10 +1,65 @@
+using System.Security.AccessControl;
+
 namespace CodexUsageTray.Tests;
 
 public sealed class WinFormsApplicationShellTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task PopupButtonsRequestActivityAndKeepWorkingWhenPreferenceWritesAreDenied(bool denyWrites) =>
+        StaTest.RunAsync(async cancellationToken =>
+        {
+            using var registry = new TestRegistryKey();
+            var settings = new RegistryApplicationSettings(registry.Path) { CompactPopup = true };
+            if (denyWrites)
+            {
+                registry.Deny(RegistryRights.SetValue);
+            }
+
+            using var popup = new UsagePopupForm(settings.CompactPopup, compact => settings.CompactPopup = compact)
+            {
+                Opacity = 0
+            };
+            var recording = new RecordingCommands();
+            using var shell = CreateShell(recording, popup: popup);
+            await shell.PerformTrayClickAsync(timestamp: 1_000, doubleClickTime: 500, cancellationToken);
+            Assert.False(popup.IsExtendedView);
+            Assert.Empty(recording.UsageRequests);
+            var viewButton = popup.Controls.OfType<ViewModeIconButton>().Single();
+            var todayTitle = popup.Controls.OfType<Label>().Single(label => label.Text == "Inference today");
+            var compactHeight = popup.Height;
+
+            viewButton.PerformClick();
+
+            Assert.True(popup.IsExtendedView);
+            Assert.True(todayTitle.Visible);
+            Assert.True(popup.Height > compactHeight);
+            Assert.Equal("Show compact view", viewButton.AccessibleName);
+            Assert.Equal([UsageUpdateIntent.Activity], recording.UsageRequests);
+            Assert.Equal(denyWrites, new RegistryApplicationSettings(registry.Path).CompactPopup);
+
+            viewButton.PerformClick();
+
+            Assert.False(popup.IsExtendedView);
+            Assert.False(todayTitle.Visible);
+            Assert.Equal(compactHeight, popup.Height);
+            Assert.Equal("Show extended view", viewButton.AccessibleName);
+            Assert.Equal([UsageUpdateIntent.Activity], recording.UsageRequests);
+            Assert.True(new RegistryApplicationSettings(registry.Path).CompactPopup);
+
+            var refreshButton = popup.Controls.OfType<RefreshIconButton>().Single();
+            shell.Present(UsagePresentation.CreateLoading(previous: null));
+            refreshButton.PerformClick();
+            Assert.Single(recording.UsageRequests);
+            shell.Present(UsagePresentation.CreateInitial());
+            refreshButton.PerformClick();
+            Assert.Equal([UsageUpdateIntent.Activity, UsageUpdateIntent.Activity], recording.UsageRequests);
+        });
+
     [Fact]
     public Task MenuCommandsUseTypedCallbacksAndUsagePreferencesInitializeSilently() =>
-        RunInStaThreadAsync(async () =>
+        StaTest.RunAsync(async cancellationToken =>
         {
             var recording = new RecordingCommands();
             using var shell = CreateShell(recording, startupEnabled: true, automaticUpdateEnabled: false);
@@ -13,18 +68,18 @@ public sealed class WinFormsApplicationShellTests
             Assert.Empty(recording.ActivationSettings);
             Assert.Empty(recording.NotificationSettings);
 
-            await shell.PerformMenuClickAsync("Refresh");
-            await shell.PerformMenuClickAsync("Start with Windows");
-            await shell.PerformMenuClickAsync(WinFormsApplicationShell.AutomaticUpdateMenuText);
-            await shell.PerformMenuClickAsync(WinFormsApplicationShell.AllowanceActivationMenuText);
-            await shell.PerformMenuClickAsync(WinFormsApplicationShell.AllowanceNotificationsMenuText);
-            await shell.PerformMenuClickAsync("Open Codex usage page");
-            await shell.PerformMenuClickAsync(WinFormsApplicationShell.ProjectReadmeMenuText);
-            await shell.PerformMenuClickAsync(WinFormsApplicationShell.LegalNoticesMenuText);
-            await shell.PerformMenuClickAsync(WinFormsApplicationShell.CheckForUpdatesMenuText);
-            await shell.PerformMenuClickAsync("Exit");
+            await shell.PerformMenuClickAsync("Refresh", cancellationToken);
+            await shell.PerformMenuClickAsync("Start with Windows", cancellationToken);
+            await shell.PerformMenuClickAsync(WinFormsApplicationShell.AutomaticUpdateMenuText, cancellationToken);
+            await shell.PerformMenuClickAsync(WinFormsApplicationShell.AllowanceActivationMenuText, cancellationToken);
+            await shell.PerformMenuClickAsync(WinFormsApplicationShell.AllowanceNotificationsMenuText, cancellationToken);
+            await shell.PerformMenuClickAsync("Open Codex usage page", cancellationToken);
+            await shell.PerformMenuClickAsync(WinFormsApplicationShell.ProjectReadmeMenuText, cancellationToken);
+            await shell.PerformMenuClickAsync(WinFormsApplicationShell.LegalNoticesMenuText, cancellationToken);
+            await shell.PerformMenuClickAsync(WinFormsApplicationShell.CheckForUpdatesMenuText, cancellationToken);
+            await shell.PerformMenuClickAsync("Exit", cancellationToken);
 
-            var state = await shell.CaptureStateAsync();
+            var state = await shell.CaptureStateAsync(cancellationToken);
             Assert.False(state.StartupEnabled);
             Assert.True(state.AutomaticUpdateEnabled);
             Assert.False(state.AllowanceActivationEnabled);
@@ -43,7 +98,7 @@ public sealed class WinFormsApplicationShellTests
 
     [Fact]
     public Task FailedSettingChangeRestoresTheMenuState() =>
-        RunInStaThreadAsync(async () =>
+        StaTest.RunAsync(async cancellationToken =>
         {
             var recording = new RecordingCommands
             {
@@ -56,16 +111,16 @@ public sealed class WinFormsApplicationShellTests
                 automaticUpdateEnabled: false,
                 showSettingFailure: message => failure = message);
 
-            await shell.PerformMenuClickAsync("Start with Windows");
+            await shell.PerformMenuClickAsync("Start with Windows", cancellationToken);
 
-            var state = await shell.CaptureStateAsync();
+            var state = await shell.CaptureStateAsync(cancellationToken);
             Assert.False(state.StartupEnabled);
             Assert.Equal("startup setting failed", failure);
         });
 
     [Fact]
     public Task UsagePresentationUpdatesTheOwnedTrayState() =>
-        RunInStaThreadAsync(async () =>
+        StaTest.RunAsync(async cancellationToken =>
         {
             using var shell = CreateShell(new RecordingCommands());
             var popup = new UsagePresentation.PopupPresentation(
@@ -87,13 +142,13 @@ public sealed class WinFormsApplicationShellTests
 
             ((IUsagePresentationSink)shell).Present(presentation);
 
-            var state = await shell.CaptureStateAsync();
+            var state = await shell.CaptureStateAsync(cancellationToken);
             Assert.Equal(tooltip[..63], state.TrayTooltip);
         });
 
     [Fact]
     public Task AuthenticationRecoveryConfirmsAndOpensTheSignInPage() =>
-        RunInStaThreadAsync(async () =>
+        StaTest.RunAsync(async cancellationToken =>
         {
             Uri? openedPage = null;
             using var shell = CreateShell(
@@ -106,7 +161,7 @@ public sealed class WinFormsApplicationShellTests
             var signInPage = new Uri("https://chatgpt.com/auth");
 
             var confirmed = await ((ICodexAuthenticationInteraction)shell)
-                .ConfirmAndOpenSignInAsync(signInPage, TestContext.Current.CancellationToken);
+                .ConfirmAndOpenSignInAsync(signInPage, cancellationToken);
 
             Assert.True(confirmed);
             Assert.Equal(signInPage, openedPage);
@@ -114,124 +169,96 @@ public sealed class WinFormsApplicationShellTests
 
     [Fact]
     public Task TrayClicksToggleThePopupAndSuppressTheSecondHalfOfADoubleClick() =>
-        RunInStaThreadAsync(async () =>
+        StaTest.RunAsync(async cancellationToken =>
         {
             using var shell = CreateShell(new RecordingCommands());
 
-            await shell.PerformTrayClickAsync(timestamp: 1_000, doubleClickTime: 500);
-            Assert.True((await shell.CaptureStateAsync()).PopupVisible);
+            await shell.PerformTrayClickAsync(timestamp: 1_000, doubleClickTime: 500, cancellationToken);
+            Assert.True((await shell.CaptureStateAsync(cancellationToken)).PopupVisible);
 
-            await shell.PerformTrayClickAsync(timestamp: 1_100, doubleClickTime: 500);
-            Assert.True((await shell.CaptureStateAsync()).PopupVisible);
+            await shell.PerformTrayClickAsync(timestamp: 1_100, doubleClickTime: 500, cancellationToken);
+            Assert.True((await shell.CaptureStateAsync(cancellationToken)).PopupVisible);
 
-            await shell.PerformTrayClickAsync(timestamp: 1_501, doubleClickTime: 500);
-            Assert.False((await shell.CaptureStateAsync()).PopupVisible);
+            await shell.PerformTrayClickAsync(timestamp: 1_501, doubleClickTime: 500, cancellationToken);
+            Assert.False((await shell.CaptureStateAsync(cancellationToken)).PopupVisible);
         });
 
     [Fact]
     public Task ApplicationUpdateProgressControlsTheOwnedMenuItem() =>
-        RunInStaThreadAsync(async () =>
+        StaTest.RunAsync(async cancellationToken =>
         {
             using var shell = CreateShell(new RecordingCommands());
             var version = new Version(1, 3, 0);
 
             await ((IApplicationUpdateInteraction)shell).PresentAsync(
                 new ApplicationUpdatePresentation.Checking(),
-                TestContext.Current.CancellationToken);
-            var checking = await shell.CaptureStateAsync();
+                cancellationToken);
+            var checking = await shell.CaptureStateAsync(cancellationToken);
             Assert.False(checking.UpdateEnabled);
             Assert.Equal("Checking for updates...", checking.UpdateText);
 
             await ((IApplicationUpdateInteraction)shell).PresentAsync(
                 new ApplicationUpdatePresentation.Downloading(version),
-                TestContext.Current.CancellationToken);
+                cancellationToken);
             Assert.Equal(
                 "Downloading version 1.3.0...",
-                (await shell.CaptureStateAsync()).UpdateText);
+                (await shell.CaptureStateAsync(cancellationToken)).UpdateText);
 
             await ((IApplicationUpdateInteraction)shell).PresentAsync(
                 new ApplicationUpdatePresentation.Installing(version),
-                TestContext.Current.CancellationToken);
+                cancellationToken);
             Assert.Equal(
                 "Installing version 1.3.0...",
-                (await shell.CaptureStateAsync()).UpdateText);
+                (await shell.CaptureStateAsync(cancellationToken)).UpdateText);
 
             await ((IApplicationUpdateInteraction)shell).PresentAsync(
                 new ApplicationUpdatePresentation.Idle(),
-                TestContext.Current.CancellationToken);
-            var idle = await shell.CaptureStateAsync();
+                cancellationToken);
+            var idle = await shell.CaptureStateAsync(cancellationToken);
             Assert.True(idle.UpdateEnabled);
             Assert.Equal(WinFormsApplicationShell.CheckForUpdatesMenuText, idle.UpdateText);
         });
 
     [Fact]
-    public async Task CallsFromAWorkerThreadRunOnTheShellThread()
-    {
-        var ready = new TaskCompletionSource<ShellThreadState>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var exitThreadId = new TaskCompletionSource<int>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-        var thread = new Thread(() =>
+    public Task CallsFromAWorkerThreadRunOnTheShellThread() =>
+        StaTest.RunAsync(async cancellationToken =>
         {
-            try
+            var shellThreadId = Environment.CurrentManagedThreadId;
+            var exitThreadId = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var recording = new RecordingCommands
             {
-                var recording = new RecordingCommands
-                {
-                    Exit = () =>
-                    {
-                        exitThreadId.TrySetResult(Environment.CurrentManagedThreadId);
-                        Application.ExitThread();
-                    }
-                };
-                using var shell = CreateShell(recording);
-                ready.TrySetResult(new ShellThreadState(shell, Environment.CurrentManagedThreadId));
-                Application.Run();
-            }
-            catch (Exception exception)
+                Exit = () => exitThreadId.TrySetResult(Environment.CurrentManagedThreadId)
+            };
+            using var shell = CreateShell(recording);
+
+            await Task.Run(async () =>
             {
-                ready.TrySetException(exception);
-                exitThreadId.TrySetException(exception);
-            }
+                Assert.NotEqual(shellThreadId, Environment.CurrentManagedThreadId);
+                await ((IApplicationUpdateInteraction)shell).PresentAsync(
+                    new ApplicationUpdatePresentation.Checking(),
+                    cancellationToken);
+
+                Assert.Equal(
+                    "Checking for updates...",
+                    (await shell.CaptureStateAsync(cancellationToken)).UpdateText);
+                ((IApplicationUpdateInteraction)shell).ExitApplication();
+                Assert.Equal(
+                    shellThreadId,
+                    await exitThreadId.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken));
+            }, cancellationToken);
+
+            Assert.Equal(shellThreadId, Environment.CurrentManagedThreadId);
         });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        var state = await ready.Task.WaitAsync(TestContext.Current.CancellationToken);
-
-        try
-        {
-            Assert.NotEqual(Environment.CurrentManagedThreadId, state.ThreadId);
-            await ((IApplicationUpdateInteraction)state.Shell).PresentAsync(
-                new ApplicationUpdatePresentation.Checking(),
-                TestContext.Current.CancellationToken);
-
-            Assert.Equal(
-                "Checking for updates...",
-                (await state.Shell.CaptureStateAsync(TestContext.Current.CancellationToken)).UpdateText);
-            ((IApplicationUpdateInteraction)state.Shell).ExitApplication();
-            Assert.Equal(
-                state.ThreadId,
-                await exitThreadId.Task.WaitAsync(TestContext.Current.CancellationToken));
-        }
-        finally
-        {
-            if (thread.IsAlive)
-            {
-                ((IApplicationUpdateInteraction)state.Shell).ExitApplication();
-                Assert.True(thread.Join(TimeSpan.FromSeconds(5)));
-            }
-        }
-    }
 
     [Fact]
     public Task DisposalClosesThePresentationSeam() =>
-        RunInStaThreadAsync(() =>
+        StaTest.RunAsync(() =>
         {
             var shell = CreateShell(new RecordingCommands());
             shell.Dispose();
 
             Assert.Throws<ObjectDisposedException>(
                 () => ((IUsagePresentationSink)shell).Present(UsagePresentation.CreateInitial()));
-            return Task.CompletedTask;
         });
 
     private static WinFormsApplicationShell CreateShell(
@@ -239,7 +266,8 @@ public sealed class WinFormsApplicationShellTests
         bool startupEnabled = false,
         bool automaticUpdateEnabled = false,
         Action<string>? showSettingFailure = null,
-        Func<Uri, bool>? confirmAndOpenSignIn = null) =>
+        Func<Uri, bool>? confirmAndOpenSignIn = null,
+        UsagePopupForm? popup = null) =>
         new(
             startupEnabled,
             automaticUpdateEnabled,
@@ -271,27 +299,8 @@ public sealed class WinFormsApplicationShellTests
                     recording.Exit();
                 }),
             showSettingFailure,
-            confirmAndOpenSignIn);
-
-    private static Task RunInStaThreadAsync(Func<Task> action)
-    {
-        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                action().GetAwaiter().GetResult();
-                completion.TrySetResult();
-            }
-            catch (Exception exception)
-            {
-                completion.TrySetException(exception);
-            }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        return completion.Task;
-    }
+            confirmAndOpenSignIn,
+            popup ?? new UsagePopupForm(initialCompactView: false));
 
     private sealed class RecordingCommands
     {
@@ -308,6 +317,4 @@ public sealed class WinFormsApplicationShellTests
         public Action<bool> SetStartup { get; init; } = _ => { };
         public Action Exit { get; init; } = () => { };
     }
-
-    private sealed record ShellThreadState(WinFormsApplicationShell Shell, int ThreadId);
 }

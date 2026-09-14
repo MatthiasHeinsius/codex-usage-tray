@@ -35,11 +35,13 @@ internal sealed class UsagePopupForm : Form
     public bool IsExtendedView => !compactView;
 
     public UsagePopupForm()
-        : this(RegistryApplicationSettings.Current.CompactPopup)
+        : this(
+            RegistryApplicationSettings.Current.CompactPopup,
+            compact => RegistryApplicationSettings.Current.CompactPopup = compact)
     {
     }
 
-    internal UsagePopupForm(bool initialCompactView)
+    internal UsagePopupForm(bool initialCompactView, Action<bool>? saveViewMode = null)
     {
         Text = "Codex usage";
         FormBorderStyle = FormBorderStyle.None;
@@ -91,7 +93,7 @@ internal sealed class UsagePopupForm : Form
         viewModeButton.Click += (_, _) =>
         {
             ApplyViewMode(viewModeButton.IsCompact, preserveBottom: true);
-            RegistryApplicationSettings.Current.CompactPopup = viewModeButton.IsCompact;
+            saveViewMode?.Invoke(viewModeButton.IsCompact);
             if (!viewModeButton.IsCompact)
             {
                 ExtendedViewActivated?.Invoke(this, EventArgs.Empty);
@@ -210,10 +212,10 @@ internal sealed class UsagePopupForm : Form
         ApplyViewMode(compactView, preserveBottom: Visible);
     }
 
-    internal void SetViewModeForScreenshot(bool compact, bool preserveBottom = false)
+    internal void SetViewModeForScreenshot(bool compact)
     {
         viewModeButton.SetCompact(compact);
-        ApplyViewMode(compact, preserveBottom);
+        ApplyViewMode(compact, preserveBottom: false);
     }
 
     private void RenderPresentation(UsagePresentation.PopupPresentation presentation)

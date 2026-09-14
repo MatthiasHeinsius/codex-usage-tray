@@ -5,9 +5,9 @@ namespace CodexUsageTray.Tests;
 public sealed class UsagePopupFormTests
 {
     [Fact]
-    public void ExtendedLayoutKeepsControlsSeparatedAndLabelsReadable()
+    public Task ExtendedLayoutKeepsControlsSeparatedAndLabelsReadable()
     {
-        RunInStaThread(() =>
+        return StaTest.RunAsync(() =>
         {
             using var popup = ShowExtendedPopup();
             var title = ControlWithText<Label>(popup, "Codex usage");
@@ -46,9 +46,9 @@ public sealed class UsagePopupFormTests
     }
 
     [Fact]
-    public void ChangingViewModeKeepsRefreshInsetsAndTopSnap()
+    public Task ChangingViewModeKeepsRefreshInsetsAndTopSnap()
     {
-        RunInStaThread(() =>
+        return StaTest.RunAsync(() =>
         {
             using var popup = ShowExtendedPopup();
             var refreshButton = ControlWithAccessibleName<RefreshIconButton>(popup, "Refresh usage");
@@ -60,7 +60,7 @@ public sealed class UsagePopupFormTests
                 .Last();
             var extendedRefreshInset = popup.ClientSize.Height - refreshButton.Bottom;
 
-            popup.SetViewModeForScreenshot(compact: true);
+            popup.Controls.OfType<ViewModeIconButton>().Single().PerformClick();
 
             Assert.True(refreshButton.Visible);
             Assert.False(updatedLabel.Visible);
@@ -73,7 +73,7 @@ public sealed class UsagePopupFormTests
             popup.Location = new Point(screen.WorkingArea.Left + 100, screen.WorkingArea.Top + 8);
             var snappedTop = popup.Top;
 
-            popup.SetViewModeForScreenshot(compact: false, preserveBottom: true);
+            popup.Controls.OfType<ViewModeIconButton>().Single().PerformClick();
 
             Assert.Equal(snappedTop, popup.Top);
         });
@@ -82,12 +82,11 @@ public sealed class UsagePopupFormTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void FirstShowKeepsTheConfiguredBottomPadding(bool compact)
+    public Task FirstShowKeepsTheConfiguredBottomPadding(bool compact)
     {
-        RunInStaThread(() =>
+        return StaTest.RunAsync(() =>
         {
-            using var popup = new UsagePopupForm { Opacity = 0 };
-            popup.SetViewModeForScreenshot(compact);
+            using var popup = new UsagePopupForm(initialCompactView: compact) { Opacity = 0 };
             popup.CreateControl();
 
             popup.ShowNearTray();
@@ -103,13 +102,12 @@ public sealed class UsagePopupFormTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public void ReopeningKeepsThePopupAtItsInitialHeightAndVerticalPositionWhenFirstShown(bool compact)
+    public Task ReopeningKeepsThePopupAtItsInitialHeightAndVerticalPositionWhenFirstShown(bool compact)
     {
         const int SimulatedDpiHeightIncrease = 56;
-        RunInStaThread(() =>
+        return StaTest.RunAsync(() =>
         {
-            using var popup = new UsagePopupForm { Opacity = 0 };
-            popup.SetViewModeForScreenshot(compact);
+            using var popup = new UsagePopupForm(initialCompactView: compact) { Opacity = 0 };
             popup.CreateControl();
             var firstShow = true;
             popup.VisibleChanged += (_, _) =>
@@ -138,9 +136,9 @@ public sealed class UsagePopupFormTests
     }
 
     [Fact]
-    public void WeeklyOnlyPresentationHidesFiveHourControlsAndRemovesTheirSpace()
+    public Task WeeklyOnlyPresentationHidesFiveHourControlsAndRemovesTheirSpace()
     {
-        RunInStaThread(() =>
+        return StaTest.RunAsync(() =>
         {
             var now = new DateTimeOffset(2026, 9, 14, 12, 0, 0, TimeSpan.Zero);
             var presentation = UsagePresentation.Create(
@@ -155,9 +153,8 @@ public sealed class UsagePopupFormTests
                     limitName: "Codex"),
                 now,
                 CultureInfo.InvariantCulture);
-            using var popup = new UsagePopupForm { Opacity = 0 };
+            using var popup = new UsagePopupForm(initialCompactView: false) { Opacity = 0 };
             popup.ShowPresentation(presentation);
-            popup.SetViewModeForScreenshot(compact: false);
             popup.Show();
             Application.DoEvents();
 
@@ -176,7 +173,7 @@ public sealed class UsagePopupFormTests
             Assert.True(popup.ClientSize.Height < 411);
             Assert.Equal(20, popup.ClientSize.Height - updatedLabel.Bottom);
 
-            popup.SetViewModeForScreenshot(compact: true);
+            popup.Controls.OfType<ViewModeIconButton>().Single().PerformClick();
 
             Assert.Equal(64, weeklyTitle.Top);
             Assert.True(popup.ClientSize.Height < 141);
@@ -184,39 +181,13 @@ public sealed class UsagePopupFormTests
         });
     }
 
-    private static void RunInStaThread(Action action)
-    {
-        Exception? failure = null;
-        var thread = new Thread(() =>
-        {
-            try
-            {
-                Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
-                action();
-            }
-            catch (Exception exception)
-            {
-                failure = exception;
-            }
-        });
-        thread.SetApartmentState(ApartmentState.STA);
-        thread.Start();
-        thread.Join();
-
-        if (failure is not null)
-        {
-            throw failure;
-        }
-    }
-
     private static UsagePopupForm ShowExtendedPopup()
     {
-        var popup = new UsagePopupForm
+        var popup = new UsagePopupForm(initialCompactView: false)
         {
             Location = new Point(-10_000, -10_000),
             Opacity = 0
         };
-        popup.SetViewModeForScreenshot(compact: false);
         popup.ShowPresentation(UsagePresentation.CreateLoading(previous: null));
         popup.Show();
         Application.DoEvents();
