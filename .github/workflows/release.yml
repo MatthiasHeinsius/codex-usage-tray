@@ -57,12 +57,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
-        run: >-
-          gh release create $env:GITHUB_REF_NAME
-          .\artifacts\win-x64\CodexUsageTray.exe
-          .\artifacts\win-x64\LICENSE.txt
-          .\artifacts\win-x64\SHA256SUMS.txt
-          .\artifacts\win-x64\THIRD-PARTY-NOTICES.txt
-          --generate-notes
-          --title "Codex Usage Tray $env:GITHUB_REF_NAME"
-          --verify-tag
+        run: |
+          $notes = ".\.github\release-notes\$($env:GITHUB_REF_NAME).md"
+          if (-not (Test-Path -LiteralPath $notes)) {
+            throw "Release notes not found: $notes"
+          }
+
+          gh release create $env:GITHUB_REF_NAME `
+            .\artifacts\win-x64\CodexUsageTray.exe `
+            .\artifacts\win-x64\LICENSE.txt `
+            .\artifacts\win-x64\SHA256SUMS.txt `
+            .\artifacts\win-x64\THIRD-PARTY-NOTICES.txt `
+            --notes-file $notes `
+            --title "Codex Usage Tray $env:GITHUB_REF_NAME" `
+            --verify-tag

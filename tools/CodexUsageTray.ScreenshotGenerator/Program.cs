@@ -6,6 +6,9 @@ namespace CodexUsageTrayDocs;
 
 internal static class Program
 {
+    private static readonly DateTimeOffset ScreenshotTime =
+        new(2026, 9, 14, 12, 2, 0, TimeSpan.FromHours(2));
+
     [STAThread]
     private static int Main(string[] args)
     {
@@ -24,7 +27,7 @@ internal static class Program
             : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "docs", "images"));
         Directory.CreateDirectory(outputDirectory);
 
-        var now = DateTimeOffset.Now;
+        var now = ScreenshotTime;
         var snapshot = CreateSnapshot(now);
         var presentation = CodexUsageTray.UsagePresentation.Create(
             snapshot,
@@ -46,6 +49,15 @@ internal static class Program
             Application.DoEvents();
             Save(popup, Path.Combine(outputDirectory, "compact.png"));
 
+            var weeklyOnlyPresentation = CodexUsageTray.UsagePresentation.Create(
+                CreateWeeklyOnlySnapshot(now),
+                now,
+                CultureInfo.CurrentCulture);
+            sink.Present(weeklyOnlyPresentation);
+            popup.SetViewModeForScreenshot(compact: false);
+            Application.DoEvents();
+            Save(popup, Path.Combine(outputDirectory, "weekly-only.png"));
+
             SaveTrayTooltip(presentation.Tray, Path.Combine(outputDirectory, "tray-tooltip.png"));
             SaveContextMenu(presentation.Tray, Path.Combine(outputDirectory, "context-menu.png"));
         }
@@ -66,6 +78,17 @@ internal static class Program
             lifetimeTokens: 128_440_800,
             todayTokens: 784_200,
             plan: "plus",
+            limitName: "Codex");
+
+    private static CodexUsageTray.UsageSnapshot CreateWeeklyOnlySnapshot(DateTimeOffset now)
+        => new(
+            now,
+            now,
+            fiveHour: null,
+            new CodexUsageTray.AllowanceWindow(58, TimeSpan.FromDays(7), now.AddDays(3).AddHours(8)),
+            lifetimeTokens: 128_440_800,
+            todayTokens: 784_200,
+            plan: "pro",
             limitName: "Codex");
 
     private static void SaveAppIcon(string path)

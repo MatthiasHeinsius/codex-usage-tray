@@ -25,6 +25,12 @@ The tray icon uses an outer ring for the 5-hour allowance and an inner ring for 
 
 ![Compact Codex usage popup](docs/images/compact.png)
 
+### Account with only a weekly allowance
+
+When the account does not report a 5-hour allowance, the popup omits that section and resizes to fit.
+
+![Codex usage popup with only a weekly allowance](docs/images/weekly-only.png)
+
 Pin either view to move it. Drag the popup by its background or text. It can cross the taskbar and snaps flush or with an eight-pixel gap to every screen edge and the top of the taskbar.
 
 ### Tray icon
