@@ -12,7 +12,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly System.Windows.Forms.Timer refreshTimer;
     private bool exiting;
 
-    public TrayApplicationContext(Func<IUsagePresentationSink, UsagePresentations> createPresentations)
+    public TrayApplicationContext(Func<IUsageApplicationInteraction, UsagePresentations> createPresentations)
     {
         ArgumentNullException.ThrowIfNull(createPresentations);
         var automaticUpdateEnabled = ApplicationUpdateSettings.IsAutomaticCheckEnabled();

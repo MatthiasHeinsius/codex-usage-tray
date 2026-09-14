@@ -1,7 +1,9 @@
+using System.Diagnostics;
+
 namespace CodexUsageTray;
 
 internal sealed class WinFormsApplicationShell :
-    IUsagePresentationSink,
+    IUsageApplicationInteraction,
     IApplicationUpdateInteraction,
     IDisposable
 {
@@ -14,6 +16,7 @@ internal sealed class WinFormsApplicationShell :
     private const string UpdateDialogTitle = "Codex usage update";
     private readonly Commands commands;
     private readonly Action<string> showSettingFailure;
+    private readonly Func<Uri, bool> confirmAndOpenSignIn;
     private readonly UsagePopupForm popup = new();
     private readonly NotifyIcon notifyIcon;
     private readonly ContextMenuStrip contextMenu;
@@ -32,11 +35,13 @@ internal sealed class WinFormsApplicationShell :
         bool startupEnabled,
         bool automaticUpdateEnabled,
         Commands commands,
-        Action<string>? showSettingFailure = null)
+        Action<string>? showSettingFailure = null,
+        Func<Uri, bool>? confirmAndOpenSignIn = null)
     {
         ArgumentNullException.ThrowIfNull(commands);
         this.commands = commands;
         this.showSettingFailure = showSettingFailure ?? ShowSettingFailure;
+        this.confirmAndOpenSignIn = confirmAndOpenSignIn ?? ConfirmAndOpenSignIn;
 
         popup.CreateControl();
         _ = popup.Handle;
@@ -154,6 +159,17 @@ internal sealed class WinFormsApplicationShell :
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question,
             MessageBoxDefaultButton.Button2) == DialogResult.Yes,
+            cancellationToken);
+    }
+
+    public ValueTask<bool> ConfirmAndOpenSignInAsync(
+        Uri signInPage,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(signInPage);
+        ThrowIfDisposed();
+        return InvokeOnUiThreadAsync(
+            () => confirmAndOpenSignIn(signInPage),
             cancellationToken);
     }
 
@@ -468,6 +484,28 @@ internal sealed class WinFormsApplicationShell :
         "Codex usage",
         MessageBoxButtons.OK,
         MessageBoxIcon.Error);
+
+    private static bool ConfirmAndOpenSignIn(Uri signInPage)
+    {
+        var confirmed = MessageBox.Show(
+            "Your Codex sign-in expired and could not be refreshed automatically.\n\n"
+                + "Codex Usage Tray can open ChatGPT in your browser so you can sign in again. Continue?",
+            "Reconnect Codex",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Question,
+            MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+        if (!confirmed)
+        {
+            return false;
+        }
+
+        _ = Process.Start(new ProcessStartInfo
+        {
+            FileName = signInPage.AbsoluteUri,
+            UseShellExecute = true
+        }) ?? throw new InvalidOperationException("The ChatGPT sign-in page could not be opened.");
+        return true;
+    }
 
     internal sealed record Commands(
         Func<UsageUpdateIntent, Task> RequestUsageUpdate,
