@@ -309,8 +309,8 @@ public sealed partial class UsageUpdatesTests
         foreach (var observation in observations)
         {
             presentation = observation.Account.Activity is AccountActivityObservation.NotRequested
-                ? await updates.RefreshAsync()
-                : await updates.RefreshWithActivityAsync();
+                ? await updates.RequestAsync(UsageUpdateIntent.Routine)
+                : await updates.RequestAsync(UsageUpdateIntent.Activity);
         }
 
         return presentation!;

@@ -5,7 +5,7 @@ namespace CodexUsageTray.Tests;
 public sealed partial class UsageUpdatesTests
 {
     [Fact]
-    public async Task RefreshPublishesSnapshotFromActivationRecoveryRefresh()
+    public async Task UpdatePublishesSnapshotFromActivationRecoveryObservation()
     {
         var now = new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero);
         var reset = now.AddHours(5);
@@ -21,7 +21,7 @@ public sealed partial class UsageUpdatesTests
             time,
             CultureInfo.InvariantCulture);
 
-        var presentation = await updates.RefreshAsync(TestContext.Current.CancellationToken);
+        var presentation = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
 
         Assert.Equal("0% left", presentation.Popup.FiveHour.RemainingText);
         var notice = Assert.Single(presentation.Notices);
@@ -31,7 +31,7 @@ public sealed partial class UsageUpdatesTests
     }
 
     [Fact]
-    public async Task ConcurrentRefreshesDoNotOverlap()
+    public async Task ConcurrentUpdatesDoNotOverlap()
     {
         var now = new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero);
         var reset = now.AddHours(5);
@@ -47,20 +47,20 @@ public sealed partial class UsageUpdatesTests
             time,
             CultureInfo.InvariantCulture);
 
-        var firstRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
+        var firstUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         await command.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        var secondRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
+        var secondUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         command.Completion.TrySetResult();
 
-        var first = await firstRefresh;
-        var second = await secondRefresh;
+        var first = await firstUpdate;
+        var second = await secondUpdate;
 
         Assert.Equal("100% left", first.Popup.FiveHour.RemainingText);
         Assert.Equal("90% left", second.Popup.FiveHour.RemainingText);
     }
 
     [Fact]
-    public async Task DisposalCancelsActiveAndQueuedRefreshes()
+    public async Task DisposalCancelsActiveAndQueuedUpdates()
     {
         var now = new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero);
         var observations = new BlockingUsageObservationReader();
@@ -72,18 +72,18 @@ public sealed partial class UsageUpdatesTests
             time,
             CultureInfo.InvariantCulture);
 
-        var activeRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
+        var activeUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         await observations.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        var queuedRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
+        var queuedUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         var disposal = updates.DisposeAsync().AsTask();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => activeRefresh);
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => queuedRefresh);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => activeUpdate);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => queuedUpdate);
         await disposal;
     }
 
     [Fact]
-    public async Task ActivityRefreshRequestsAllowanceWindowsAndActivity()
+    public async Task ActivityUpdateRequestsAllowanceWindowsAndActivity()
     {
         var now = new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero);
         var reset = now.AddHours(5);
@@ -107,7 +107,7 @@ public sealed partial class UsageUpdatesTests
             time,
             CultureInfo.InvariantCulture);
 
-        await updates.RefreshWithActivityAsync(TestContext.Current.CancellationToken);
+        await updates.RequestAsync(UsageUpdateIntent.Activity, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             [UsageObservationRequest.AllowanceWindowsAndActivity],
@@ -115,7 +115,25 @@ public sealed partial class UsageUpdatesTests
     }
 
     [Fact]
-    public async Task PreferencesArePersistedAndCapturedWhenRefreshIsRequested()
+    public async Task RoutineUpdateRequestsAllowanceWindows()
+    {
+        var now = new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero);
+        var observations = new QueueUsageObservationReader(
+            Observe(now, usedPercent: 25, now.AddHours(5)));
+        await using var updates = new UsageUpdates(
+            observations,
+            new FailingActivationCommand(),
+            new EnabledActivationSettings { ActivationEnabled = false },
+            new FixedTimeProvider(now),
+            CultureInfo.InvariantCulture);
+
+        await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+
+        Assert.Equal([UsageObservationRequest.AllowanceWindows], observations.Requests);
+    }
+
+    [Fact]
+    public async Task PreferencesArePersistedAndCapturedWhenUpdateIsRequested()
     {
         var now = new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero);
         var reset = now.AddHours(5);
@@ -133,15 +151,15 @@ public sealed partial class UsageUpdatesTests
             new FixedTimeProvider(now),
             CultureInfo.InvariantCulture);
 
-        var firstRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
+        var firstUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         await command.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        var queuedRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
+        var queuedUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         updates.NotificationsEnabled = true;
         command.Completion.TrySetResult();
 
-        await firstRefresh;
-        var queuedPresentation = await queuedRefresh;
-        var nextPresentation = await updates.RefreshAsync(TestContext.Current.CancellationToken);
+        await firstUpdate;
+        var queuedPresentation = await queuedUpdate;
+        var nextPresentation = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
 
         Assert.True(settings.NotificationsEnabled);
         Assert.Empty(queuedPresentation.Notices);
@@ -150,7 +168,7 @@ public sealed partial class UsageUpdatesTests
     }
 
     [Fact]
-    public async Task ActivationPreferenceIsCapturedWhenRefreshIsRequested()
+    public async Task ActivationPreferenceIsCapturedWhenUpdateIsRequested()
     {
         var now = new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero);
         var reset = now.AddHours(5);
@@ -167,17 +185,17 @@ public sealed partial class UsageUpdatesTests
             new FixedTimeProvider(now),
             CultureInfo.InvariantCulture);
 
-        var firstRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
+        var firstUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         await observations.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        var queuedRefresh = updates.RefreshAsync(TestContext.Current.CancellationToken);
+        var queuedUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         updates.ActivationEnabled = true;
         observations.CompleteFirst();
 
-        await firstRefresh;
-        await queuedRefresh;
+        await firstUpdate;
+        await queuedUpdate;
         Assert.Equal(0, command.CallCount);
 
-        await updates.RefreshAsync(TestContext.Current.CancellationToken);
+        await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         Assert.Equal(1, command.CallCount);
     }
 
@@ -221,6 +239,23 @@ public sealed partial class UsageUpdatesTests
 
         Assert.False(updates.NotificationsEnabled);
         Assert.False(settings.NotificationsEnabled);
+    }
+
+    [Fact]
+    public async Task UnknownIntentIsRejectedWithoutRequestingAnObservation()
+    {
+        var observations = new QueueUsageObservationReader();
+        await using var updates = new UsageUpdates(
+            observations,
+            new FailingActivationCommand(),
+            new EnabledActivationSettings(),
+            TimeProvider.System,
+            CultureInfo.InvariantCulture);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            updates.RequestAsync((UsageUpdateIntent)42, TestContext.Current.CancellationToken));
+
+        Assert.Empty(observations.Requests);
     }
 
     private static UsageObservations Observe(

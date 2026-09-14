@@ -3,7 +3,8 @@ using System.Diagnostics;
 namespace CodexUsageTray;
 
 internal sealed class WinFormsApplicationShell :
-    IUsageApplicationInteraction,
+    IUsagePresentationSink,
+    ICodexAuthenticationInteraction,
     IApplicationUpdateInteraction,
     IDisposable
 {

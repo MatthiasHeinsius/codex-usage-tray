@@ -23,15 +23,6 @@ internal sealed partial class UsageUpdates
     private UsageSnapshot? currentSnapshot;
     private RefreshWave? activeRefreshWave;
 
-    private Task<UsageSnapshot> RefreshSnapshotAsync(
-        bool includeActivity,
-        CancellationToken cancellationToken) =>
-        RequestSnapshotAsync(
-            includeActivity
-                ? UsageObservationRequest.AllowanceWindowsAndActivity
-                : UsageObservationRequest.AllowanceWindows,
-            cancellationToken);
-
     private Task<UsageSnapshot> RequestSnapshotAsync(
         UsageObservationRequest request,
         CancellationToken cancellationToken)

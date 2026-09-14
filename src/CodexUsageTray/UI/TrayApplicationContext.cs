@@ -12,9 +12,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly System.Windows.Forms.Timer refreshTimer;
     private bool exiting;
 
-    public TrayApplicationContext(Func<IUsageApplicationInteraction, UsagePresentations> createPresentations)
+    public TrayApplicationContext()
     {
-        ArgumentNullException.ThrowIfNull(createPresentations);
         var automaticUpdateEnabled = ApplicationUpdateSettings.IsAutomaticCheckEnabled();
         var createdShell = new WinFormsApplicationShell(
             StartupRegistration.IsEnabled(),
@@ -35,7 +34,9 @@ internal sealed class TrayApplicationContext : ApplicationContext
         System.Windows.Forms.Timer? createdTimer = null;
         try
         {
-            createdPresentations = createPresentations(createdShell);
+            createdPresentations = new UsagePresentations(
+                UsageUpdates.CreateDefault(createdShell),
+                createdShell);
             createdShell.InitializeUsagePreferences(
                 createdPresentations.ActivationEnabled,
                 createdPresentations.NotificationsEnabled);

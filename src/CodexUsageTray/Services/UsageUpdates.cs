@@ -2,12 +2,19 @@ using System.Globalization;
 
 namespace CodexUsageTray;
 
+internal enum UsageUpdateIntent
+{
+    Routine,
+    Activity
+}
+
 internal interface IUsageUpdates : IAsyncDisposable
 {
     bool ActivationEnabled { get; set; }
     bool NotificationsEnabled { get; set; }
-    Task<UsagePresentation.Ready> RefreshAsync(CancellationToken cancellationToken = default);
-    Task<UsagePresentation.Ready> RefreshWithActivityAsync(CancellationToken cancellationToken = default);
+    Task<UsagePresentation.Ready> RequestAsync(
+        UsageUpdateIntent intent,
+        CancellationToken cancellationToken = default);
 }
 
 internal sealed partial class UsageUpdates : IUsageUpdates
@@ -90,11 +97,21 @@ internal sealed partial class UsageUpdates : IUsageUpdates
         }
     }
 
-    public Task<UsagePresentation.Ready> RefreshAsync(CancellationToken cancellationToken = default) =>
-        RequestAsync(includeActivity: false, CapturePreferences(), cancellationToken);
-
-    public Task<UsagePresentation.Ready> RefreshWithActivityAsync(CancellationToken cancellationToken = default) =>
-        RequestAsync(includeActivity: true, CapturePreferences(), cancellationToken);
+    public Task<UsagePresentation.Ready> RequestAsync(
+        UsageUpdateIntent intent,
+        CancellationToken cancellationToken = default)
+    {
+        var observationRequest = intent switch
+        {
+            UsageUpdateIntent.Routine => UsageObservationRequest.AllowanceWindows,
+            UsageUpdateIntent.Activity => UsageObservationRequest.AllowanceWindowsAndActivity,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(intent),
+                intent,
+                "Unknown Usage Update intent.")
+        };
+        return ExecuteUpdateAsync(observationRequest, CapturePreferences(), cancellationToken);
+    }
 
     public async ValueTask DisposeAsync()
     {
@@ -130,8 +147,8 @@ internal sealed partial class UsageUpdates : IUsageUpdates
         }
     }
 
-    private async Task<UsagePresentation.Ready> RequestAsync(
-        bool includeActivity,
+    private async Task<UsagePresentation.Ready> ExecuteUpdateAsync(
+        UsageObservationRequest observationRequest,
         (bool ActivationEnabled, bool NotificationsEnabled) preferences,
         CancellationToken cancellationToken)
     {
@@ -143,7 +160,8 @@ internal sealed partial class UsageUpdates : IUsageUpdates
         try
         {
             cancellation.Token.ThrowIfCancellationRequested();
-            var snapshot = await RefreshSnapshotAsync(includeActivity, cancellation.Token).ConfigureAwait(false);
+            var snapshot = await RequestSnapshotAsync(observationRequest, cancellation.Token)
+                .ConfigureAwait(false);
             var (finalSnapshot, allowanceEvents) = await ObserveAllowanceWindowsAsync(
                     preferences.ActivationEnabled,
                     snapshot,
