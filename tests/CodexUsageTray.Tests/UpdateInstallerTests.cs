@@ -464,12 +464,14 @@ public sealed class UpdateInstallerTests
         var (stagedPath, targetPath) = CreateInstallerFiles(directory);
         File.Copy(Environment.ProcessPath!, stagedPath, overwrite: true);
         File.SetAttributes(targetPath, FileAttributes.ReadOnly);
+        string? helperHash = null;
+        Exception? helperLockFailure = null;
         var interaction = new RecordingInstallerInteraction(
             elevatedResult: (UpdateInstallerResult)elevatedExitCode,
             beforeElevation: startInfo =>
             {
-                Assert.Equal(HashFile(stagedPath), HashFile(startInfo.FileName));
-                Assert.Throws<IOException>(() =>
+                helperHash = HashFile(startInfo.FileName);
+                helperLockFailure = Record.Exception(() =>
                 {
                     using var exclusive = File.Open(startInfo.FileName, FileMode.Open, FileAccess.Read, FileShare.None);
                 });
@@ -498,6 +500,8 @@ public sealed class UpdateInstallerTests
             Assert.True(handled);
             Assert.Equal(elevatedExitCode, exitCode);
             Assert.Equal(expectedRestartAttempts, interaction.RestartAttempts);
+            Assert.Equal(HashFile(stagedPath), helperHash);
+            Assert.IsType<IOException>(helperLockFailure);
             var startInfo = Assert.IsType<ProcessStartInfo>(interaction.ElevatedStartInfo);
             Assert.True(startInfo.UseShellExecute);
             Assert.Equal("runas", startInfo.Verb);

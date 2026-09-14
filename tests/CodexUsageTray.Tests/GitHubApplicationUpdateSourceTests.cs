@@ -209,6 +209,7 @@ public sealed class GitHubApplicationUpdateSourceTests
         finally
         {
             cancellation.Cancel();
+            body.CancelPendingRead();
             try
             {
                 using var unused = await download;
@@ -222,12 +223,15 @@ public sealed class GitHubApplicationUpdateSourceTests
     private sealed class StalledDownloadStream : Stream
     {
         private bool sentPrefix;
+        private readonly TaskCompletionSource pendingRead = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Waiting { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public override bool CanRead => true;
         public override bool CanSeek => false;
         public override bool CanWrite => false;
         public override long Length => throw new NotSupportedException();
         public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public void CancelPendingRead() => pendingRead.TrySetCanceled();
 
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
         {
@@ -239,7 +243,7 @@ public sealed class GitHubApplicationUpdateSourceTests
             }
 
             Waiting.TrySetResult();
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            await pendingRead.Task.WaitAsync(cancellationToken);
             return 0;
         }
 
