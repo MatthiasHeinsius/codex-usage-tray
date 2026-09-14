@@ -12,6 +12,10 @@ jobs:
   build:
     runs-on: windows-latest
     timeout-minutes: 15
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
 
     steps:
       - name: Check out repository
@@ -43,6 +47,11 @@ jobs:
           $exe = Resolve-Path .\artifacts\win-x64\CodexUsageTray.exe
           $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  CodexUsageTray.exe" | Set-Content -LiteralPath .\artifacts\win-x64\SHA256SUMS.txt -Encoding ascii
+
+      - name: Attest release executable
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: artifacts/win-x64/CodexUsageTray.exe
 
       - name: Upload release artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
