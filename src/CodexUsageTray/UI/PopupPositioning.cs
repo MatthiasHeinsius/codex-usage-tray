@@ -2,8 +2,7 @@ namespace CodexUsageTray;
 
 internal static class PopupPositioning
 {
-    internal const int BorderInset = 8;
-    internal const int ContentInset = 20;
+    private const int BorderInset = 8;
     private const int SnapDistance = 12;
 
     internal static Point GetLocationWhenShown(
@@ -11,7 +10,8 @@ internal static class PopupPositioning
         bool pinned,
         Point cursorLocation,
         Size windowSize,
-        Rectangle workingArea)
+        Rectangle workingArea,
+        int contentInset)
     {
         if (pinned)
         {
@@ -19,14 +19,14 @@ internal static class PopupPositioning
         }
 
         var x = Math.Clamp(
-            cursorLocation.X - windowSize.Width + ContentInset,
+            cursorLocation.X - windowSize.Width + contentInset,
             workingArea.Left,
             workingArea.Right - windowSize.Width);
         var y = workingArea.Bottom - windowSize.Height - BorderInset;
         return new Point(x, y);
     }
 
-    internal static Point SnapToScreen(
+    internal static Point GetLocationWhenDragged(
         Point location,
         Size windowSize,
         Rectangle screenBounds,
@@ -48,6 +48,25 @@ internal static class PopupPositioning
             workingArea.Bottom);
 
         return new Point(x, y);
+    }
+
+    internal static Rectangle GetBoundsWhenResized(
+        Rectangle currentBounds,
+        Size targetSize,
+        Rectangle screenBounds,
+        Rectangle workingArea)
+    {
+        var targetY = currentBounds.Top == screenBounds.Top
+            || currentBounds.Top == screenBounds.Top + BorderInset
+            || currentBounds.Top == workingArea.Top
+            || currentBounds.Top == workingArea.Top + BorderInset
+                ? currentBounds.Top
+                : currentBounds.Bottom - targetSize.Height;
+        var location = KeepWithinBounds(
+            new Point(currentBounds.Left, targetY),
+            targetSize,
+            screenBounds);
+        return new Rectangle(location, targetSize);
     }
 
     private static int SnapCoordinate(
@@ -76,5 +95,14 @@ internal static class PopupPositioning
                 nearestOffset = offset;
             }
         }
+    }
+
+    private static Point KeepWithinBounds(Point location, Size windowSize, Rectangle bounds)
+    {
+        var maximumX = Math.Max(bounds.Left, bounds.Right - windowSize.Width);
+        var maximumY = Math.Max(bounds.Top, bounds.Bottom - windowSize.Height);
+        return new Point(
+            Math.Clamp(location.X, bounds.Left, maximumX),
+            Math.Clamp(location.Y, bounds.Top, maximumY));
     }
 }
