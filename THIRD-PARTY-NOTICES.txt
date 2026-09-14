@@ -155,10 +155,12 @@ GitHub Actions
     actions/checkout v6
     actions/setup-dotnet v5
     actions/upload-artifact v6
+    actions/download-artifact v7
   Projects:
     https://github.com/actions/checkout
     https://github.com/actions/setup-dotnet
     https://github.com/actions/upload-artifact
+    https://github.com/actions/download-artifact
   Copyright (c) 2018 GitHub, Inc. and contributors
   License: MIT
 

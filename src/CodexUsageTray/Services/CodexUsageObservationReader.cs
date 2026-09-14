@@ -59,22 +59,14 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
         this.authenticationRecovery = authenticationRecovery;
     }
 
-    public async Task<UsageObservations> ReadAsync(
+    public Task<UsageObservations> ReadAsync(
         UsageObservationRequest request,
         CancellationToken cancellationToken)
     {
         var includeActivity = request == UsageObservationRequest.AllowanceWindowsAndActivity;
-        try
-        {
-            return await authenticationRecovery.RunAsync(
-                    token => ReadUsageAsync(includeActivity, token),
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (CodexAuthenticationExpiredException exception)
-        {
-            throw new InvalidOperationException(CodexAuthenticationRecovery.FailureMessage, exception);
-        }
+        return authenticationRecovery.RunAsync(
+            token => ReadUsageAsync(includeActivity, token),
+            cancellationToken);
     }
 
     private async Task<UsageObservations> ReadUsageAsync(bool includeActivity, CancellationToken cancellationToken)
