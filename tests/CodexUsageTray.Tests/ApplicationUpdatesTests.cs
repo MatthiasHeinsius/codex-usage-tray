@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 namespace CodexUsageTray.Tests;
 
 public sealed class ApplicationUpdatesTests
@@ -72,7 +74,8 @@ public sealed class ApplicationUpdatesTests
         {
             AvailableUpdate = CreateAvailableUpdate(),
             Download = (_, _) => Task.FromResult(
-                new StagedApplicationUpdate(AvailableVersion, stagedPath))
+                new StagedApplicationUpdate(AvailableVersion, stagedPath,
+                    Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(stagedPath)))))
         };
         var installer = new RecordingInstaller();
         var interaction = new RecordingInteraction { Confirmation = true };
@@ -108,7 +111,8 @@ public sealed class ApplicationUpdatesTests
         {
             AvailableUpdate = CreateAvailableUpdate(),
             Download = (_, _) => Task.FromResult(
-                new StagedApplicationUpdate(AvailableVersion, stagedPath))
+                new StagedApplicationUpdate(AvailableVersion, stagedPath,
+                    Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(stagedPath)))))
         };
         var installer = new RecordingInstaller { OnLaunch = cancellation.Cancel };
         var interaction = new RecordingInteraction { Confirmation = true };
@@ -151,17 +155,22 @@ public sealed class ApplicationUpdatesTests
         Assert.IsType<ApplicationUpdatePresentation.Idle>(interaction.Presentations[^1]);
     }
 
-    [Fact]
-    public async Task FailureAfterConsentIsReported()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FailureAfterConsentIsReported(bool timeout)
     {
         var source = new ScriptedSource
         {
             AvailableUpdate = CreateAvailableUpdate(),
             Download = (_, _) =>
-                Task.FromException<StagedApplicationUpdate>(new InvalidDataException("download failed"))
+                Task.FromException<StagedApplicationUpdate>(timeout
+                    ? new TimeoutException("download failed")
+                    : new InvalidDataException("download failed"))
         };
         var interaction = new RecordingInteraction { Confirmation = true };
-        await using var updates = new ApplicationUpdates(source, new RecordingInstaller(), interaction);
+        var installer = new RecordingInstaller();
+        await using var updates = new ApplicationUpdates(source, installer, interaction);
 
         await updates.RequestAsync(
             ApplicationUpdateIntent.Automatic,
@@ -170,6 +179,7 @@ public sealed class ApplicationUpdatesTests
         var failure = Assert.Single(
             interaction.Presentations.OfType<ApplicationUpdatePresentation.Failed>());
         Assert.Equal("download failed", failure.Message);
+        Assert.Null(installer.Update);
         Assert.IsType<ApplicationUpdatePresentation.Idle>(interaction.Presentations[^1]);
     }
 
@@ -204,7 +214,8 @@ public sealed class ApplicationUpdatesTests
         {
             AvailableUpdate = CreateAvailableUpdate(),
             Download = (_, _) => Task.FromResult(
-                new StagedApplicationUpdate(AvailableVersion, stagedPath))
+                new StagedApplicationUpdate(AvailableVersion, stagedPath,
+                    Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(stagedPath)))))
         };
         var installer = new RecordingInstaller
         {
@@ -237,7 +248,8 @@ public sealed class ApplicationUpdatesTests
             Download = (_, _) =>
             {
                 cancellation.Cancel();
-                return Task.FromResult(new StagedApplicationUpdate(AvailableVersion, stagedPath));
+                return Task.FromResult(new StagedApplicationUpdate(AvailableVersion, stagedPath,
+                    Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(stagedPath)))));
             }
         };
         var interaction = new RecordingInteraction { Confirmation = true };

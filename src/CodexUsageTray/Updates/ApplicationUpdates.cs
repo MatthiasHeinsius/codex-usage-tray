@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+
 namespace CodexUsageTray;
 
 internal enum ApplicationUpdateIntent
@@ -291,16 +293,19 @@ internal sealed class StagedApplicationUpdate : IDisposable
 {
     private int ownershipTransferred;
 
-    internal StagedApplicationUpdate(Version version, string stagedPath)
+    internal StagedApplicationUpdate(Version version, string stagedPath, string expectedHash)
     {
         ArgumentNullException.ThrowIfNull(version);
         ArgumentException.ThrowIfNullOrWhiteSpace(stagedPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(expectedHash);
         Version = version;
         StagedPath = Path.GetFullPath(stagedPath);
+        ExpectedHash = expectedHash;
     }
 
     internal Version Version { get; }
     internal string StagedPath { get; }
+    internal string ExpectedHash { get; }
 
     internal void TransferOwnership() => Interlocked.Exchange(ref ownershipTransferred, 1);
 
@@ -315,6 +320,29 @@ internal sealed class StagedApplicationUpdate : IDisposable
 
 internal static class ApplicationUpdateFiles
 {
+    // Keep this handle open until the verified bytes have been copied or started.
+    // FileShare.Read denies both writes and replacement of the verified file.
+    internal static FileStream OpenVerifiedRead(string path, string expectedHash)
+    {
+        var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        try
+        {
+            var actualHash = Convert.ToHexStringLower(SHA256.HashData(stream));
+            if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException("The update executable failed its SHA-256 check.");
+            }
+
+            stream.Position = 0;
+            return stream;
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
+    }
+
     internal static void TryDelete(string path)
     {
         try

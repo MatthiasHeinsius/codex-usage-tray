@@ -31,7 +31,7 @@ internal static class UpdateInstaller
         IUpdateInstallerInteraction interaction)
     {
         ArgumentNullException.ThrowIfNull(interaction);
-        if (args is [ApplyArgument or ApplyElevatedArgument, var processIdText, var stagedPath, var targetPath]
+        if (args is [ApplyArgument or ApplyElevatedArgument, var processIdText, var stagedPath, var targetPath, var expectedHash]
             && int.TryParse(processIdText, NumberStyles.None, CultureInfo.InvariantCulture, out var processId))
         {
             var elevated = string.Equals(args[0], ApplyElevatedArgument, StringComparison.Ordinal);
@@ -39,6 +39,7 @@ internal static class UpdateInstaller
                 processId,
                 stagedPath,
                 targetPath,
+                expectedHash,
                 allowElevation: !elevated,
                 restartApplication: !elevated,
                 interaction);
@@ -71,7 +72,9 @@ internal static class UpdateInstaller
             $"CodexUsageTray-update-helper-{Guid.NewGuid():N}.exe");
         try
         {
-            File.Copy(update.StagedPath, helperPath, overwrite: false);
+            using var staged = ApplicationUpdateFiles.OpenVerifiedRead(update.StagedPath, update.ExpectedHash);
+            CopyFileContents(staged, helperPath);
+            using var helper = ApplicationUpdateFiles.OpenVerifiedRead(helperPath, update.ExpectedHash);
             var startInfo = new ProcessStartInfo
             {
                 FileName = helperPath,
@@ -82,6 +85,7 @@ internal static class UpdateInstaller
             startInfo.ArgumentList.Add(processId.ToString(CultureInfo.InvariantCulture));
             startInfo.ArgumentList.Add(Path.GetFullPath(update.StagedPath));
             startInfo.ArgumentList.Add(Path.GetFullPath(targetPath));
+            startInfo.ArgumentList.Add(update.ExpectedHash);
             interaction.StartInstaller(startInfo);
         }
         catch
@@ -95,6 +99,7 @@ internal static class UpdateInstaller
         int processId,
         string stagedPath,
         string targetPath,
+        string expectedHash,
         bool allowElevation,
         bool restartApplication,
         IUpdateInstallerInteraction interaction)
@@ -114,7 +119,7 @@ internal static class UpdateInstaller
             {
                 if (allowElevation)
                 {
-                    return ApplyWithElevation(processId, stagedPath, targetPath, interaction);
+                    return ApplyWithElevation(processId, stagedPath, targetPath, expectedHash, interaction);
                 }
 
                 throw new UnauthorizedAccessException(
@@ -123,10 +128,9 @@ internal static class UpdateInstaller
 
             try
             {
-                CopyFileContents(stagedPath, preparedPath);
-                if (!FilesMatch(stagedPath, preparedPath))
+                using (var staged = ApplicationUpdateFiles.OpenVerifiedRead(stagedPath, expectedHash))
                 {
-                    throw new InvalidDataException("The prepared executable does not match the downloaded update.");
+                    CopyFileContents(staged, preparedPath);
                 }
 
                 try
@@ -144,17 +148,15 @@ internal static class UpdateInstaller
             catch (UnauthorizedAccessException) when (allowElevation && !backupReady)
             {
                 TryDeleteFileWhenAvailable(preparedPath);
-                return ApplyWithElevation(processId, stagedPath, targetPath, interaction);
+                return ApplyWithElevation(processId, stagedPath, targetPath, expectedHash, interaction);
             }
 
-            if (!FilesMatch(stagedPath, targetPath))
+            using (var installed = ApplicationUpdateFiles.OpenVerifiedRead(targetPath, expectedHash))
             {
-                throw new InvalidDataException("The installed executable does not match the downloaded update.");
-            }
-
-            if (restartApplication)
-            {
-                interaction.StartApplication(targetPath);
+                if (restartApplication)
+                {
+                    interaction.StartApplication(targetPath);
+                }
             }
 
             ApplicationUpdateFiles.TryDelete(stagedPath);
@@ -230,6 +232,7 @@ internal static class UpdateInstaller
         int processId,
         string stagedPath,
         string targetPath,
+        string expectedHash,
         IUpdateInstallerInteraction interaction)
     {
         var helperPath = Environment.ProcessPath
@@ -238,11 +241,26 @@ internal static class UpdateInstaller
             helperPath,
             processId,
             stagedPath,
-            targetPath);
-        var exitCode = interaction.RunElevatedInstaller(startInfo);
+            targetPath,
+            expectedHash);
+        UpdateInstallerResult exitCode;
+        using (var helper = ApplicationUpdateFiles.OpenVerifiedRead(helperPath, expectedHash))
+        {
+            exitCode = interaction.RunElevatedInstaller(startInfo);
+        }
+
         if (exitCode == UpdateInstallerResult.Succeeded)
         {
-            interaction.StartApplication(targetPath);
+            try
+            {
+                using var installed = ApplicationUpdateFiles.OpenVerifiedRead(targetPath, expectedHash);
+                interaction.StartApplication(targetPath);
+            }
+            catch (Exception exception)
+            {
+                interaction.ShowFailure($"The updated application could not be started.\n\n{exception.Message}");
+                return UpdateInstallerResult.UnrecoverableFailure;
+            }
         }
         else if (exitCode == UpdateInstallerResult.RecoverableFailure)
         {
@@ -256,7 +274,8 @@ internal static class UpdateInstaller
         string helperPath,
         int processId,
         string stagedPath,
-        string targetPath)
+        string targetPath,
+        string expectedHash)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -270,6 +289,7 @@ internal static class UpdateInstaller
         startInfo.ArgumentList.Add(processId.ToString(CultureInfo.InvariantCulture));
         startInfo.ArgumentList.Add(Path.GetFullPath(stagedPath));
         startInfo.ArgumentList.Add(Path.GetFullPath(targetPath));
+        startInfo.ArgumentList.Add(expectedHash);
         return startInfo;
     }
 
@@ -289,15 +309,8 @@ internal static class UpdateInstaller
         }
     }
 
-    private static void CopyFileContents(string sourcePath, string targetPath)
+    private static void CopyFileContents(Stream source, string targetPath)
     {
-        using var source = new FileStream(
-            sourcePath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            bufferSize: 81_920,
-            FileOptions.SequentialScan);
         using var target = new FileStream(
             targetPath,
             FileMode.CreateNew,

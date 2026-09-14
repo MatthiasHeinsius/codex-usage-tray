@@ -34,6 +34,7 @@ public sealed class GitHubApplicationUpdateSourceTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(new Version(1, 3, 0), update.Version);
+        Assert.Equal(expectedHash, update.ExpectedHash);
         Assert.Equal(directory.RootPath, Path.GetDirectoryName(update.StagedPath));
         Assert.Equal(
             payload,
@@ -161,6 +162,96 @@ public sealed class GitHubApplicationUpdateSourceTests
             "SHA256SUMS.txt does not contain a hash for CodexUsageTray.exe.",
             exception.Message);
         Assert.Empty(Directory.EnumerateFiles(directory.RootPath));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StalledDownloadStopsAndDeletesPartialFile(bool cancelCaller)
+    {
+        using var directory = new TemporaryDirectory("stalled-update");
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        using var body = new StalledDownloadStream();
+        using var httpClient = CreateHttpClient(new Dictionary<string, HttpResponseMessage>
+        {
+            ["/downloads/SHA256SUMS.txt"] = TextResponse(new string('0', 64) + "  CodexUsageTray.exe"),
+            ["/downloads/CodexUsageTray.exe"] = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(body)
+            }
+        });
+        httpClient.Timeout = cancelCaller ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(1);
+        var source = new GitHubApplicationUpdateSource(httpClient, new Version(1, 0, 0), directory.RootPath);
+        var update = new AvailableApplicationUpdate(
+            new Version(2, 0, 0),
+            new Uri("https://example.test/downloads/CodexUsageTray.exe"),
+            new Uri("https://example.test/downloads/SHA256SUMS.txt"));
+        var download = source.DownloadAsync(update, cancellation.Token);
+        try
+        {
+            await body.Waiting.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            if (cancelCaller)
+            {
+                Assert.Single(Directory.EnumerateFiles(directory.RootPath));
+                cancellation.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                    () => download.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+            }
+            else
+            {
+                var failure = await Assert.ThrowsAsync<TimeoutException>(
+                    () => download.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+                Assert.Equal("The update download timed out. Try again.", failure.Message);
+            }
+
+            Assert.Empty(Directory.EnumerateFiles(directory.RootPath));
+        }
+        finally
+        {
+            cancellation.Cancel();
+            body.CancelPendingRead();
+            try
+            {
+                using var unused = await download;
+            }
+            catch (Exception exception) when (exception is OperationCanceledException or TimeoutException)
+            {
+            }
+        }
+    }
+
+    private sealed class StalledDownloadStream : Stream
+    {
+        private bool sentPrefix;
+        private readonly TaskCompletionSource pendingRead = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Waiting { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public void CancelPendingRead() => pendingRead.TrySetCanceled();
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (!sentPrefix)
+            {
+                sentPrefix = true;
+                buffer.Span[0] = 1;
+                return 1;
+            }
+
+            Waiting.TrySetResult();
+            await pendingRead.Task.WaitAsync(cancellationToken);
+            return 0;
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     private static HttpClient CreateHttpClient(Dictionary<string, HttpResponseMessage> responses) =>
