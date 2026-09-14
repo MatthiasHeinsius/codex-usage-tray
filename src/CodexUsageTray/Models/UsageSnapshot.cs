@@ -10,9 +10,7 @@ internal sealed record UsageSnapshot
         long? lifetimeTokens,
         long? todayTokens,
         string? plan,
-        string? limitName,
-        bool todayTokensAreLocal = false,
-        bool lifetimeIncludesLocalActivity = false)
+        string? limitName)
     {
         AllowanceObservedAt = allowanceObservedAt;
         ActivityObservedAt = activityObservedAt;
@@ -22,8 +20,6 @@ internal sealed record UsageSnapshot
         TodayTokens = todayTokens;
         Plan = plan;
         LimitName = limitName;
-        TodayTokensAreLocal = todayTokensAreLocal;
-        LifetimeIncludesLocalActivity = lifetimeIncludesLocalActivity;
     }
 
     public DateTimeOffset AllowanceObservedAt { get; }
@@ -34,9 +30,6 @@ internal sealed record UsageSnapshot
     public long? TodayTokens { get; }
     public string? Plan { get; }
     public string? LimitName { get; }
-    public bool TodayTokensAreLocal { get; }
-    public bool LifetimeIncludesLocalActivity { get; }
-
 }
 
 internal sealed record AllowanceWindow

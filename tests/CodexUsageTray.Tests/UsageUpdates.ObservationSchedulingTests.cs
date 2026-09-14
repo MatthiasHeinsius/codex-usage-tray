@@ -112,8 +112,10 @@ public sealed partial class UsageUpdatesTests
         Assert.Equal(2, observations.Requests.Length);
     }
 
-    [Fact]
-    public async Task FailedEscalatedObservationLetsNextUpdateStartFreshWave()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FailedEscalatedObservationLetsNextUpdateStartFreshWave(bool observationCanceled)
     {
         var observedAt = new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.FromHours(2));
         var observations = new ScriptedObservationReader();
@@ -131,10 +133,13 @@ public sealed partial class UsageUpdatesTests
         var failedActivity = updates.RequestAsync(UsageUpdateIntent.Activity, TestContext.Current.CancellationToken);
         routineRead.Succeed(CreateObservations(observedAt, usedPercent: 20));
         await activityRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        activityRead.Fail(new IOException("activity observation failed"));
+        Exception observationFailure = observationCanceled
+            ? new OperationCanceledException("activity observation failed")
+            : new IOException("activity observation failed");
+        activityRead.Fail(observationFailure);
 
-        var failure = await Assert.ThrowsAsync<UsageSnapshotRefreshException>(() => failedActivity);
-        Assert.Equal("activity observation failed", failure.Message);
+        var failure = await Assert.ThrowsAnyAsync<Exception>(() => failedActivity);
+        Assert.Same(observationFailure, failure);
 
         var nextUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         await nextRoutineRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);

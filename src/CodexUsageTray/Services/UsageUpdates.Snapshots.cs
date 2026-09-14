@@ -109,9 +109,6 @@ internal sealed partial class UsageUpdates
         UsageObservationRequest request,
         Exception exception)
     {
-        var failure = exception as UsageSnapshotRefreshException
-            ?? new UsageSnapshotRefreshException(exception.Message, exception);
-
         lock (snapshotSync)
         {
             if (Volatile.Read(ref disposed) == 0
@@ -132,7 +129,7 @@ internal sealed partial class UsageUpdates
             }
             else
             {
-                wave.Completion.TrySetException(failure);
+                wave.Completion.TrySetException(exception);
             }
 
             return false;
@@ -195,9 +192,7 @@ internal sealed partial class UsageUpdates
                 previous?.LifetimeTokens,
                 retainsToday ? previous?.TodayTokens : null,
                 account.Plan,
-                account.LimitName,
-                retainsToday && (previous?.TodayTokensAreLocal ?? false),
-                previous?.LifetimeIncludesLocalActivity ?? false);
+                account.LimitName);
         }
 
         var activity = (AccountActivityObservation.Observed)account.Activity;
@@ -205,7 +200,6 @@ internal sealed partial class UsageUpdates
         var useLocalToday = activity.TodayTokens is null && local?.Date == observedDate;
         var todayTokens = useLocalToday ? local!.TodayTokens : activity.TodayTokens;
         var lifetimeTokens = activity.LifetimeTokens;
-        var lifetimeIncludesLocalToday = false;
         if (useLocalToday
             && lifetimeTokens is { } accountLifetime
             && activity.LatestDailyBucketDate == observedDate.AddDays(-1))
@@ -213,7 +207,6 @@ internal sealed partial class UsageUpdates
             try
             {
                 lifetimeTokens = checked(accountLifetime + local!.TodayTokens);
-                lifetimeIncludesLocalToday = true;
             }
             catch (OverflowException)
             {
@@ -229,9 +222,7 @@ internal sealed partial class UsageUpdates
             lifetimeTokens,
             todayTokens,
             account.Plan,
-            account.LimitName,
-            useLocalToday,
-            lifetimeIncludesLocalToday);
+            account.LimitName);
     }
 
     private sealed class RefreshWave(
@@ -245,13 +236,5 @@ internal sealed partial class UsageUpdates
         public TaskCompletionSource<UsageSnapshot> Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task? Runner { get; set; }
-    }
-}
-
-internal sealed class UsageSnapshotRefreshException : Exception
-{
-    public UsageSnapshotRefreshException(string message, Exception innerException)
-        : base(message, innerException)
-    {
     }
 }
