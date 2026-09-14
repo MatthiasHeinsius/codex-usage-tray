@@ -12,7 +12,7 @@ Codex CLI is installed separately by the user and is not distributed with this
 application.
 
 The versions below reflect the repository and its resolved dependency graph on
-September 13, 2026. Maintainers should refresh this file when dependencies or
+September 15, 2026. Maintainers should refresh this file when dependencies or
 the .NET release toolchain change.
 
 
@@ -152,16 +152,19 @@ application. Its complete package notice appears below.
 
 GitHub Actions
   Components:
-    actions/checkout v6
-    actions/setup-dotnet v5
-    actions/upload-artifact v6
-    actions/download-artifact v7
+    actions/checkout v7.0.1
+    actions/setup-dotnet v6.0.0
+    actions/upload-artifact v7.0.1
+    actions/download-artifact v8.0.1
+    actions/attest v4
   Projects:
     https://github.com/actions/checkout
     https://github.com/actions/setup-dotnet
     https://github.com/actions/upload-artifact
     https://github.com/actions/download-artifact
+    https://github.com/actions/attest
   Copyright (c) 2018 GitHub, Inc. and contributors
+  Copyright GitHub (actions/attest)
   License: MIT
 
 
@@ -172,6 +175,7 @@ MIT LICENSE FOR GITHUB ACTIONS
 The MIT License (MIT)
 
 Copyright (c) 2018 GitHub, Inc. and contributors
+Copyright GitHub
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

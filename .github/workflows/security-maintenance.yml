@@ -1,0 +1,67 @@
+name: Security maintenance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "43 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    name: Runtime freshness
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check bundled runtime is current
+        shell: pwsh
+        run: ./.github/scripts/check-runtime.ps1
+
+  dependencies:
+    name: Submit resolved dependencies
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore solution and release runtime packs
+        shell: pwsh
+        run: |
+          dotnet restore ./CodexUsageTray.slnx
+          if ($LASTEXITCODE -ne 0) { throw 'Solution restore failed.' }
+          dotnet restore ./src/CodexUsageTray/CodexUsageTray.csproj -r win-x64 -p:SelfContained=true -p:PublishSingleFile=true
+          if ($LASTEXITCODE -ne 0) { throw 'Release runtime restore failed.' }
+
+      - name: Generate dependency snapshot
+        shell: pwsh
+        run: |
+          ./.github/scripts/dependency-snapshot.ps1 -OutputPath "$env:RUNNER_TEMP/dependencies.json"
+          ./.github/scripts/test-dependency-snapshot.ps1 -SnapshotPath "$env:RUNNER_TEMP/dependencies.json"
+
+      - name: Submit dependency snapshot
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST "repos/$env:GITHUB_REPOSITORY/dependency-graph/snapshots" --input "$env:RUNNER_TEMP/dependencies.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency submission failed.' }
