@@ -2,9 +2,6 @@ name: Process cancellation diagnostics
 
 on:
   workflow_dispatch:
-  # Temporary trigger for the initial investigation; remove before merging.
-  push:
-    branches: [t3code/investigate-build-workflow-failure]
 
 permissions:
   contents: read
