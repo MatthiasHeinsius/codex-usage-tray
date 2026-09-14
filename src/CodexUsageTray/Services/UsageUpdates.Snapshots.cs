@@ -19,144 +19,21 @@ internal sealed partial class UsageUpdates
     private static readonly TimeSpan MaximumFiveHourDuration = TimeSpan.FromHours(6);
     private static readonly TimeSpan MinimumWeeklyDuration = TimeSpan.FromMinutes(9_000);
     private static readonly TimeSpan MaximumWeeklyDuration = TimeSpan.FromMinutes(11_000);
-    private readonly object snapshotSync = new();
+    // The Usage Update gate owns snapshot reads and reconciliation.
     private UsageSnapshot? currentSnapshot;
-    private RefreshWave? activeRefreshWave;
 
-    private Task<UsageSnapshot> RequestSnapshotAsync(
+    private async Task<UsageSnapshot> RequestSnapshotAsync(
         UsageObservationRequest request,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-
-        Task<UsageSnapshot> shared;
-        lock (snapshotSync)
-        {
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
-
-            if (activeRefreshWave is null)
-            {
-                activeRefreshWave = new RefreshWave(request, currentSnapshot);
-                var wave = activeRefreshWave;
-                wave.Runner = Task.Run(() => RunRefreshWaveAsync(wave), CancellationToken.None);
-            }
-            else if (request == UsageObservationRequest.AllowanceWindowsAndActivity)
-            {
-                activeRefreshWave.ActivityRequested = true;
-            }
-
-            shared = activeRefreshWave.Completion.Task;
-        }
-
-        return cancellationToken.CanBeCanceled
-            ? shared.WaitAsync(cancellationToken)
-            : shared;
-    }
-
-    private async Task RunRefreshWaveAsync(RefreshWave wave)
-    {
-        var request = wave.InitialRequest;
-        var candidate = wave.Previous;
-
-        while (true)
-        {
-            try
-            {
-                var observed = await observations.ReadAsync(request, lifetime.Token).ConfigureAwait(false);
-                candidate = ReconcileSnapshot(candidate, observed.Account, observed.Local);
-            }
-            catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
-            {
-                CompleteCanceledRefresh(wave);
-                return;
-            }
-            catch (Exception exception)
-            {
-                if (ContinueWithActivityOrCompleteFailedRefresh(wave, request, exception))
-                {
-                    request = UsageObservationRequest.AllowanceWindowsAndActivity;
-                    continue;
-                }
-
-                return;
-            }
-
-            lock (snapshotSync)
-            {
-                if (Volatile.Read(ref disposed) != 0)
-                {
-                    activeRefreshWave = null;
-                    wave.Completion.TrySetCanceled(new CancellationToken(canceled: true));
-                    return;
-                }
-
-                if (request == UsageObservationRequest.AllowanceWindows && wave.ActivityRequested)
-                {
-                    request = UsageObservationRequest.AllowanceWindowsAndActivity;
-                    continue;
-                }
-
-                currentSnapshot = candidate;
-                activeRefreshWave = null;
-                wave.Completion.TrySetResult(candidate);
-                return;
-            }
-        }
-    }
-
-    private bool ContinueWithActivityOrCompleteFailedRefresh(
-        RefreshWave wave,
-        UsageObservationRequest request,
-        Exception exception)
-    {
-        lock (snapshotSync)
-        {
-            if (Volatile.Read(ref disposed) == 0
-                && request == UsageObservationRequest.AllowanceWindows
-                && wave.ActivityRequested)
-            {
-                return true;
-            }
-
-            if (ReferenceEquals(activeRefreshWave, wave))
-            {
-                activeRefreshWave = null;
-            }
-
-            if (Volatile.Read(ref disposed) != 0)
-            {
-                wave.Completion.TrySetCanceled(new CancellationToken(canceled: true));
-            }
-            else
-            {
-                wave.Completion.TrySetException(exception);
-            }
-
-            return false;
-        }
-    }
-
-    private void CompleteCanceledRefresh(RefreshWave wave)
-    {
-        lock (snapshotSync)
-        {
-            if (ReferenceEquals(activeRefreshWave, wave))
-            {
-                activeRefreshWave = null;
-            }
-
-            wave.Completion.TrySetCanceled(lifetime.Token);
-        }
-    }
-
-    private Task? CancelActiveRefresh()
-    {
-        lock (snapshotSync)
-        {
-            var wave = activeRefreshWave;
-            wave?.Completion.TrySetCanceled(new CancellationToken(canceled: true));
-            return wave?.Runner;
-        }
+        // Process startup and local history reads must not block the UI thread.
+        var observed = await Task.Run(
+            () => observations.ReadAsync(request, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        currentSnapshot = ReconcileSnapshot(currentSnapshot, observed.Account, observed.Local);
+        return currentSnapshot;
     }
 
     private static UsageSnapshot ReconcileSnapshot(
@@ -223,18 +100,5 @@ internal sealed partial class UsageUpdates
             todayTokens,
             account.Plan,
             account.LimitName);
-    }
-
-    private sealed class RefreshWave(
-        UsageObservationRequest initialRequest,
-        UsageSnapshot? previous)
-    {
-        public UsageObservationRequest InitialRequest { get; } = initialRequest;
-        public UsageSnapshot? Previous { get; } = previous;
-        public bool ActivityRequested { get; set; } =
-            initialRequest == UsageObservationRequest.AllowanceWindowsAndActivity;
-        public TaskCompletionSource<UsageSnapshot> Completion { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public Task? Runner { get; set; }
     }
 }

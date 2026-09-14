@@ -12,6 +12,9 @@ internal interface IUsageUpdates : IAsyncDisposable
 {
     bool ActivationEnabled { get; set; }
     bool NotificationsEnabled { get; set; }
+
+    // Cancellation stops this request's observation; later requests start fresh.
+    // Active requests retain the gate until their adapter cleanup finishes.
     Task<UsagePresentation.Ready> RequestAsync(
         UsageUpdateIntent intent,
         CancellationToken cancellationToken = default);
@@ -121,19 +124,6 @@ internal sealed partial class UsageUpdates : IUsageUpdates
         }
 
         lifetime.Cancel();
-        var runningRefresh = CancelActiveRefresh();
-        if (runningRefresh is not null)
-        {
-            try
-            {
-                await runningRefresh.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                // Disposal owns cancellation of the shared observation read.
-            }
-        }
-
         await updateGate.WaitAsync().ConfigureAwait(false);
         updateGate.Dispose();
         lifetime.Dispose();
@@ -167,6 +157,7 @@ internal sealed partial class UsageUpdates : IUsageUpdates
                     snapshot,
                     cancellation.Token)
                 .ConfigureAwait(false);
+            cancellation.Token.ThrowIfCancellationRequested();
             return UsagePresentation.Create(
                 finalSnapshot,
                 allowanceEvents,
