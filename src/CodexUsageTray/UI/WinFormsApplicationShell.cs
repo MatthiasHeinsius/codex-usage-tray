@@ -18,7 +18,7 @@ internal sealed class WinFormsApplicationShell :
     private readonly Commands commands;
     private readonly Action<string> showSettingFailure;
     private readonly Func<Uri, bool> confirmAndOpenSignIn;
-    private readonly UsagePopupForm popup = new();
+    private readonly UsagePopupForm popup;
     private readonly NotifyIcon notifyIcon;
     private readonly ContextMenuStrip contextMenu;
     private readonly ToolStripMenuItem startupItem;
@@ -37,12 +37,15 @@ internal sealed class WinFormsApplicationShell :
         bool automaticUpdateEnabled,
         Commands commands,
         Action<string>? showSettingFailure = null,
-        Func<Uri, bool>? confirmAndOpenSignIn = null)
+        Func<Uri, bool>? confirmAndOpenSignIn = null,
+        UsagePopupForm? popupForm = null)
     {
         ArgumentNullException.ThrowIfNull(commands);
         this.commands = commands;
         this.showSettingFailure = showSettingFailure ?? ShowSettingFailure;
         this.confirmAndOpenSignIn = confirmAndOpenSignIn ?? ConfirmAndOpenSignIn;
+        // The shell owns and disposes its popup.
+        popup = popupForm ?? new UsagePopupForm();
 
         popup.CreateControl();
         _ = popup.Handle;
