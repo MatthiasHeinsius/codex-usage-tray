@@ -1,0 +1,65 @@
+name: Security maintenance
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "43 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    name: Runtime freshness
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Check bundled runtime is current
+        shell: pwsh
+        run: ./.github/scripts/check-runtime.ps1
+
+  dependencies:
+    name: Submit resolved dependencies
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+
+      - name: Restore solution and release runtime packs
+        shell: pwsh
+        run: |
+          dotnet restore ./CodexUsageTray.slnx
+          if ($LASTEXITCODE -ne 0) { throw 'Solution restore failed.' }
+          dotnet restore ./src/CodexUsageTray/CodexUsageTray.csproj -r win-x64 -p:SelfContained=true
+          if ($LASTEXITCODE -ne 0) { throw 'Release runtime restore failed.' }
+
+      - name: Generate dependency snapshot
+        shell: pwsh
+        run: ./.github/scripts/dependency-snapshot.ps1 -OutputPath "$env:RUNNER_TEMP/dependencies.json"
+
+      - name: Submit dependency snapshot
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST "repos/$env:GITHUB_REPOSITORY/dependency-graph/snapshots" --input "$env:RUNNER_TEMP/dependencies.json"
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency submission failed.' }

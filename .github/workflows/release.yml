@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: windows-latest
@@ -20,6 +24,17 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require a release commit from main
+        shell: pwsh
+        run: |
+          git merge-base --is-ancestor "$env:GITHUB_SHA" refs/remotes/origin/main
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Release tags must point to commits already merged into main.'
+          }
 
       - name: Install .NET 10 SDK
         uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
@@ -36,6 +51,10 @@ jobs:
 
       - name: Validate solution
         uses: ./.github/actions/validate
+
+      - name: Check bundled runtime is current
+        shell: pwsh
+        run: ./.github/scripts/check-runtime.ps1
 
       - name: Publish and test portable executable
         shell: pwsh
@@ -59,6 +78,7 @@ jobs:
           name: release-win-x64
           path: .\artifacts\win-x64
           if-no-files-found: error
+          retention-days: 1
 
   release:
     needs: build
