@@ -2,8 +2,7 @@ namespace CodexUsageTray;
 
 internal sealed class UsagePopupForm : Form
 {
-    private const int BorderInset = PopupPositioning.BorderInset;
-    private const int ContentInset = PopupPositioning.ContentInset;
+    private const int ContentInset = 20;
     private const int PopupWidth = 428;
     private const int ContentWidth = PopupWidth - (2 * ContentInset);
     private readonly Label title;
@@ -230,8 +229,7 @@ internal sealed class UsagePopupForm : Form
     private void ApplyViewMode(bool compact, bool preserveBottom)
     {
         var previousBounds = Bounds;
-        var previousBottom = Bottom;
-        var targetHeight = compact ? 141 : 411;
+        int targetHeight;
         var fiveHourVisible = displayedPresentation?.FiveHour.IsVisible ?? true;
         var weeklyVisible = displayedPresentation?.Weekly.IsVisible ?? true;
         var visibleAllowanceCount = (fiveHourVisible ? 1 : 0) + (weeklyVisible ? 1 : 0);
@@ -247,8 +245,6 @@ internal sealed class UsagePopupForm : Form
         lifetimeTokens.Visible = !compact;
         inferenceDivider.Visible = !compact;
         updatedLabel.Visible = !compact;
-        refreshButton.Visible = true;
-
         if (compact)
         {
             var row = 0;
@@ -322,21 +318,16 @@ internal sealed class UsagePopupForm : Form
         if (preserveBottom && Visible)
         {
             var screen = Screen.FromRectangle(previousBounds);
-            var targetY = previousBounds.Top == screen.Bounds.Top
-                || previousBounds.Top == screen.Bounds.Top + BorderInset
-                || previousBounds.Top == screen.WorkingArea.Top
-                || previousBounds.Top == screen.WorkingArea.Top + BorderInset
-                ? previousBounds.Top
-                : previousBottom - targetHeight;
-            var targetLocation = KeepWithinBounds(
-                new Point(Left, targetY),
+            var targetBounds = PopupPositioning.GetBoundsWhenResized(
+                previousBounds,
                 new Size(PopupWidth, targetHeight),
-                screen.Bounds);
+                screen.Bounds,
+                screen.WorkingArea);
             SetBounds(
-                targetLocation.X,
-                targetLocation.Y,
-                PopupWidth,
-                targetHeight,
+                targetBounds.X,
+                targetBounds.Y,
+                targetBounds.Width,
+                targetBounds.Height,
                 BoundsSpecified.All);
         }
         else
@@ -369,7 +360,8 @@ internal sealed class UsagePopupForm : Form
             pinButton.IsPinned,
             cursorLocation,
             Size,
-            workingArea);
+            workingArea,
+            ContentInset);
     }
 
     protected override void OnPaint(PaintEventArgs eventArgs)
@@ -544,7 +536,11 @@ internal sealed class UsagePopupForm : Form
             dragStartLocation.Y + cursor.Y - dragStartCursor.Y);
         var proposedBounds = new Rectangle(proposedLocation, Size);
         var screen = Screen.FromRectangle(proposedBounds);
-        Location = PopupPositioning.SnapToScreen(proposedLocation, Size, screen.Bounds, screen.WorkingArea);
+        Location = PopupPositioning.GetLocationWhenDragged(
+            proposedLocation,
+            Size,
+            screen.Bounds,
+            screen.WorkingArea);
     }
 
     private void DragControlOnMouseUp(object? sender, MouseEventArgs eventArgs)
@@ -571,15 +567,6 @@ internal sealed class UsagePopupForm : Form
         {
             capturedControl.Capture = false;
         }
-    }
-
-    private static Point KeepWithinBounds(Point location, Size windowSize, Rectangle bounds)
-    {
-        var maximumX = Math.Max(bounds.Left, bounds.Right - windowSize.Width);
-        var maximumY = Math.Max(bounds.Top, bounds.Bottom - windowSize.Height);
-        return new Point(
-            Math.Clamp(location.X, bounds.Left, maximumX),
-            Math.Clamp(location.Y, bounds.Top, maximumY));
     }
 
 }
