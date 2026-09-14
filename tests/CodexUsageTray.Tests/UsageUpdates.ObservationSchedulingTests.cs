@@ -5,50 +5,50 @@ namespace CodexUsageTray.Tests;
 public sealed partial class UsageUpdatesTests
 {
     [Fact]
-    public async Task CallerCancellationDoesNotCancelActiveObservation()
+    public async Task CallerCancellationCancelsObservationAndNextUpdateStartsFresh()
     {
         var observedAt = new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.FromHours(2));
-        var observations = new SharedObservationReader();
-        using var callerCancellation = new CancellationTokenSource();
+        var observations = new ScriptedObservationReader();
+        var canceledRead = observations.Enqueue(UsageObservationRequest.AllowanceWindows);
+        var nextRead = observations.Enqueue(UsageObservationRequest.AllowanceWindows);
+        using var cancellation = new CancellationTokenSource();
         await using var updates = CreateUsageUpdates(observations);
 
-        var canceledUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, callerCancellation.Token);
-        await observations.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        callerCancellation.Cancel();
+        var canceledUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, cancellation.Token);
+        await canceledRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledUpdate);
+        Assert.True(canceledRead.AdapterCancellation.IsCancellationRequested);
 
-        var survivingUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
-        observations.Completion.TrySetResult(CreateObservations(observedAt, usedPercent: 20));
-        var presentation = await survivingUpdate;
+        var nextUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+        await nextRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        nextRead.Succeed(CreateObservations(observedAt, usedPercent: 20));
 
-        Assert.Equal("80% left", presentation.Popup.FiveHour.RemainingText);
-        Assert.Equal(1, observations.CallCount);
-        Assert.False(observations.AdapterCancellation.IsCancellationRequested);
+        Assert.Equal("80% left", (await nextUpdate).Popup.FiveHour.RemainingText);
+        Assert.Equal(2, observations.Requests.Length);
+        Assert.Equal(1, observations.MaximumConcurrentReads);
     }
 
     [Fact]
-    public async Task ActivityUpdateEscalatesActiveRoutineObservationOnce()
+    public async Task QueuedActivityUpdateWaitsForRoutineUpdateThenReadsActivity()
     {
         var observedAt = new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.FromHours(2));
         var observations = new ScriptedObservationReader();
         var routineRead = observations.Enqueue(UsageObservationRequest.AllowanceWindows);
         var activityRead = observations.Enqueue(UsageObservationRequest.AllowanceWindowsAndActivity);
-        using var routineCancellation = new CancellationTokenSource();
         await using var updates = CreateUsageUpdates(observations);
 
-        var canceledRoutine = updates.RequestAsync(UsageUpdateIntent.Routine, routineCancellation.Token);
+        var routineUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         await routineRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        routineCancellation.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledRoutine);
-
         var activityUpdate = updates.RequestAsync(UsageUpdateIntent.Activity, TestContext.Current.CancellationToken);
+        Assert.False(activityRead.Started.Task.IsCompleted);
+
         routineRead.Succeed(CreateObservations(observedAt, usedPercent: 20));
+        Assert.Equal("80% left", (await routineUpdate).Popup.FiveHour.RemainingText);
         await activityRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         activityRead.Succeed(CreateObservations(observedAt.AddSeconds(1), usedPercent: 21, includeActivity: true));
 
-        var presentation = await activityUpdate;
-
-        Assert.Equal("1.2K tokens", presentation.Popup.TodayTokens);
+        Assert.Equal("1.2K tokens", (await activityUpdate).Popup.TodayTokens);
         Assert.Equal(
             [UsageObservationRequest.AllowanceWindows, UsageObservationRequest.AllowanceWindowsAndActivity],
             observations.Requests);
@@ -56,169 +56,150 @@ public sealed partial class UsageUpdatesTests
     }
 
     [Fact]
-    public async Task ActivityObservationStillRunsWhenRoutineObservationFails()
+    public async Task QueuedActivityUpdateStillRunsWhenRoutineObservationFails()
     {
         var observedAt = new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.FromHours(2));
         var observations = new ScriptedObservationReader();
         var routineRead = observations.Enqueue(UsageObservationRequest.AllowanceWindows);
         var activityRead = observations.Enqueue(UsageObservationRequest.AllowanceWindowsAndActivity);
-        using var routineCancellation = new CancellationTokenSource();
         await using var updates = CreateUsageUpdates(observations);
 
-        var canceledRoutine = updates.RequestAsync(UsageUpdateIntent.Routine, routineCancellation.Token);
+        var routineUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         await routineRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        routineCancellation.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledRoutine);
-
         var activityUpdate = updates.RequestAsync(UsageUpdateIntent.Activity, TestContext.Current.CancellationToken);
         routineRead.Fail(new IOException("routine observation failed"));
+        await Assert.ThrowsAsync<IOException>(() => routineUpdate);
         await activityRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         activityRead.Succeed(CreateObservations(observedAt, usedPercent: 21, includeActivity: true));
 
-        var presentation = await activityUpdate;
-
-        Assert.Equal("1.2K tokens", presentation.Popup.TodayTokens);
+        Assert.Equal("1.2K tokens", (await activityUpdate).Popup.TodayTokens);
         Assert.Equal(2, observations.Requests.Length);
     }
 
     [Fact]
-    public async Task CanceledActivityUpdateDoesNotRetractEscalation()
+    public async Task CanceledQueuedActivityUpdateDoesNotRequestActivity()
     {
         var observedAt = new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.FromHours(2));
         var observations = new ScriptedObservationReader();
         var routineRead = observations.Enqueue(UsageObservationRequest.AllowanceWindows);
-        var activityRead = observations.Enqueue(UsageObservationRequest.AllowanceWindowsAndActivity);
-        using var routineCancellation = new CancellationTokenSource();
-        using var activityCancellation = new CancellationTokenSource();
+        var nextRead = observations.Enqueue(UsageObservationRequest.AllowanceWindows);
+        using var cancellation = new CancellationTokenSource();
         await using var updates = CreateUsageUpdates(observations);
 
-        var canceledRoutine = updates.RequestAsync(UsageUpdateIntent.Routine, routineCancellation.Token);
+        var routineUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         await routineRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        routineCancellation.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledRoutine);
-
-        var canceledActivity = updates.RequestAsync(UsageUpdateIntent.Activity, activityCancellation.Token);
-        activityCancellation.Cancel();
+        var canceledActivity = updates.RequestAsync(UsageUpdateIntent.Activity, cancellation.Token);
+        cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledActivity);
-        var survivingUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
-
+        Assert.False(routineRead.AdapterCancellation.IsCancellationRequested);
         routineRead.Succeed(CreateObservations(observedAt, usedPercent: 20));
-        await activityRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        activityRead.Succeed(CreateObservations(observedAt.AddSeconds(1), usedPercent: 21, includeActivity: true));
+        await routineUpdate;
 
-        var presentation = await survivingUpdate;
-
-        Assert.Equal("1.2K tokens", presentation.Popup.TodayTokens);
-        Assert.Equal(2, observations.Requests.Length);
+        var nextUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+        await nextRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        nextRead.Succeed(CreateObservations(observedAt.AddMinutes(1), usedPercent: 30));
+        Assert.Equal("70% left", (await nextUpdate).Popup.FiveHour.RemainingText);
+        Assert.Equal(
+            [UsageObservationRequest.AllowanceWindows, UsageObservationRequest.AllowanceWindows],
+            observations.Requests);
     }
 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task FailedEscalatedObservationLetsNextUpdateStartFreshWave(bool observationCanceled)
+    public async Task FailedObservationLetsNextUpdateStartFresh(bool observationCanceled)
     {
         var observedAt = new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.FromHours(2));
         var observations = new ScriptedObservationReader();
-        var routineRead = observations.Enqueue(UsageObservationRequest.AllowanceWindows);
-        var activityRead = observations.Enqueue(UsageObservationRequest.AllowanceWindowsAndActivity);
-        var nextRoutineRead = observations.Enqueue(UsageObservationRequest.AllowanceWindows);
-        using var routineCancellation = new CancellationTokenSource();
+        var failedRead = observations.Enqueue(UsageObservationRequest.AllowanceWindowsAndActivity);
+        var nextRead = observations.Enqueue(UsageObservationRequest.AllowanceWindows);
         await using var updates = CreateUsageUpdates(observations);
 
-        var canceledRoutine = updates.RequestAsync(UsageUpdateIntent.Routine, routineCancellation.Token);
-        await routineRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        routineCancellation.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledRoutine);
-
-        var failedActivity = updates.RequestAsync(UsageUpdateIntent.Activity, TestContext.Current.CancellationToken);
-        routineRead.Succeed(CreateObservations(observedAt, usedPercent: 20));
-        await activityRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var failedUpdate = updates.RequestAsync(UsageUpdateIntent.Activity, TestContext.Current.CancellationToken);
+        await failedRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         Exception observationFailure = observationCanceled
             ? new OperationCanceledException("activity observation failed")
             : new IOException("activity observation failed");
-        activityRead.Fail(observationFailure);
-
-        var failure = await Assert.ThrowsAnyAsync<Exception>(() => failedActivity);
-        Assert.Same(observationFailure, failure);
+        failedRead.Fail(observationFailure);
+        Assert.Same(observationFailure, await Assert.ThrowsAnyAsync<Exception>(() => failedUpdate));
 
         var nextUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
-        await nextRoutineRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        nextRoutineRead.Succeed(CreateObservations(observedAt.AddMinutes(1), usedPercent: 30));
-
-        var presentation = await nextUpdate;
-        Assert.Equal("70% left", presentation.Popup.FiveHour.RemainingText);
+        await nextRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        nextRead.Succeed(CreateObservations(observedAt, usedPercent: 30));
+        Assert.Equal("70% left", (await nextUpdate).Popup.FiveHour.RemainingText);
     }
 
-    [Fact]
-    public async Task DisposalCancelsCallersBeforeAdapterCleanupCompletes()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CancellationWaitsForObservationCleanupAndDiscardsItsResult(bool dispose)
     {
         var observedAt = new DateTimeOffset(2026, 9, 9, 12, 0, 0, TimeSpan.FromHours(2));
-        var observations = new CancellationIgnoringObservationReader();
-        var updates = CreateUsageUpdates(observations);
+        var observations = new ScriptedObservationReader();
+        var activeRead = observations.Enqueue(UsageObservationRequest.AllowanceWindowsAndActivity, ignoreCancellation: true);
+        var nextRead = observations.Enqueue(UsageObservationRequest.AllowanceWindows);
+        using var cancellation = new CancellationTokenSource();
+        await using var updates = CreateUsageUpdates(observations);
 
-        var update = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
-        await observations.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-        var disposal = updates.DisposeAsync().AsTask();
+        var activeUpdate = updates.RequestAsync(UsageUpdateIntent.Activity, cancellation.Token);
+        try
+        {
+            await activeRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            var nextUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+            var disposal = dispose ? updates.DisposeAsync().AsTask() : null;
+            if (!dispose)
+            {
+                cancellation.Cancel();
+            }
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => update.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
-        Assert.True(observations.AdapterCancellation.IsCancellationRequested);
-        Assert.False(disposal.IsCompleted);
+            Assert.True(activeRead.AdapterCancellation.IsCancellationRequested);
+            Assert.False(activeUpdate.IsCompleted);
+            Assert.False(nextRead.Started.Task.IsCompleted);
+            if (disposal is not null)
+            {
+                Assert.False(disposal.IsCompleted);
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => nextUpdate);
+            }
 
-        observations.Completion.TrySetResult(CreateObservations(observedAt, usedPercent: 20));
-        await disposal;
-
-        await Assert.ThrowsAsync<ObjectDisposedException>(() => updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken));
+            activeRead.Succeed(CreateObservations(observedAt, usedPercent: 20, includeActivity: true));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => activeUpdate);
+            if (disposal is not null)
+            {
+                await disposal;
+                await Assert.ThrowsAsync<ObjectDisposedException>(() =>
+                    updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken));
+            }
+            else
+            {
+                await nextRead.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+                nextRead.Succeed(CreateObservations(observedAt.AddMinutes(1), usedPercent: 30));
+                var presentation = await nextUpdate;
+                Assert.Equal("70% left", presentation.Popup.FiveHour.RemainingText);
+                Assert.Equal("Unavailable", presentation.Popup.TodayTokens);
+                Assert.Equal(1, observations.MaximumConcurrentReads);
+            }
+        }
+        finally
+        {
+            // Release the cancellation-ignoring fixture even if an assertion fails.
+            activeRead.Succeed(CreateObservations(observedAt, usedPercent: 20));
+            nextRead.Succeed(CreateObservations(observedAt, usedPercent: 30));
+        }
     }
 
     private static UsageUpdates CreateUsageUpdates(IUsageObservationReader observations) =>
-        new(
-            observations,
-            new NoOpActivationCommand(),
-            new DisabledActivationSettings(),
-            TimeProvider.System,
-            CultureInfo.InvariantCulture);
+        new(observations, new NoOpActivationCommand(), new DisabledActivationSettings(),
+            TimeProvider.System, CultureInfo.InvariantCulture);
 
-    private static UsageObservations CreateObservations(
-        DateTimeOffset observedAt,
-        int usedPercent,
-        bool includeActivity = false)
+    private static UsageObservations CreateObservations(DateTimeOffset observedAt, int usedPercent, bool includeActivity = false)
     {
         var activity = includeActivity
-            ? (AccountActivityObservation)new AccountActivityObservation.Observed(
-                LifetimeTokens: 5678,
-                TodayTokens: 1234,
-                LatestDailyBucketDate: DateOnly.FromDateTime(observedAt.LocalDateTime))
+            ? (AccountActivityObservation)new AccountActivityObservation.Observed(5678, 1234, DateOnly.FromDateTime(observedAt.LocalDateTime))
             : new AccountActivityObservation.NotRequested();
         return new UsageObservations(
-            new AccountUsageObservation(
-                observedAt,
+            new AccountUsageObservation(observedAt,
                 [new AllowanceWindow(usedPercent, TimeSpan.FromHours(5), observedAt.AddHours(1))],
-                "plus",
-                "Codex",
-                activity),
-            Local: null);
-    }
-
-    private sealed class SharedObservationReader : IUsageObservationReader
-    {
-        public TaskCompletionSource Started { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource<UsageObservations> Completion { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public int CallCount { get; private set; }
-        public CancellationToken AdapterCancellation { get; private set; }
-
-        public async Task<UsageObservations> ReadAsync(
-            UsageObservationRequest request,
-            CancellationToken cancellationToken)
-        {
-            Assert.Equal(UsageObservationRequest.AllowanceWindows, request);
-            CallCount++;
-            AdapterCancellation = cancellationToken;
-            Started.TrySetResult();
-            return await Completion.Task.WaitAsync(cancellationToken);
-        }
+                "plus", "Codex", activity), Local: null);
     }
 
     private sealed class ScriptedObservationReader : IUsageObservationReader
@@ -241,16 +222,14 @@ public sealed partial class UsageUpdatesTests
 
         public int MaximumConcurrentReads { get; private set; }
 
-        public ObservationReadStep Enqueue(UsageObservationRequest expected)
+        public ObservationReadStep Enqueue(UsageObservationRequest expected, bool ignoreCancellation = false)
         {
-            var step = new ObservationReadStep(expected);
+            var step = new ObservationReadStep(expected, ignoreCancellation);
             steps.Enqueue(step);
             return step;
         }
 
-        public async Task<UsageObservations> ReadAsync(
-            UsageObservationRequest request,
-            CancellationToken cancellationToken)
+        public async Task<UsageObservations> ReadAsync(UsageObservationRequest request, CancellationToken cancellationToken)
         {
             ObservationReadStep step;
             lock (sync)
@@ -260,12 +239,13 @@ public sealed partial class UsageUpdatesTests
                 requests.Add(request);
                 activeReads++;
                 MaximumConcurrentReads = Math.Max(MaximumConcurrentReads, activeReads);
+                step.AdapterCancellation = cancellationToken;
                 step.Started.TrySetResult();
             }
 
             try
             {
-                return await step.Completion.Task.WaitAsync(cancellationToken);
+                return await (step.IgnoreCancellation ? step.Completion.Task : step.Completion.Task.WaitAsync(cancellationToken));
             }
             finally
             {
@@ -277,36 +257,14 @@ public sealed partial class UsageUpdatesTests
         }
     }
 
-    private sealed class ObservationReadStep(UsageObservationRequest expected)
+    private sealed class ObservationReadStep(UsageObservationRequest expected, bool ignoreCancellation)
     {
         public UsageObservationRequest Expected { get; } = expected;
-        public TaskCompletionSource Started { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource<UsageObservations> Completion { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-
+        public bool IgnoreCancellation { get; } = ignoreCancellation;
+        public CancellationToken AdapterCancellation { get; set; }
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<UsageObservations> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public void Succeed(UsageObservations observations) => Completion.TrySetResult(observations);
-
         public void Fail(Exception exception) => Completion.TrySetException(exception);
     }
-
-    private sealed class CancellationIgnoringObservationReader : IUsageObservationReader
-    {
-        public TaskCompletionSource Started { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource<UsageObservations> Completion { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public CancellationToken AdapterCancellation { get; private set; }
-
-        public Task<UsageObservations> ReadAsync(
-            UsageObservationRequest request,
-            CancellationToken cancellationToken)
-        {
-            Assert.Equal(UsageObservationRequest.AllowanceWindows, request);
-            AdapterCancellation = cancellationToken;
-            Started.TrySetResult();
-            return Completion.Task;
-        }
-    }
-
 }
