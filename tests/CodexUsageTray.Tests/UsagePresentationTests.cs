@@ -106,9 +106,9 @@ public sealed class UsagePresentationTests
         Assert.Equal("Reset time unavailable", presentation.Popup.FiveHour.ResetText);
         Assert.Equal("Reset unknown", presentation.Popup.FiveHour.CompactResetText);
         Assert.Equal("Unavailable", presentation.Popup.TodayTokens);
-        Assert.Equal(100, presentation.Tray.FiveHourRemaining);
-        Assert.Equal(100, presentation.Tray.WeeklyRemaining);
-        Assert.Equal("Codex · 5h ?% · week ?%", presentation.Tray.Tooltip);
+        Assert.Null(presentation.Tray.FiveHourRemaining);
+        Assert.Null(presentation.Tray.WeeklyRemaining);
+        Assert.Equal("Codex usage · allowances unavailable", presentation.Tray.Tooltip);
     }
 
     [Fact]

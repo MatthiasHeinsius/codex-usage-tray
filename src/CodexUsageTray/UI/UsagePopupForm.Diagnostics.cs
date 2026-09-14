@@ -147,11 +147,11 @@ internal sealed partial class UsagePopupForm
         && !updatedLabel.Visible
         && ClientSize.Width - refreshButton.Right == ContentInset
         && ClientSize.Height - refreshButton.Bottom == ContentInset
-        && weeklyReset.Right + 10 <= refreshButton.Left;
+        && weeklyAllowance.Reset.Right + 10 <= refreshButton.Left;
 
     private bool ContentPaddingIsUniform() =>
-        fiveHourTitle.Left == Padding.Left
-        && ClientSize.Width - fiveHourBar.Right == Padding.Right
+        fiveHourAllowance.Title.Left == Padding.Left
+        && ClientSize.Width - fiveHourAllowance.Bar.Right == Padding.Right
         && ClientSize.Width - pinButton.Right == Padding.Right
         && pinButton.Top == Padding.Top
         && ClientSize.Height - refreshButton.Bottom == Padding.Bottom;

@@ -70,8 +70,8 @@ public sealed class WinFormsApplicationShellTests
             using var shell = CreateShell(new RecordingCommands());
             var popup = new UsagePresentation.PopupPresentation(
                 "Plus · Codex",
-                new UsagePresentation.AllowancePresentation(75, "75% left", "Resets tomorrow", "1d"),
-                new UsagePresentation.AllowancePresentation(60, "60% left", "Resets Friday", "4d"),
+                UsagePresentation.AllowancePresentation.Show(75, "75% left", "Resets tomorrow", "1d"),
+                UsagePresentation.AllowancePresentation.Show(60, "60% left", "Resets Friday", "4d"),
                 "1.2K tokens",
                 "4.5M tokens",
                 "Updated 12:00");

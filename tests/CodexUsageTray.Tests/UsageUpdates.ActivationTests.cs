@@ -319,6 +319,27 @@ public sealed partial class UsageUpdatesTests
     }
 
     [Fact]
+    public async Task PendingActivationStopsWhenAllowanceIsNoLongerReported()
+    {
+        var now = new DateTimeOffset(2026, 9, 14, 12, 0, 0, TimeSpan.FromHours(2));
+        var command = new ActivationRecordingCommand();
+        var time = new ActivationTimeProvider(now);
+        await using var updates = CreateActivationUpdates(
+            new ActivationObservationReader(
+                ObserveAllowance(now, 0, now.AddHours(5)),
+                ObserveWeeklyAllowance(now.AddMinutes(1), 40, now.AddDays(4))),
+            command,
+            new ActivationSettings(),
+            time);
+
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
+        time.Advance(TimeSpan.FromMinutes(1));
+        await updates.RefreshAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, command.CallCount);
+    }
+
+    [Fact]
     public async Task ResetChangeDuringFailedRetryConfirmsActivation()
     {
         var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
@@ -464,6 +485,19 @@ public sealed partial class UsageUpdatesTests
                         : null
                 }.OfType<AllowanceWindow>().ToArray(),
                 "plus",
+                "Codex",
+                new AccountActivityObservation.NotRequested()),
+            Local: null);
+
+    private static UsageObservations ObserveWeeklyAllowance(
+        DateTimeOffset observedAt,
+        int usedPercent,
+        DateTimeOffset? reset) =>
+        new(
+            new AccountUsageObservation(
+                observedAt,
+                [new AllowanceWindow(usedPercent, TimeSpan.FromDays(7), reset)],
+                "pro",
                 "Codex",
                 new AccountActivityObservation.NotRequested()),
             Local: null);

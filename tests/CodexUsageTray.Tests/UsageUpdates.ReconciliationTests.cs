@@ -253,6 +253,31 @@ public sealed partial class UsageUpdatesTests
     }
 
     [Fact]
+    public async Task ActivityUpdateDoesNotDuplicateASoleWeeklyAllowanceAsFiveHour()
+    {
+        var observedAt = new DateTimeOffset(2026, 9, 14, 12, 0, 0, TimeSpan.FromHours(2));
+        var presentation = await PublishAsync(new UsageObservations(
+            new AccountUsageObservation(
+                observedAt,
+                [new AllowanceWindow(40, TimeSpan.FromDays(7), observedAt.AddDays(4))],
+                "pro",
+                "Codex",
+                new AccountActivityObservation.Observed(
+                    LifetimeTokens: null,
+                    TodayTokens: null,
+                    LatestDailyBucketDate: null)),
+            Local: null));
+
+        Assert.Equal("Unavailable", presentation.Popup.FiveHour.RemainingText);
+        Assert.Equal("60% left", presentation.Popup.Weekly.RemainingText);
+        Assert.False(presentation.Popup.FiveHour.IsVisible);
+        Assert.True(presentation.Popup.Weekly.IsVisible);
+        Assert.Null(presentation.Tray.FiveHourRemaining);
+        Assert.Equal(60, presentation.Tray.WeeklyRemaining);
+        Assert.Equal("Codex · week 60%", presentation.Tray.Tooltip);
+    }
+
+    [Fact]
     public async Task RoutineUpdateStartsWithoutActivity()
     {
         var observedAt = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));

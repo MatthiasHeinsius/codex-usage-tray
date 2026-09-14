@@ -51,9 +51,9 @@ internal abstract record UsagePresentation(
             TokenLabel(snapshot.LifetimeTokens, formatProvider),
             observationText);
         var tray = new TrayPresentation(
-            snapshot.FiveHour?.RemainingPercent ?? 100,
-            snapshot.Weekly?.RemainingPercent ?? 100,
-            $"Codex · 5h {PercentOrUnknown(snapshot.FiveHour)}% · week {PercentOrUnknown(snapshot.Weekly)}%");
+            snapshot.FiveHour?.RemainingPercent,
+            snapshot.Weekly?.RemainingPercent,
+            TrayTooltip(snapshot));
 
         return new Ready(
             popup,
@@ -111,11 +111,11 @@ internal abstract record UsagePresentation(
         return new Failed(popup, tray, failureMessage);
     }
 
-    private static AllowancePresentation UnavailableAllowance() => new(
-        ProgressValue: 0,
-        RemainingText: "Unavailable",
-        ResetText: "Reset time unavailable",
-        CompactResetText: "Reset unknown");
+    private static AllowancePresentation UnavailableAllowance() => AllowancePresentation.Show(
+        progressValue: 0,
+        remainingText: "Unavailable",
+        resetText: "Reset time unavailable",
+        compactResetText: "Reset unknown");
 
     private static string PresentLatestObservationTime(
         UsageSnapshot snapshot,
@@ -135,14 +135,10 @@ internal abstract record UsagePresentation(
     {
         if (window is null)
         {
-            return new AllowancePresentation(
-                ProgressValue: 0,
-                RemainingText: "Unavailable",
-                ResetText: "Reset time unavailable",
-                CompactResetText: "Reset unknown");
+            return AllowancePresentation.Hidden;
         }
 
-        return new AllowancePresentation(
+        return AllowancePresentation.Show(
             window.RemainingPercent,
             $"{FormatNumber(window.RemainingPercent, formatProvider)}% left",
             ResetText(window.ResetsAt, now, formatProvider),
@@ -215,8 +211,23 @@ internal abstract record UsagePresentation(
             _ => $"{(tokens / 1_000_000_000d).ToString("0.##", formatProvider)}B"
         };
 
-    private static string PercentOrUnknown(AllowanceWindow? window) =>
-        window?.RemainingPercent.ToString(CultureInfo.InvariantCulture) ?? "?";
+    private static string TrayTooltip(UsageSnapshot snapshot)
+    {
+        var allowances = new List<string>();
+        if (snapshot.FiveHour is { } fiveHour)
+        {
+            allowances.Add($"5h {fiveHour.RemainingPercent.ToString(CultureInfo.InvariantCulture)}%");
+        }
+
+        if (snapshot.Weekly is { } weekly)
+        {
+            allowances.Add($"week {weekly.RemainingPercent.ToString(CultureInfo.InvariantCulture)}%");
+        }
+
+        return allowances.Count == 0
+            ? "Codex usage · allowances unavailable"
+            : $"Codex · {string.Join(" · ", allowances)}";
+    }
 
     private static string FormatNumber(int value, IFormatProvider formatProvider) =>
         string.Format(formatProvider, "{0}", value);
@@ -264,15 +275,40 @@ internal abstract record UsagePresentation(
         string LifetimeTokens,
         string UpdatedText);
 
-    internal sealed record AllowancePresentation(
-        int ProgressValue,
-        string RemainingText,
-        string ResetText,
-        string CompactResetText);
+    internal sealed record AllowancePresentation
+    {
+        private readonly VisibleContent? visible;
+
+        private AllowancePresentation(VisibleContent? visible)
+        {
+            this.visible = visible;
+        }
+
+        public int ProgressValue => visible?.ProgressValue ?? 0;
+        public string RemainingText => visible?.RemainingText ?? "Unavailable";
+        public string ResetText => visible?.ResetText ?? "Reset time unavailable";
+        public string CompactResetText => visible?.CompactResetText ?? "Reset unknown";
+        public bool IsVisible => visible is not null;
+
+        public static AllowancePresentation Hidden { get; } = new(visible: null);
+
+        public static AllowancePresentation Show(
+            int progressValue,
+            string remainingText,
+            string resetText,
+            string compactResetText) =>
+            new(new VisibleContent(progressValue, remainingText, resetText, compactResetText));
+
+        private sealed record VisibleContent(
+            int ProgressValue,
+            string RemainingText,
+            string ResetText,
+            string CompactResetText);
+    }
 
     internal sealed record TrayPresentation(
-        int FiveHourRemaining,
-        int WeeklyRemaining,
+        int? FiveHourRemaining,
+        int? WeeklyRemaining,
         string Tooltip);
 
     internal sealed record NoticePresentation(

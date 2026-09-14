@@ -253,7 +253,7 @@ internal sealed partial class UsageUpdates
 
         public PendingActivationAction TakeNextAction(AllowanceWindow? window, DateTimeOffset now)
         {
-            if (window?.IsUsedUp == true)
+            if (window is null || window.IsUsedUp)
             {
                 return PendingActivationAction.Cancel;
             }
