@@ -1,0 +1,42 @@
+name: Process cancellation diagnostics
+
+on:
+  workflow_dispatch:
+  # Temporary trigger for the initial investigation; remove before merging.
+  push:
+    branches: [t3code/investigate-build-workflow-failure]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install .NET 10 SDK
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Build test project
+        shell: pwsh
+        run: dotnet build ./tests/CodexUsageTray.Tests/CodexUsageTray.Tests.csproj -c Release
+
+      - name: Repeat cancellation tests with and without coverage
+        shell: pwsh
+        run: ./.github/scripts/diagnose-process-tests.ps1
+
+      - name: Upload diagnostic results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: process-diagnostics
+          path: TestResults/process-diagnostics/
+          if-no-files-found: error
+          retention-days: 7

@@ -1,10 +1,11 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 
 namespace CodexUsageTray.Tests;
 
 [Collection<ProcessEnvironmentIsolation>]
-public sealed class WindowsCodexProcessExecutionTests
+public sealed class WindowsCodexProcessExecutionTests(ITestOutputHelper output)
 {
     [Fact]
     public async Task CaptureReturnsArgumentsStreamsAndExitCode()
@@ -105,53 +106,87 @@ public sealed class WindowsCodexProcessExecutionTests
             """
             @echo off
             set "CODEX_USAGE_TEST_PID_PATH=%~1"
-            powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$path = $env:CODEX_USAGE_TEST_PID_PATH; $PID | Set-Content -LiteralPath ($path + '.tmp'); Move-Item -LiteralPath ($path + '.tmp') -Destination $path; Write-Output 'ready'; Start-Sleep -Seconds 20"
+            powershell.exe -NoLogo -NoProfile -NonInteractive -Command "[Console]::Error.WriteLine('child started at ' + [DateTimeOffset]::UtcNow.ToString('O')); $path = $env:CODEX_USAGE_TEST_PID_PATH; $PID | Set-Content -LiteralPath ($path + '.tmp'); Move-Item -LiteralPath ($path + '.tmp') -Destination $path; Write-Output 'ready'; Start-Sleep -Seconds 20"
             """,
             async (execution, directory) =>
             {
                 var pidPath = directory.FilePath("child.pid");
                 var ioStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var elapsed = Stopwatch.StartNew();
+                var events = new ConcurrentQueue<string>();
+                void Record(string message) => events.Enqueue($"{elapsed.Elapsed.TotalMilliseconds:F1} ms: {message}");
+
+                Record($"Start at {DateTimeOffset.UtcNow:O}; write={write}; timeout={timeout}");
                 Process? child = null;
+                ICodexLineExchange? usedLines = null;
+                Exception? testFailure = null;
                 using var cancellation = new CancellationTokenSource();
+                Record($"Launching command; exchange deadline is {(timeout ? 5 : 30)} seconds");
                 var exchange = execution.ExchangeLinesAsync(
                     $"\"{pidPath}\"",
                     timeout ? TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(30),
                     async lines =>
                     {
+                        usedLines = lines;
+                        Record("Command launched; awaiting ready line");
                         Assert.Equal("ready", await lines.ReadLineAsync());
+                        Record("Received ready line; reading child PID file");
                         child = Process.GetProcessById(int.Parse(
                             await File.ReadAllTextAsync(pidPath, TestContext.Current.CancellationToken),
                             System.Globalization.CultureInfo.InvariantCulture));
+                        Record($"Read child PID {child.Id}; initiating {(write ? "write" : "read")}");
                         var pendingIo = write
                             ? lines.WriteLineAsync(new string('x', 1_000_000))
                             : lines.ReadLineAsync().AsTask();
+                        Record($"I/O call returned task with status {pendingIo.Status}");
                         ioStarted.TrySetResult();
-                        await pendingIo;
+                        try
+                        {
+                            await pendingIo;
+                            Record("I/O completed normally");
+                        }
+                        catch (Exception exception)
+                        {
+                            Record($"I/O ended with {exception.GetType().Name}: {exception.Message}");
+                            throw;
+                        }
                         return true;
                     },
                     cancellation.Token);
 
                 try
                 {
-                    await ioStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+                    await WaitForIoStartedAsync(ioStarted.Task, exchange, TimeSpan.FromSeconds(10));
+                    Record("Readiness wait completed");
                     Assert.NotNull(child);
                     if (!timeout)
                     {
+                        Record("Requesting caller cancellation");
                         cancellation.Cancel();
                     }
 
                     await Assert.ThrowsAnyAsync<OperationCanceledException>(
                         () => exchange.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
+                    Record("Observed exchange cancellation; awaiting child exit");
                     await child.WaitForExitAsync(TestContext.Current.CancellationToken)
                         .WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+                    Record("Child exit confirmed");
+                }
+                catch (Exception exception)
+                {
+                    testFailure = exception;
+                    Record($"Test failed: {exception}");
+                    throw;
                 }
                 finally
                 {
-                    cancellation.Cancel();
+                    Record($"Cleanup starting; exchange={exchange.Status}; readiness={ioStarted.Task.Status}; last stderr={usedLines?.LastStandardErrorLine ?? "<none>"}");
                     try
                     {
+                        cancellation.Cancel();
                         if (child is { HasExited: false })
                         {
+                            Record("Cleanup is killing the child process tree");
                             child.Kill(entireProcessTree: true);
                         }
 
@@ -160,10 +195,21 @@ public sealed class WindowsCodexProcessExecutionTests
                     catch (Exception exception) when (exception is OperationCanceledException or IOException)
                     {
                         // Observe the operation and let its bounded child exit even if an assertion fails.
+                        Record($"Cleanup observed {exception.GetType().Name}: {exception.Message}");
+                    }
+                    catch (Exception exception) when (testFailure is not null)
+                    {
+                        // Keep the original failure, including its readiness stage and stack trace.
+                        Record($"Additional cleanup failure: {exception}");
                     }
                     finally
                     {
                         child?.Dispose();
+                        Record($"Cleanup finished; exchange={exchange.Status}; last stderr={usedLines?.LastStandardErrorLine ?? "<none>"}");
+                        foreach (var entry in events)
+                        {
+                            output.WriteLine($"[process-readiness] {entry}");
+                        }
                     }
                 }
             });
@@ -273,6 +319,52 @@ public sealed class WindowsCodexProcessExecutionTests
                     Environment.SetEnvironmentVariable("ComSpec", previousInterpreter);
                 }
             });
+    }
+
+    [Fact]
+    public async Task ReadinessWaitReportsAnEarlyExchangeFailure()
+    {
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var failure = new IOException("Child failed before readiness.");
+        var exchange = Task.FromException(failure);
+
+        var actual = await Assert.ThrowsAsync<IOException>(() =>
+            WaitForIoStartedAsync(ready.Task, exchange, TimeSpan.FromMilliseconds(100)));
+
+        Assert.Same(failure, actual);
+    }
+
+    [Fact]
+    public async Task ReadinessWaitReportsAnEarlyExchangeCancellation()
+    {
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var exchange = Task.FromCanceled(new CancellationToken(canceled: true));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            WaitForIoStartedAsync(ready.Task, exchange, TimeSpan.FromMilliseconds(100)));
+    }
+
+    [Fact]
+    public async Task ReadinessWaitRejectsAnExchangeThatCompletesWithoutReadiness()
+    {
+        var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            WaitForIoStartedAsync(ready.Task, Task.CompletedTask, TimeSpan.FromMilliseconds(100)));
+
+        Assert.Equal("The exchange completed before blocked I/O started.", failure.Message);
+    }
+
+    private static async Task WaitForIoStartedAsync(Task ioStarted, Task exchange, TimeSpan timeout)
+    {
+        await Task.WhenAny(ioStarted, exchange).WaitAsync(timeout, TestContext.Current.CancellationToken);
+        if (!ioStarted.IsCompleted)
+        {
+            await exchange;
+            throw new InvalidOperationException("The exchange completed before blocked I/O started.");
+        }
+
+        await ioStarted;
     }
 
     private static async Task WithCommandAsync(

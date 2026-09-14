@@ -28,6 +28,14 @@ The release build validates the solution and published executable before generat
 
 ## Actions storage
 
+### Process cancellation diagnostics
+
+The manually triggered `Process cancellation diagnostics` workflow runs the four blocked-I/O cancellation cases ten times with coverage, then ten times without coverage on the same Windows runner. Each attempt uses a fresh test process. It saves console output, TRX results, coverage reports where applicable, and `summary.csv` in the `process-diagnostics` artifact for seven days. A failed attempt remains a failure even if later attempts pass.
+
+To run the same comparison locally, build the test project in Release, then run `./.github/scripts/diagnose-process-tests.ps1`. Use `-Repetitions 1` for a short check and `-ResultsDirectory <new-directory>` for a subsequent run. Existing attempt directories are rejected to avoid mixing old and new results. Test output records startup, readiness, I/O, cancellation, cleanup, and the last child stderr line. The existing test deadlines remain in effect so this comparison can expose the original timing failure.
+
+### Artifact retention
+
 Build runs on pull requests and pushes to `main`. Superseded runs are cancelled. Only `main` builds upload portable executables; test results and these executables expire after seven days. Release staging artifacts expire after one day. The repository default for future artifacts and logs is seven days. GitHub release assets are separate and remain available.
 
 Changing retention does not alter expiry dates on existing artifacts. Existing artifacts keep their original expiry dates.
