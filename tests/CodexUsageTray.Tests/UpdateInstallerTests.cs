@@ -1,10 +1,154 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace CodexUsageTray.Tests;
 
 public sealed class UpdateInstallerTests
 {
+    [Fact]
+    public void LaunchRejectsAnUpdateChangedAfterDownloadVerification()
+    {
+        using var directory = new TemporaryDirectory("installer-changed-download");
+        var (stagedPath, targetPath) = CreateInstallerFiles(directory);
+        using var update = new StagedApplicationUpdate(new Version(1, 4, 0), stagedPath, HashFile(stagedPath));
+        File.WriteAllText(stagedPath, "changed after verification");
+        var interaction = new RecordingInstallerInteraction();
+
+        Assert.Throws<InvalidDataException>(() => UpdateInstaller.Launch(update, 42, targetPath, interaction));
+
+        Assert.Null(interaction.InstallerStartInfo);
+        Assert.Equal("previous executable", File.ReadAllText(targetPath));
+    }
+
+    [Fact]
+    public void VerifiedHelperCanStartWhileItsFilesAreProtectedFromChanges()
+    {
+        using var directory = new TemporaryDirectory("installer-verified-launch");
+        var stagedPath = directory.FilePath("download.tmp");
+        File.Copy(Path.Combine(Environment.SystemDirectory, "ping.exe"), stagedPath);
+        using var update = new StagedApplicationUpdate(new Version(1, 4, 0), stagedPath, HashFile(stagedPath));
+        var interaction = new RecordingInstallerInteraction(beforeInstaller: startInfo =>
+        {
+            foreach (var path in new[] { stagedPath, startInfo.FileName })
+            {
+                Assert.Throws<IOException>(() => File.WriteAllText(path, "tampered"));
+                Assert.Throws<IOException>(() => File.Delete(path));
+                Assert.Equal(update.ExpectedHash, HashFile(path));
+            }
+
+            Assert.Equal(update.ExpectedHash, startInfo.ArgumentList[4]);
+            startInfo.ArgumentList.Clear();
+            startInfo.ArgumentList.Add("-n");
+            startInfo.ArgumentList.Add("1");
+            startInfo.ArgumentList.Add("127.0.0.1");
+            startInfo.CreateNoWindow = true;
+            using var process = Process.Start(startInfo)!;
+            try
+            {
+                Assert.True(process.WaitForExit(5_000));
+                Assert.Equal(0, process.ExitCode);
+            }
+            finally
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill();
+                    process.WaitForExit();
+                }
+            }
+        });
+
+        try
+        {
+            UpdateInstaller.Launch(update, 42, directory.FilePath("app.exe"), interaction);
+        }
+        finally
+        {
+            if (interaction.InstallerStartInfo is { } startInfo)
+            {
+                File.Delete(startInfo.FileName);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData("--apply-update", 1)]
+    [InlineData("--apply-update-elevated", 0)]
+    public void ApplyRejectsAnUpdateChangedAfterHelperHandoff(string command, int restarts)
+    {
+        using var directory = new TemporaryDirectory("installer-changed-handoff");
+        var (stagedPath, targetPath) = CreateInstallerFiles(directory);
+        var expectedHash = HashFile(stagedPath);
+        File.WriteAllText(stagedPath, "changed after handoff");
+        var interaction = new RecordingInstallerInteraction();
+
+        Assert.True(UpdateInstaller.TryHandleCommandLine(
+            [command, "2147483647", stagedPath, targetPath, expectedHash], out var exitCode, interaction));
+
+        Assert.Equal(1, exitCode);
+        Assert.Equal("previous executable", File.ReadAllText(targetPath));
+        Assert.False(File.Exists(stagedPath));
+        Assert.Equal(restarts, interaction.RestartAttempts);
+        Assert.Contains("SHA-256", interaction.FailureMessage, StringComparison.Ordinal);
+        Assert.Single(Directory.GetFiles(directory.RootPath));
+    }
+
+    [Fact]
+    public void ElevationRequiresTheRunningHelperToMatchTheReleaseChecksum()
+    {
+        using var directory = new TemporaryDirectory("installer-helper-checksum");
+        var (stagedPath, targetPath) = CreateInstallerFiles(directory);
+        File.SetAttributes(targetPath, FileAttributes.ReadOnly);
+        var interaction = new RecordingInstallerInteraction();
+
+        try
+        {
+            Assert.True(UpdateInstaller.TryHandleCommandLine(
+                ["--apply-update", "2147483647", stagedPath, targetPath, HashFile(stagedPath)],
+                out var exitCode, interaction));
+
+            Assert.Equal(1, exitCode);
+            Assert.Null(interaction.ElevatedStartInfo);
+            Assert.Equal("previous executable", File.ReadAllText(targetPath));
+            Assert.False(File.Exists(stagedPath));
+            Assert.Contains("SHA-256", interaction.FailureMessage, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.SetAttributes(targetPath, FileAttributes.Normal);
+        }
+    }
+
+    [Fact]
+    public void ElevatedSuccessWithAnUnexpectedExecutableDoesNotRestartIt()
+    {
+        using var directory = new TemporaryDirectory("installer-changed-elevated-target");
+        var (stagedPath, targetPath) = CreateInstallerFiles(directory);
+        File.Copy(Environment.ProcessPath!, stagedPath, overwrite: true);
+        File.SetAttributes(targetPath, FileAttributes.ReadOnly);
+        var interaction = new RecordingInstallerInteraction(beforeElevation: _ =>
+        {
+            File.SetAttributes(targetPath, FileAttributes.Normal);
+            File.WriteAllText(targetPath, "changed after elevated install");
+        });
+
+        try
+        {
+            Assert.True(UpdateInstaller.TryHandleCommandLine(
+                ["--apply-update", "2147483647", stagedPath, targetPath, HashFile(stagedPath)],
+                out var exitCode, interaction));
+
+            Assert.Equal(2, exitCode);
+            Assert.Equal(0, interaction.RestartAttempts);
+            Assert.Contains("SHA-256", interaction.FailureMessage, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.SetAttributes(targetPath, FileAttributes.Normal);
+        }
+    }
+
     [Fact]
     public void CleanupArgumentDeletesTheHelperAndContinuesApplicationStartup()
     {
@@ -80,7 +224,7 @@ public sealed class UpdateInstallerTests
         var interaction = new RecordingInstallerInteraction();
 
         var handled = UpdateInstaller.TryHandleCommandLine(
-            ["--apply-update-elevated", "2147483647", stagedPath, targetPath],
+            ["--apply-update-elevated", "2147483647", stagedPath, targetPath, HashFile(stagedPath)],
             out var exitCode,
             interaction);
 
@@ -109,7 +253,7 @@ public sealed class UpdateInstallerTests
             FileShare.Read | FileShare.Delete);
 
         var handled = UpdateInstaller.TryHandleCommandLine(
-            ["--apply-update-elevated", "2147483647", stagedPath, targetPath],
+            ["--apply-update-elevated", "2147483647", stagedPath, targetPath, HashFile(stagedPath)],
             out var exitCode,
             interaction);
 
@@ -146,7 +290,7 @@ public sealed class UpdateInstallerTests
         try
         {
             var handled = UpdateInstaller.TryHandleCommandLine(
-                ["--apply-update-elevated", "2147483647", stagedPath, targetPath],
+                ["--apply-update-elevated", "2147483647", stagedPath, targetPath, HashFile(stagedPath)],
                 out var exitCode,
                 interaction);
 
@@ -172,7 +316,7 @@ public sealed class UpdateInstallerTests
             new InvalidOperationException("restart failed"));
 
         var handled = UpdateInstaller.TryHandleCommandLine(
-            ["--apply-update", "2147483647", stagedPath, targetPath],
+            ["--apply-update", "2147483647", stagedPath, targetPath, HashFile(stagedPath)],
             out var exitCode,
             interaction);
 
@@ -186,24 +330,25 @@ public sealed class UpdateInstallerTests
     }
 
     [Fact]
-    public void FailedRestartRestoresThePreviousExecutableWhenTheUpdatedTargetDisappears()
+    public void InstalledExecutableCannotBeChangedBeforeRestartAndFailedRestartRollsBack()
     {
         using var directory = new TemporaryDirectory("installer-missing-target-rollback");
         var (stagedPath, targetPath) = CreateInstallerFiles(directory);
-        var targetDeleted = false;
+        var replacementBlocked = false;
         var interaction = new RecordingInstallerInteraction(
             restartFailure: new InvalidOperationException("restart failed"),
             beforeRestart: path =>
             {
-                if (!targetDeleted)
+                if (!replacementBlocked)
                 {
-                    File.Delete(path);
-                    targetDeleted = true;
+                    Assert.Throws<IOException>(() => File.Delete(path));
+                    Assert.Throws<IOException>(() => File.WriteAllText(path, "tampered"));
+                    replacementBlocked = true;
                 }
             });
 
         var handled = UpdateInstaller.TryHandleCommandLine(
-            ["--apply-update", "2147483647", stagedPath, targetPath],
+            ["--apply-update", "2147483647", stagedPath, targetPath, HashFile(stagedPath)],
             out var exitCode,
             interaction);
 
@@ -226,7 +371,7 @@ public sealed class UpdateInstallerTests
         try
         {
             var handled = UpdateInstaller.TryHandleCommandLine(
-                ["--apply-update-elevated", "2147483647", stagedPath, targetPath],
+                ["--apply-update-elevated", "2147483647", stagedPath, targetPath, HashFile(stagedPath)],
                 out var exitCode,
                 interaction);
 
@@ -249,8 +394,8 @@ public sealed class UpdateInstallerTests
         using var directory = new TemporaryDirectory("installer-launch");
         var stagedPath = directory.FilePath("download.tmp");
         var targetPath = directory.FilePath("CodexUsageTray.exe");
-        var update = new StagedApplicationUpdate(new Version(1, 4, 0), stagedPath);
         File.WriteAllText(stagedPath, "replacement executable");
+        var update = new StagedApplicationUpdate(new Version(1, 4, 0), stagedPath, HashFile(stagedPath));
         var interaction = new RecordingInstallerInteraction(
             installerFailure: new InvalidOperationException("installer start failed"));
 
@@ -263,7 +408,7 @@ public sealed class UpdateInstallerTests
         Assert.False(interaction.InstallerStartInfo.UseShellExecute);
         Assert.Equal(ProcessWindowStyle.Hidden, interaction.InstallerStartInfo.WindowStyle);
         Assert.Equal(
-            ["--apply-update", "42", stagedPath, targetPath],
+            ["--apply-update", "42", stagedPath, targetPath, HashFile(stagedPath)],
             interaction.InstallerStartInfo.ArgumentList);
     }
 
@@ -272,18 +417,24 @@ public sealed class UpdateInstallerTests
     {
         using var directory = new TemporaryDirectory("installer-failed-rollback");
         var (stagedPath, targetPath) = CreateInstallerFiles(directory);
+        FileStream? targetLock = null;
         var interaction = new RecordingInstallerInteraction(
             restartFailure: new InvalidOperationException("restart failed"),
-            beforeRestart: path =>
-            {
-                File.Delete(path);
-                Directory.CreateDirectory(path);
-            });
+            beforeRestart: path => targetLock = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read));
 
-        var handled = UpdateInstaller.TryHandleCommandLine(
-            ["--apply-update", "2147483647", stagedPath, targetPath],
-            out var exitCode,
-            interaction);
+        bool handled;
+        int exitCode;
+        try
+        {
+            handled = UpdateInstaller.TryHandleCommandLine(
+                ["--apply-update", "2147483647", stagedPath, targetPath, HashFile(stagedPath)],
+                out exitCode,
+                interaction);
+        }
+        finally
+        {
+            targetLock?.Dispose();
+        }
 
         Assert.True(handled);
         Assert.Equal(2, exitCode);
@@ -311,14 +462,36 @@ public sealed class UpdateInstallerTests
     {
         using var directory = new TemporaryDirectory("installer-elevation");
         var (stagedPath, targetPath) = CreateInstallerFiles(directory);
+        File.Copy(Environment.ProcessPath!, stagedPath, overwrite: true);
         File.SetAttributes(targetPath, FileAttributes.ReadOnly);
         var interaction = new RecordingInstallerInteraction(
-            elevatedResult: (UpdateInstallerResult)elevatedExitCode);
+            elevatedResult: (UpdateInstallerResult)elevatedExitCode,
+            beforeElevation: startInfo =>
+            {
+                Assert.Equal(HashFile(stagedPath), HashFile(startInfo.FileName));
+                Assert.Throws<IOException>(() =>
+                {
+                    using var exclusive = File.Open(startInfo.FileName, FileMode.Open, FileAccess.Read, FileShare.None);
+                });
+                if (elevatedExitCode == 0)
+                {
+                    File.SetAttributes(targetPath, FileAttributes.Normal);
+                    File.Copy(stagedPath, targetPath, overwrite: true);
+                }
+            },
+            beforeRestart: path =>
+            {
+                if (elevatedExitCode == 0)
+                {
+                    Assert.Throws<IOException>(() => File.Delete(path));
+                    Assert.Throws<IOException>(() => File.WriteAllText(path, "tampered"));
+                }
+            });
 
         try
         {
             var handled = UpdateInstaller.TryHandleCommandLine(
-                ["--apply-update", "2147483647", stagedPath, targetPath],
+                ["--apply-update", "2147483647", stagedPath, targetPath, HashFile(stagedPath)],
                 out var exitCode,
                 interaction);
 
@@ -332,7 +505,7 @@ public sealed class UpdateInstallerTests
             Assert.Equal(Path.GetDirectoryName(Environment.ProcessPath), startInfo.WorkingDirectory);
             Assert.Equal(ProcessWindowStyle.Hidden, startInfo.WindowStyle);
             Assert.Equal(
-                ["--apply-update-elevated", "2147483647", stagedPath, targetPath],
+                ["--apply-update-elevated", "2147483647", stagedPath, targetPath, HashFile(stagedPath)],
                 startInfo.ArgumentList);
         }
         finally
@@ -345,7 +518,9 @@ public sealed class UpdateInstallerTests
         Exception? restartFailure = null,
         Exception? installerFailure = null,
         Action<string>? beforeRestart = null,
-        UpdateInstallerResult elevatedResult = UpdateInstallerResult.Succeeded)
+        UpdateInstallerResult elevatedResult = UpdateInstallerResult.Succeeded,
+        Action<ProcessStartInfo>? beforeInstaller = null,
+        Action<ProcessStartInfo>? beforeElevation = null)
         : IUpdateInstallerInteraction
     {
         public int RestartAttempts { get; private set; }
@@ -356,6 +531,7 @@ public sealed class UpdateInstallerTests
         public void StartInstaller(ProcessStartInfo startInfo)
         {
             InstallerStartInfo = startInfo;
+            beforeInstaller?.Invoke(startInfo);
             if (installerFailure is not null)
             {
                 throw installerFailure;
@@ -365,6 +541,7 @@ public sealed class UpdateInstallerTests
         public UpdateInstallerResult RunElevatedInstaller(ProcessStartInfo startInfo)
         {
             ElevatedStartInfo = startInfo;
+            beforeElevation?.Invoke(startInfo);
             return elevatedResult;
         }
 
@@ -392,6 +569,9 @@ public sealed class UpdateInstallerTests
         File.WriteAllText(targetPath, targetContents);
         return (stagedPath, targetPath);
     }
+
+    private static string HashFile(string path) =>
+        Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(path)));
 
     private static string BackupPathFrom(string failureMessage)
     {

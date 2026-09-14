@@ -92,7 +92,7 @@ internal sealed class GitHubApplicationUpdateSource : IApplicationUpdateSource
                     $"The staged executable failed its SHA-256 check. Expected {expectedHash}, got {actualHash}.");
             }
 
-            return new StagedApplicationUpdate(update.Version, stagedPath);
+            return new StagedApplicationUpdate(update.Version, stagedPath, expectedHash);
         }
         catch (Exception exception)
         {

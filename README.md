@@ -62,6 +62,8 @@ Left-click the tray icon to open or close the usage window. A double-click perfo
 
 When either check finds a newer release, the app asks before downloading or installing it. If you accept, the app downloads `CodexUsageTray.exe`, verifies it against the release's `SHA256SUMS.txt`, replaces the executable in its current folder, and restarts. Windows asks for administrator access only if the executable is in a protected location. A manual check reports when the installed version is current or the check fails. Startup checks stay silent when no update is available or GitHub cannot be reached.
 
+The download and checksum verification share a 60-second deadline. If the download stalls or fails, the app removes the partial file and lets you try again. The installer carries the release checksum through the helper and administrator handoff, checks the executable before copying or starting it, and blocks changes to those files while they are in use.
+
 `Start with Windows`, `Auto-start allowance window`, and `Notify on allowance changes` are off on first launch. `Start with Windows` creates a shortcut that appears in Windows Startup Apps. Keep the executable at the same path after enabling this setting because the shortcut points to that file.
 
 The executable is not code-signed, so Windows SmartScreen or antivirus software may warn about it.

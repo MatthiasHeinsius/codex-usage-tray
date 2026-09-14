@@ -34,6 +34,7 @@ public sealed class GitHubApplicationUpdateSourceTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(new Version(1, 3, 0), update.Version);
+        Assert.Equal(expectedHash, update.ExpectedHash);
         Assert.Equal(directory.RootPath, Path.GetDirectoryName(update.StagedPath));
         Assert.Equal(
             payload,
@@ -189,9 +190,9 @@ public sealed class GitHubApplicationUpdateSourceTests
         try
         {
             await body.Waiting.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
-            Assert.Single(Directory.EnumerateFiles(directory.RootPath));
             if (cancelCaller)
             {
+                Assert.Single(Directory.EnumerateFiles(directory.RootPath));
                 cancellation.Cancel();
                 await Assert.ThrowsAnyAsync<OperationCanceledException>(
                     () => download.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
