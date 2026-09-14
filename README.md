@@ -86,7 +86,6 @@ Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), th
 ```powershell
 dotnet build .\CodexUsageTray.slnx -c Release
 dotnet test --project .\tests\CodexUsageTray.Tests\CodexUsageTray.Tests.csproj -c Release --no-build
-dotnet run --project .\src\CodexUsageTray\CodexUsageTray.csproj -c Release --no-build -- --self-test
 ```
 
 The test project uses xUnit.net 4 and Microsoft Testing Platform v2. To collect a Cobertura report with the MTP coverage extension, run:
@@ -110,7 +109,13 @@ dotnet publish .\src\CodexUsageTray\CodexUsageTray.csproj `
   -p:DebugType=None `
   -p:DebugSymbols=false `
   -o .\artifacts\win-x64
+.\artifacts\win-x64\CodexUsageTray.exe --self-test
 ```
+
+The `--self-test` command is intentionally a small smoke test for the published
+artifact. It verifies that the packaged executable can create its popup and tray
+icon and read its embedded legal notices. Detailed behavior belongs in the xUnit
+test project.
 
 If Codex is installed somewhere unusual, set `CODEX_USAGE_CODEX_PATH` to the full path of `codex.cmd` or `codex.exe` before starting the app.
 

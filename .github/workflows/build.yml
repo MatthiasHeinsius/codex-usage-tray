@@ -50,9 +50,6 @@ jobs:
           path: TestResults/
           if-no-files-found: warn
 
-      - name: Run self-tests
-        run: dotnet run --project .\src\CodexUsageTray\CodexUsageTray.csproj -c Release --no-build -- --self-test
-
       - name: Publish portable executable
         run: >-
           dotnet publish .\src\CodexUsageTray\CodexUsageTray.csproj
@@ -63,6 +60,15 @@ jobs:
           -p:DebugType=None
           -p:DebugSymbols=false
           -o .\artifacts\win-x64
+
+      - name: Test published executable
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path .\artifacts\win-x64\CodexUsageTray.exe
+          $process = Start-Process -FilePath $exe -ArgumentList "--self-test" -WindowStyle Hidden -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Published executable self-test failed with exit code $($process.ExitCode)."
+          }
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v6

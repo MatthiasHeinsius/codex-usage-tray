@@ -5,6 +5,33 @@ namespace CodexUsageTray.Tests;
 public sealed class TrayIconRendererTests
 {
     [Fact]
+    public void TrayIconMatchesTheSystemSmallIconSize()
+    {
+        var expectedSize = Math.Max(SystemInformation.SmallIconSize.Width, SystemInformation.SmallIconSize.Height);
+
+        using var icon = TrayIconRenderer.Create(65, 7);
+
+        Assert.Equal(new Size(expectedSize, expectedSize), icon.Size);
+    }
+
+    [Fact]
+    public void MultiResolutionIconContainsNine32BitImages()
+    {
+        var iconData = TrayIconRenderer.CreateIcoData(65, 7);
+
+        Assert.Equal(9, BitConverter.ToUInt16(iconData, 4));
+        Assert.Equal(
+            [16, 20, 24, 32, 40, 48, 64, 128, 0],
+            Enumerable.Range(0, 9)
+                .Select(index => iconData[6 + (index * 16)])
+                .ToArray());
+        for (var index = 0; index < 9; index++)
+        {
+            Assert.Equal(32, BitConverter.ToUInt16(iconData, 6 + (index * 16) + 6));
+        }
+    }
+
+    [Fact]
     public void FiveHourAllowanceUsesOuterRing()
     {
         using var stream = new MemoryStream(TrayIconRenderer.RenderPng(256, 100, 0));
