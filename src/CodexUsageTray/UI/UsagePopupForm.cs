@@ -35,7 +35,7 @@ internal sealed class UsagePopupForm : Form
     public bool IsExtendedView => !compactView;
 
     public UsagePopupForm()
-        : this(PopupViewSettings.IsCompact())
+        : this(RegistryApplicationSettings.Current.CompactPopup)
     {
     }
 
@@ -91,7 +91,7 @@ internal sealed class UsagePopupForm : Form
         viewModeButton.Click += (_, _) =>
         {
             ApplyViewMode(viewModeButton.IsCompact, preserveBottom: true);
-            PopupViewSettings.SetCompact(viewModeButton.IsCompact);
+            RegistryApplicationSettings.Current.CompactPopup = viewModeButton.IsCompact;
             if (!viewModeButton.IsCompact)
             {
                 ExtendedViewActivated?.Invoke(this, EventArgs.Empty);
