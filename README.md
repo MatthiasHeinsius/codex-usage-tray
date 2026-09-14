@@ -44,6 +44,8 @@ Right-click the tray icon to open the app menu.
 
 The portable release includes the .NET desktop runtime. It does not require a separate .NET installation or administrator access.
 
+If the cached Codex sign-in expires, the tray first asks Codex to refresh it. If that fails, the tray explains the problem and asks before opening the official ChatGPT sign-in page. If browser sign-in cannot finish, run `codex logout` and then `codex login` in a terminal before refreshing again.
+
 ## Install
 
 Download [`CodexUsageTray.exe`](https://github.com/MatthiasHeinsius/codex-usage-tray/releases/latest/download/CodexUsageTray.exe) from the [latest GitHub release](https://github.com/MatthiasHeinsius/codex-usage-tray/releases/latest). Move it to a permanent location, then run it. You can also build the executable from source.
@@ -70,7 +72,7 @@ The pin button keeps the popup open and above other windows. While pinned, drag 
 
 ## Usage data and privacy
 
-The app runs the installed Codex CLI in app-server mode and calls its read-only account methods. It does not directly read, copy, or store credentials from `%USERPROFILE%\.codex\auth.json`.
+The app runs the installed Codex CLI in app-server mode to read account usage. If the sign-in expires, it can ask Codex to refresh the session and, after confirmation, start ChatGPT browser sign-in. It does not directly read, copy, or store credentials from `%USERPROFILE%\.codex\auth.json`.
 
 The account service may publish daily token buckets a day late. If today's bucket is missing, the app totals `token_usage_record` entries from the local Codex session history. If the account total ends with yesterday's data, the app adds today's local total to the displayed inference total. Routine allowance refreshes retain same-day activity and its original observation time. On a new local date, today's retained activity clears while the lifetime total remains available with its observation time.
 
@@ -85,7 +87,6 @@ Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), th
 ```powershell
 dotnet build .\CodexUsageTray.slnx -c Release
 dotnet test --project .\tests\CodexUsageTray.Tests\CodexUsageTray.Tests.csproj -c Release --no-build
-dotnet run --project .\src\CodexUsageTray\CodexUsageTray.csproj -c Release --no-build -- --self-test
 ```
 
 The test project uses xUnit.net 4 and Microsoft Testing Platform v2. To collect a Cobertura report with the MTP coverage extension, run:
@@ -109,7 +110,13 @@ dotnet publish .\src\CodexUsageTray\CodexUsageTray.csproj `
   -p:DebugType=None `
   -p:DebugSymbols=false `
   -o .\artifacts\win-x64
+.\artifacts\win-x64\CodexUsageTray.exe --self-test
 ```
+
+The `--self-test` command is intentionally a small smoke test for the published
+artifact. It verifies that the packaged executable can create its popup and tray
+icon and read its embedded legal notices. Detailed behavior belongs in the xUnit
+test project.
 
 If Codex is installed somewhere unusual, set `CODEX_USAGE_CODEX_PATH` to the full path of `codex.cmd` or `codex.exe` before starting the app.
 

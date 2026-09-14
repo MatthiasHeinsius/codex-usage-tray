@@ -1,12 +1,11 @@
 namespace CodexUsageTray;
 
-internal sealed partial class UsagePopupForm : Form
+internal sealed class UsagePopupForm : Form
 {
-    private const int BorderInset = 8;
-    private const int ContentInset = 20;
+    private const int BorderInset = PopupPositioning.BorderInset;
+    private const int ContentInset = PopupPositioning.ContentInset;
     private const int PopupWidth = 428;
     private const int ContentWidth = PopupWidth - (2 * ContentInset);
-    private const int SnapDistance = 12;
     private readonly Label title;
     private readonly Label statusLabel;
     private readonly AllowanceControls fiveHourAllowance;
@@ -37,6 +36,11 @@ internal sealed partial class UsagePopupForm : Form
     public bool IsExtendedView => !compactView;
 
     public UsagePopupForm()
+        : this(PopupViewSettings.IsCompact())
+    {
+    }
+
+    internal UsagePopupForm(bool initialCompactView)
     {
         Text = "Codex usage";
         FormBorderStyle = FormBorderStyle.None;
@@ -83,7 +87,7 @@ internal sealed partial class UsagePopupForm : Form
             Padding = new Padding(0),
             Cursor = Cursors.Hand
         };
-        viewModeButton.SetCompact(PopupViewSettings.IsCompact());
+        viewModeButton.SetCompact(initialCompactView);
         viewModeButton.FlatAppearance.BorderColor = Color.FromArgb(61, 68, 82);
         viewModeButton.Click += (_, _) =>
         {
@@ -360,56 +364,12 @@ internal sealed partial class UsagePopupForm : Form
         PositionNearTray();
         Activate();
 
-        void PositionNearTray() => Location = GetLocationWhenShown(
+        void PositionNearTray() => Location = PopupPositioning.GetLocationWhenShown(
             Location,
             pinButton.IsPinned,
             cursorLocation,
             Size,
             workingArea);
-    }
-
-    private static Point GetLocationWhenShown(
-        Point currentLocation,
-        bool pinned,
-        Point cursorLocation,
-        Size windowSize,
-        Rectangle workingArea)
-    {
-        if (pinned)
-        {
-            return currentLocation;
-        }
-
-        var x = Math.Clamp(
-            cursorLocation.X - windowSize.Width + ContentInset,
-            workingArea.Left,
-            workingArea.Right - windowSize.Width);
-        var y = workingArea.Bottom - windowSize.Height - BorderInset;
-        return new Point(x, y);
-    }
-
-    private static Point SnapToScreen(
-        Point location,
-        Size windowSize,
-        Rectangle screenBounds,
-        Rectangle workingArea)
-    {
-        var x = SnapCoordinate(
-            location.X,
-            windowSize.Width,
-            screenBounds.Left,
-            workingArea.Left,
-            screenBounds.Right,
-            workingArea.Right);
-        var y = SnapCoordinate(
-            location.Y,
-            windowSize.Height,
-            screenBounds.Top,
-            workingArea.Top,
-            screenBounds.Bottom,
-            workingArea.Bottom);
-
-        return new Point(x, y);
     }
 
     protected override void OnPaint(PaintEventArgs eventArgs)
@@ -584,7 +544,7 @@ internal sealed partial class UsagePopupForm : Form
             dragStartLocation.Y + cursor.Y - dragStartCursor.Y);
         var proposedBounds = new Rectangle(proposedLocation, Size);
         var screen = Screen.FromRectangle(proposedBounds);
-        Location = SnapToScreen(proposedLocation, Size, screen.Bounds, screen.WorkingArea);
+        Location = PopupPositioning.SnapToScreen(proposedLocation, Size, screen.Bounds, screen.WorkingArea);
     }
 
     private void DragControlOnMouseUp(object? sender, MouseEventArgs eventArgs)
@@ -610,34 +570,6 @@ internal sealed partial class UsagePopupForm : Form
         if (capturedControl is not null)
         {
             capturedControl.Capture = false;
-        }
-    }
-
-    private static int SnapCoordinate(
-        int location,
-        int length,
-        int boundsStart,
-        int workingStart,
-        int boundsEnd,
-        int workingEnd)
-    {
-        var nearestOffset = SnapDistance + 1;
-        Consider(boundsStart - location);
-        Consider(boundsStart + BorderInset - location);
-        Consider(workingStart - location);
-        Consider(workingStart + BorderInset - location);
-        Consider(boundsEnd - location - length);
-        Consider(boundsEnd - BorderInset - location - length);
-        Consider(workingEnd - location - length);
-        Consider(workingEnd - BorderInset - location - length);
-        return location + (Math.Abs(nearestOffset) <= SnapDistance ? nearestOffset : 0);
-
-        void Consider(int offset)
-        {
-            if (Math.Abs(offset) < Math.Abs(nearestOffset))
-            {
-                nearestOffset = offset;
-            }
         }
     }
 

@@ -92,6 +92,27 @@ public sealed class WinFormsApplicationShellTests
         });
 
     [Fact]
+    public Task AuthenticationRecoveryConfirmsAndOpensTheSignInPage() =>
+        RunInStaThreadAsync(async () =>
+        {
+            Uri? openedPage = null;
+            using var shell = CreateShell(
+                new RecordingCommands(),
+                confirmAndOpenSignIn: page =>
+                {
+                    openedPage = page;
+                    return true;
+                });
+            var signInPage = new Uri("https://chatgpt.com/auth");
+
+            var confirmed = await ((ICodexAuthenticationInteraction)shell)
+                .ConfirmAndOpenSignInAsync(signInPage, TestContext.Current.CancellationToken);
+
+            Assert.True(confirmed);
+            Assert.Equal(signInPage, openedPage);
+        });
+
+    [Fact]
     public Task TrayClicksToggleThePopupAndSuppressTheSecondHalfOfADoubleClick() =>
         RunInStaThreadAsync(async () =>
         {
@@ -217,7 +238,8 @@ public sealed class WinFormsApplicationShellTests
         RecordingCommands recording,
         bool startupEnabled = false,
         bool automaticUpdateEnabled = false,
-        Action<string>? showSettingFailure = null) =>
+        Action<string>? showSettingFailure = null,
+        Func<Uri, bool>? confirmAndOpenSignIn = null) =>
         new(
             startupEnabled,
             automaticUpdateEnabled,
@@ -248,7 +270,8 @@ public sealed class WinFormsApplicationShellTests
                     recording.ExitRequests++;
                     recording.Exit();
                 }),
-            showSettingFailure);
+            showSettingFailure,
+            confirmAndOpenSignIn);
 
     private static Task RunInStaThreadAsync(Func<Task> action)
     {

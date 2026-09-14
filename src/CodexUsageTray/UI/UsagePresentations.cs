@@ -11,6 +11,10 @@ internal interface IUsagePresentationSink
     void Present(UsagePresentation presentation);
 }
 
+internal interface IUsageApplicationInteraction :
+    IUsagePresentationSink,
+    ICodexAuthenticationInteraction;
+
 internal sealed class UsagePresentations : IAsyncDisposable
 {
     private readonly IUsageUpdates updates;
@@ -30,8 +34,8 @@ internal sealed class UsagePresentations : IAsyncDisposable
         sink.Present(UsagePresentation.CreateInitial());
     }
 
-    public static UsagePresentations CreateDefault(IUsagePresentationSink sink) =>
-        new(UsageUpdates.CreateDefault(), sink);
+    public static UsagePresentations CreateDefault(IUsageApplicationInteraction interaction) =>
+        new(UsageUpdates.CreateDefault(interaction), interaction);
 
     public bool ActivationEnabled
     {

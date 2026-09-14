@@ -40,11 +40,12 @@ internal sealed partial class UsageUpdates : IUsageUpdates
         notificationsEnabled = settings.NotificationsEnabled;
     }
 
-    public static UsageUpdates CreateDefault()
+    public static UsageUpdates CreateDefault(ICodexAuthenticationInteraction authenticationInteraction)
     {
+        ArgumentNullException.ThrowIfNull(authenticationInteraction);
         var processExecution = new WindowsCodexProcessExecution();
         return new UsageUpdates(
-            new CodexUsageObservationReader(processExecution),
+            new CodexUsageObservationReader(processExecution, authenticationInteraction),
             new CodexWindowStarter(processExecution),
             new RegistryAllowanceWindowActivationSettings(),
             TimeProvider.System,
