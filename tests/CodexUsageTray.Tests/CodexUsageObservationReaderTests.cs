@@ -477,6 +477,68 @@ public sealed class CodexUsageObservationReaderTests
     private static string Request(int id, string method) =>
         JsonSerializer.Serialize(new { id, method, @params = (object?)null });
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task InvalidLocalRecordDoesNotDiscardAccountOrHealthyLocalActivity(bool overflowingTotal)
+    {
+        using var directory = new TemporaryDirectory("observation-invalid-local-record");
+        var now = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.Zero);
+        var sessions = Path.Combine(directory.RootPath, "sessions");
+        Directory.CreateDirectory(sessions);
+        File.WriteAllLines(Path.Combine(sessions, "session.jsonl"),
+        [
+            overflowingTotal
+                ? JsonSerializer.Serialize(new
+                {
+                    timestamp = now,
+                    type = "token_usage_record",
+                    payload = new { usage = new { total_tokens = long.MaxValue } }
+                })
+                : """{"type":123}""",
+            JsonSerializer.Serialize(new
+            {
+                timestamp = now,
+                type = "token_usage_record",
+                payload = new { usage = new { total_tokens = 42 } }
+            })
+        ]);
+        var reader = new CodexUsageObservationReader(
+            MissingTodayActivityResponses(),
+            new LocalTokenUsageReader(directory.RootPath),
+            new FixedTimeProvider(now));
+
+        var observations = await reader.ReadAsync(
+            UsageObservationRequest.AllowanceWindowsAndActivity,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(25, Assert.Single(observations.Account.AllowanceWindows).UsedPercent);
+        Assert.Equal(50, Assert.IsType<AccountActivityObservation.Observed>(observations.Account.Activity).LifetimeTokens);
+        if (overflowingTotal)
+        {
+            Assert.Null(observations.Local);
+        }
+        else
+        {
+            Assert.NotNull(observations.Local);
+            Assert.Equal(42, observations.Local.TodayTokens);
+        }
+    }
+
+    [Fact]
+    public async Task ReadForwardsCancellationToLocalActivityAndPreservesCancellation()
+    {
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var reader = new CodexUsageObservationReader(
+            MissingTodayActivityResponses(),
+            new CancelingLocalTokenUsageReader(cancellation),
+            new FixedTimeProvider(September7));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => reader.ReadAsync(
+            UsageObservationRequest.AllowanceWindowsAndActivity,
+            cancellation.Token));
+    }
+
     private static ScriptedCodexProcessExecution MissingTodayActivityResponses()
     {
         var processes = new ScriptedCodexProcessExecution();
@@ -501,12 +563,22 @@ public sealed class CodexUsageObservationReaderTests
 
     private sealed class StubLocalTokenUsageReader(long? todayTokens) : ILocalTokenUsageReader
     {
-        public long? ReadToday(DateTimeOffset now) => todayTokens;
+        public long? ReadToday(DateTimeOffset now, CancellationToken cancellationToken = default) => todayTokens;
     }
 
     private sealed class ThrowingLocalTokenUsageReader(Exception failure) : ILocalTokenUsageReader
     {
-        public long? ReadToday(DateTimeOffset now) => throw failure;
+        public long? ReadToday(DateTimeOffset now, CancellationToken cancellationToken = default) => throw failure;
+    }
+
+    private sealed class CancelingLocalTokenUsageReader(CancellationTokenSource cancellation) : ILocalTokenUsageReader
+    {
+        public long? ReadToday(DateTimeOffset now, CancellationToken cancellationToken = default)
+        {
+            cancellation.Cancel();
+            cancellationToken.ThrowIfCancellationRequested();
+            return 42;
+        }
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

@@ -1,11 +1,10 @@
-using System.Text;
 using System.Text.Json;
 
 namespace CodexUsageTray;
 
 internal interface ILocalTokenUsageReader
 {
-    long? ReadToday(DateTimeOffset now);
+    long? ReadToday(DateTimeOffset now, CancellationToken cancellationToken = default);
 }
 
 internal sealed class LocalTokenUsageReader : ILocalTokenUsageReader
@@ -25,8 +24,9 @@ internal sealed class LocalTokenUsageReader : ILocalTokenUsageReader
         this.codexHome = Path.GetFullPath(codexHome);
     }
 
-    public long? ReadToday(DateTimeOffset now)
+    public long? ReadToday(DateTimeOffset now, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var localDate = DateOnly.FromDateTime(now.LocalDateTime);
         if (cachedDate != localDate)
         {
@@ -34,14 +34,11 @@ internal sealed class LocalTokenUsageReader : ILocalTokenUsageReader
             files.Clear();
         }
 
-        var paths = FindCandidateFiles(codexHome, localDate)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
         long total = 0;
         var found = false;
-        foreach (var path in paths)
+        foreach (var path in FindCandidateFiles(codexHome, localDate, cancellationToken))
         {
-            var state = ReadNewRecords(path, localDate);
+            var state = ReadNewRecords(path, localDate, cancellationToken);
             total = checked(total + state.Tokens);
             found |= state.FoundUsage;
         }
@@ -49,11 +46,15 @@ internal sealed class LocalTokenUsageReader : ILocalTokenUsageReader
         return found ? total : null;
     }
 
-    private static IEnumerable<string> FindCandidateFiles(string codexHome, DateOnly localDate)
+    private static IEnumerable<string> FindCandidateFiles(
+        string codexHome,
+        DateOnly localDate,
+        CancellationToken cancellationToken)
     {
         var localStart = localDate.ToDateTime(TimeOnly.MinValue);
         foreach (var root in new[] { "sessions", "archived_sessions" })
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var directory = Path.Combine(codexHome, root);
             if (!Directory.Exists(directory))
             {
@@ -62,6 +63,7 @@ internal sealed class LocalTokenUsageReader : ILocalTokenUsageReader
 
             foreach (var path in Directory.EnumerateFiles(directory, "*.jsonl", SearchOption.AllDirectories))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (File.GetLastWriteTime(path) >= localStart)
                 {
                     yield return path;
@@ -70,51 +72,77 @@ internal sealed class LocalTokenUsageReader : ILocalTokenUsageReader
         }
     }
 
-    private FileState ReadNewRecords(string path, DateOnly localDate)
+    private FileState ReadNewRecords(string path, DateOnly localDate, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!files.TryGetValue(path, out var state))
         {
             state = new FileState();
-            files[path] = state;
         }
 
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        if (stream.Length < state.Offset)
+        var endOffset = stream.Length;
+        if (endOffset < state.Offset)
         {
-            state.Reset();
+            state = new FileState();
         }
 
-        if (stream.Length == state.Offset)
+        if (endOffset == state.Offset)
         {
+            files[path] = state;
             return state;
         }
 
         stream.Position = state.Offset;
-        using var memory = new MemoryStream();
-        stream.CopyTo(memory);
-        state.Offset = stream.Position;
-        var appended = Encoding.UTF8.GetString(memory.GetBuffer(), 0, checked((int)memory.Length));
-        var combined = state.PartialLine + appended;
-        var lines = combined.Split('\n');
-        state.PartialLine = combined.EndsWith('\n') ? string.Empty : lines[^1];
-        var completeLineCount = state.PartialLine.Length == 0 ? lines.Length : lines.Length - 1;
-        for (var index = 0; index < completeLineCount; index++)
+        using var record = new MemoryStream();
+        record.Write(state.PartialLine);
+        var buffer = new byte[16 * 1024];
+        var tokens = state.Tokens;
+        var foundUsage = state.FoundUsage;
+        // Read only the bytes present at the start, even if Codex keeps appending.
+        while (stream.Position < endOffset)
         {
-            var line = lines[index].TrimEnd('\r');
-            if (TryReadUsage(line, localDate, out var tokens))
+            cancellationToken.ThrowIfCancellationRequested();
+            var count = stream.Read(buffer, 0, (int)Math.Min(buffer.Length, endOffset - stream.Position));
+            if (count == 0)
             {
-                state.Tokens = checked(state.Tokens + tokens);
-                state.FoundUsage = true;
+                throw new IOException("The Codex session file was truncated during reading.");
+            }
+
+            var remaining = buffer.AsSpan(0, count);
+            while (!remaining.IsEmpty)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var newline = remaining.IndexOf((byte)'\n');
+                var length = newline < 0 ? remaining.Length : newline;
+                record.Write(remaining[..length]);
+                if (newline < 0)
+                {
+                    break;
+                }
+
+                if (TryReadUsage(record.GetBuffer().AsMemory(0, (int)record.Length), localDate, out var recordTokens))
+                {
+                    tokens = checked(tokens + recordTokens);
+                    foundUsage = true;
+                }
+
+                record.SetLength(0);
+                remaining = remaining[(newline + 1)..];
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+        // Commit progress and totals together. Canceled or failed reads can safely retry.
+        state = new FileState(endOffset, record.ToArray(), tokens, foundUsage);
+        files[path] = state;
         return state;
     }
 
-    private static bool TryReadUsage(string line, DateOnly localDate, out long tokens)
+    private static bool TryReadUsage(ReadOnlyMemory<byte> line, DateOnly localDate, out long tokens)
     {
         tokens = 0;
-        if (string.IsNullOrWhiteSpace(line))
+        if (line.IsEmpty)
         {
             return false;
         }
@@ -123,15 +151,22 @@ internal sealed class LocalTokenUsageReader : ILocalTokenUsageReader
         {
             using var document = JsonDocument.Parse(line);
             var root = document.RootElement;
-            if (!root.TryGetProperty("type", out var type)
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("type", out var type)
+                || type.ValueKind != JsonValueKind.String
                 || type.GetString() != "token_usage_record"
                 || !root.TryGetProperty("timestamp", out var timestampElement)
+                || timestampElement.ValueKind != JsonValueKind.String
                 || !DateTimeOffset.TryParse(timestampElement.GetString(), out var timestamp)
                 || DateOnly.FromDateTime(timestamp.LocalDateTime) != localDate
                 || !root.TryGetProperty("payload", out var payload)
+                || payload.ValueKind != JsonValueKind.Object
                 || !payload.TryGetProperty("usage", out var usage)
+                || usage.ValueKind != JsonValueKind.Object
                 || !usage.TryGetProperty("total_tokens", out var total)
-                || !total.TryGetInt64(out tokens))
+                || total.ValueKind != JsonValueKind.Number
+                || !total.TryGetInt64(out tokens)
+                || tokens < 0)
             {
                 return false;
             }
@@ -142,21 +177,17 @@ internal sealed class LocalTokenUsageReader : ILocalTokenUsageReader
         {
             return false;
         }
+        catch (InvalidOperationException)
+        {
+            // JSON string access can reject invalid UTF-8 or escaped surrogates after parsing succeeded.
+            return false;
+        }
     }
 
-    private sealed class FileState
+    private sealed record FileState(long Offset, byte[] PartialLine, long Tokens, bool FoundUsage)
     {
-        public long Offset { get; set; }
-        public string PartialLine { get; set; } = string.Empty;
-        public long Tokens { get; set; }
-        public bool FoundUsage { get; set; }
-
-        public void Reset()
+        public FileState() : this(0, [], 0, false)
         {
-            Offset = 0;
-            PartialLine = string.Empty;
-            Tokens = 0;
-            FoundUsage = false;
         }
     }
 }
