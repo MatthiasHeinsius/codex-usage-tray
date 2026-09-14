@@ -86,6 +86,8 @@ The app does not upload the usage data it reads from the account or local histor
 
 The app stores its view, update, allowance activation, and notification preferences under `HKEY_CURRENT_USER\Software\CodexUsageTray`. The optional Windows startup shortcut is in the current user's Startup folder.
 
+If Windows denies access to saved preferences, the app uses the first-launch defaults. A blocked popup-view save still lets you change views for the current session. Other preference changes report save failures and restore the previous menu checkmark.
+
 ## Build from source
 
 Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), then run:

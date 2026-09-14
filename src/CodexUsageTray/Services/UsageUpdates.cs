@@ -54,7 +54,7 @@ internal sealed partial class UsageUpdates : IUsageUpdates
         return new UsageUpdates(
             new CodexUsageObservationReader(processExecution, authenticationInteraction),
             new CodexWindowStarter(processExecution),
-            new RegistryAllowanceWindowActivationSettings(),
+            RegistryApplicationSettings.Current,
             TimeProvider.System,
             CultureInfo.CurrentCulture);
     }

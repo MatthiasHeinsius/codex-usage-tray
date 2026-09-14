@@ -14,7 +14,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     public TrayApplicationContext()
     {
-        var automaticUpdateEnabled = ApplicationUpdateSettings.IsAutomaticCheckEnabled();
+        var automaticUpdateEnabled = RegistryApplicationSettings.Current.AutomaticUpdateChecksEnabled;
         var createdShell = new WinFormsApplicationShell(
             StartupRegistration.IsEnabled(),
             automaticUpdateEnabled,
@@ -22,7 +22,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
                 RequestUsageUpdate: RequestAsync,
                 RequestApplicationUpdate: RequestApplicationUpdateAsync,
                 SetStartupEnabled: StartupRegistration.SetEnabled,
-                SetAutomaticUpdateEnabled: ApplicationUpdateSettings.SetAutomaticCheckEnabled,
+                SetAutomaticUpdateEnabled: enabled => RegistryApplicationSettings.Current.AutomaticUpdateChecksEnabled = enabled,
                 SetAllowanceActivationEnabled: SetAllowanceActivationEnabled,
                 SetAllowanceNotificationsEnabled: SetAllowanceNotificationsEnabled,
                 OpenUsagePage: OpenUsagePage,
