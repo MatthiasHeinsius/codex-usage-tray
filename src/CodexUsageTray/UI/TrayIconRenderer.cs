@@ -7,6 +7,8 @@ internal static class TrayIconRenderer
 {
     internal const int StaticFiveHourRemaining = 66;
     internal const int StaticWeeklyRemaining = 75;
+    private const float RingWidth = 5f;
+    private const float SingleRingWidth = 6f;
     private static readonly int[] IconSizes = [16, 20, 24, 32, 40, 48, 64, 128, 256];
 
     public static Icon Create(int? fiveHourRemaining, int? weeklyRemaining)
@@ -71,20 +73,28 @@ internal static class TrayIconRenderer
         graphics.Clear(Color.Transparent);
 
         var scale = size / 32f;
+        var hasSingleAllowanceWindow = fiveHourRemaining.HasValue != weeklyRemaining.HasValue;
+        var ringWidth = hasSingleAllowanceWindow ? SingleRingWidth : RingWidth;
         if (fiveHourRemaining is { } fiveHour)
         {
-            DrawRing(graphics, Scale(new RectangleF(2.5f, 2.5f, 27f, 27f), scale), 5f * scale, fiveHour);
+            DrawRing(graphics, OuterRingBounds(ringWidth, scale), ringWidth * scale, fiveHour);
         }
 
         if (weeklyRemaining is { } weekly)
         {
-            DrawRing(graphics, Scale(new RectangleF(7.5f, 7.5f, 17f, 17f), scale), 5f * scale, weekly);
+            var bounds = hasSingleAllowanceWindow
+                ? OuterRingBounds(ringWidth, scale)
+                : Scale(new RectangleF(7.5f, 7.5f, 17f, 17f), scale);
+            DrawRing(graphics, bounds, ringWidth * scale, weekly);
         }
 
         using var stream = new MemoryStream();
         bitmap.Save(stream, ImageFormat.Png);
         return stream.ToArray();
     }
+
+    private static RectangleF OuterRingBounds(float width, float scale) =>
+        Scale(new RectangleF(width / 2, width / 2, 32 - width, 32 - width), scale);
 
     private static RectangleF Scale(RectangleF bounds, float scale) => new(
         bounds.X * scale,
