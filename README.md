@@ -96,6 +96,8 @@ The account service may publish daily token buckets a day late. If today's bucke
 
 The app does not upload the usage data it reads from the account or local history. Update checks contact the GitHub releases API and download release files from GitHub when needed. The optional auto-activation feature only sends the `Hi` request described above.
 
+Local history reads process complete records in chunks and retain unfinished records for the next refresh. Malformed records and invalid token counts are ignored. If a local total exceeds the supported integer range, account data remains available without that local total. Canceled or interrupted reads can retry without skipping or counting records twice.
+
 The app stores its view, update, allowance activation, and notification preferences under `HKEY_CURRENT_USER\Software\CodexUsageTray`. The optional Windows startup shortcut is in the current user's Startup folder.
 
 If Windows denies access to saved preferences, the app uses the first-launch defaults. A blocked popup-view save still lets you change views for the current session. Other preference changes report save failures and restore the previous menu checkmark.

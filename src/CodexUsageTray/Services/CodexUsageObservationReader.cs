@@ -126,7 +126,7 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
                     {
                         try
                         {
-                            var localToday = localTokenUsage.ReadToday(now);
+                            var localToday = localTokenUsage.ReadToday(now, cancellationToken);
                             if (localToday is { } tokens)
                             {
                                 local = new LocalUsageObservation(
@@ -141,6 +141,10 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
                         catch (UnauthorizedAccessException)
                         {
                             // Local session history is an optional fallback.
+                        }
+                        catch (OverflowException)
+                        {
+                            // An unrepresentable local total must not discard account data.
                         }
                     }
 
