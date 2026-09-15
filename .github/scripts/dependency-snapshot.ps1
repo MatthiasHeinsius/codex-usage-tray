@@ -14,7 +14,7 @@ if ($CommitSha -notmatch '^[a-f0-9]{40}$' -or $Ref -notmatch '^refs/') {
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 [xml]$solution = Get-Content -LiteralPath (Join-Path $repositoryRoot 'CodexUsageTray.slnx') -Raw
 $manifests = @{}
-foreach ($project in $solution.Solution.Project) {
+foreach ($project in $solution.SelectNodes('//Project')) {
     $projectPath = $project.Path.Replace('\', '/')
     $projectDirectory = Split-Path (Join-Path $repositoryRoot $projectPath)
     $assetsPath = Join-Path $projectDirectory 'obj/project.assets.json'

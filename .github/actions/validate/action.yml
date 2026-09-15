@@ -4,6 +4,19 @@ description: Restore, build, format, and test the solution.
 runs:
   using: composite
   steps:
+    - name: Check solution membership
+      shell: pwsh
+      run: |
+        [xml]$solution = Get-Content -LiteralPath .\CodexUsageTray.slnx -Raw
+        $listed = @($solution.SelectNodes('//Project') | ForEach-Object { $_.Path.Replace('\', '/') } | Sort-Object)
+        $projects = @(git ls-files --cached --others --exclude-standard -- '*.csproj' | Sort-Object)
+        if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate project files.' }
+        $difference = @(Compare-Object -ReferenceObject $listed -DifferenceObject $projects)
+        if ($difference) {
+          $difference | Format-Table -AutoSize
+          throw 'CodexUsageTray.slnx must list every project file.'
+        }
+
     - name: Restore
       shell: pwsh
       run: dotnet restore .\CodexUsageTray.slnx
