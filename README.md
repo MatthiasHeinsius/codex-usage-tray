@@ -113,7 +113,7 @@ dotnet build .\CodexUsageTray.slnx -c Release
 dotnet test --solution .\CodexUsageTray.slnx -c Release --no-build
 ```
 
-The test projects use xUnit.net 4 and Microsoft Testing Platform v2. To collect a Cobertura report with the MTP coverage extension, run:
+The test project uses xUnit.net 4 and Microsoft Testing Platform v2. To collect a Cobertura report with the MTP coverage extension, run:
 
 ```powershell
 dotnet test --solution .\CodexUsageTray.slnx `

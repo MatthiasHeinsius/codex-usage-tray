@@ -1,13 +1,6 @@
 <Solution>
-  <Folder Name="/src/">
-    <Project Path="src/CodexUsageTray/CodexUsageTray.csproj" />
-  </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/CodexUsageTray.ProcessFixture/CodexUsageTray.ProcessFixture.csproj" />
-    <Project Path="tests/CodexUsageTray.RepositoryTests/CodexUsageTray.RepositoryTests.csproj" />
-    <Project Path="tests/CodexUsageTray.Tests/CodexUsageTray.Tests.csproj" />
-  </Folder>
-  <Folder Name="/tools/">
-    <Project Path="tools/CodexUsageTray.ScreenshotGenerator/CodexUsageTray.ScreenshotGenerator.csproj" />
-  </Folder>
+  <Project Path="src/CodexUsageTray/CodexUsageTray.csproj" />
+  <Project Path="tests/CodexUsageTray.ProcessFixture/CodexUsageTray.ProcessFixture.csproj" />
+  <Project Path="tests/CodexUsageTray.Tests/CodexUsageTray.Tests.csproj" />
+  <Project Path="tools/CodexUsageTray.ScreenshotGenerator/CodexUsageTray.ScreenshotGenerator.csproj" />
 </Solution>
