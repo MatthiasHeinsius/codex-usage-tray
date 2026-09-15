@@ -1,12 +1,12 @@
 <Project>
-    <PropertyGroup>
-        <ImplicitUsings>enable</ImplicitUsings>
-        <Nullable>enable</Nullable>
-        <AnalysisLevel>latest-recommended</AnalysisLevel>
-        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-        <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-        <Deterministic>true</Deterministic>
-        <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
-        <TestingPlatformCommandLineArguments>$(TestingPlatformCommandLineArguments) --config-file &quot;$(MSBuildThisFileDirectory)tests\testconfig.json&quot;</TestingPlatformCommandLineArguments>
-    </PropertyGroup>
+  <PropertyGroup>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <Deterministic>true</Deterministic>
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
+    <TestingPlatformCommandLineArguments>$(TestingPlatformCommandLineArguments) --config-file &quot;$(MSBuildThisFileDirectory)tests\testconfig.json&quot;</TestingPlatformCommandLineArguments>
+  </PropertyGroup>
 </Project>
