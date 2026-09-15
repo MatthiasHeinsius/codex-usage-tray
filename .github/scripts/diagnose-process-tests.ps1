@@ -1,7 +1,7 @@
 param(
     [ValidateRange(1, 20)]
     [int]$Repetitions = 10,
-    [ValidateSet('Targeted', 'Full')]
+    [ValidateSet('Targeted', 'Full', 'Cold')]
     [string]$Scope = 'Targeted',
     [ValidateSet('Both', 'On', 'Off')]
     [string]$Coverage = 'Both',
@@ -20,9 +20,10 @@ $coverageModes = switch ($Coverage) {
     'Off' { @($false) }
     'Both' { @($true, $false) }
 }
-if ($Scope -eq 'Targeted' -and $Filter) {
+if ($Scope -ne 'Full' -and $Filter) {
     throw 'Use -Scope Full for a custom filter.'
 }
+$expectedCancellationCases = if ($Scope -eq 'Cold') { 1 } else { 4 }
 
 foreach ($collectCoverage in $coverageModes) {
     $mode = if ($collectCoverage) { 'coverage' } else { 'without-coverage' }
@@ -33,12 +34,15 @@ foreach ($collectCoverage in $coverageModes) {
         $runDirectory = (Resolve-Path -LiteralPath $runDirectory).Path
         $arguments = @(
             'test', '--project', $project, '-c', 'Release', '--no-build', '--no-restore',
-            '--minimum-expected-tests', '4',
+            '--minimum-expected-tests', "$expectedCancellationCases",
             '--timeout', '3m', '--results-directory', $runDirectory,
             '--report-xunit-trx', '--output', 'Detailed', '--no-ansi', '--no-progress'
         )
         if ($Scope -eq 'Targeted') {
             $arguments += @('--filter-method', $method)
+        }
+        elseif ($Scope -eq 'Cold') {
+            $arguments += @('--filter-display-name', "$method(write: True, timeout: True)")
         }
         elseif ($Filter) {
             $arguments += @('--filter', $Filter)
@@ -58,8 +62,8 @@ foreach ($collectCoverage in $coverageModes) {
         }
         $passed = @($tests | Where-Object { $_.outcome -eq 'Passed' }).Count
         $cancellationCases = @($tests | Where-Object { $_.testName.StartsWith($method + '(') })
-        $valid = $exitCode -eq 0 -and $cancellationCases.Count -eq 4 -and $passed -eq $tests.Count
-        if ($Scope -eq 'Targeted') { $valid = $valid -and $tests.Count -eq 4 }
+        $valid = $exitCode -eq 0 -and $cancellationCases.Count -eq $expectedCancellationCases -and $passed -eq $tests.Count
+        if ($Scope -ne 'Full') { $valid = $valid -and $tests.Count -eq $expectedCancellationCases }
         if ($Scope -eq 'Full' -and -not $Filter) { $valid = $valid -and $tests.Count -gt 4 }
         $summary.Add([pscustomobject]@{
             Scope = $Scope

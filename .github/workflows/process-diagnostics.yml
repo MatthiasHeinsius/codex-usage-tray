@@ -16,6 +16,10 @@ on:
         description: Optional full-suite isolation filter; include the four cancellation cases
         type: string
         default: ''
+      cold_start:
+        description: Run the five-second deadline case before warming the fixture
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -41,10 +45,22 @@ jobs:
           global-json-file: global.json
 
       - name: Build test project
+        id: build
         shell: pwsh
         run: dotnet build ./tests/CodexUsageTray.Tests/CodexUsageTray.Tests.csproj -c Release
 
+      - name: Check deadline cancellation on a cold fixture
+        if: ${{ inputs.cold_start }}
+        shell: pwsh
+        env:
+          DIAGNOSTIC_COVERAGE: ${{ matrix.coverage }}
+        run: >-
+          ./.github/scripts/diagnose-process-tests.ps1
+          -Scope Cold -Repetitions 1 -Coverage $env:DIAGNOSTIC_COVERAGE
+          -ResultsDirectory ./TestResults/process-diagnostics/cold
+
       - name: Repeat diagnostic tests
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         shell: pwsh
         env:
           DIAGNOSTIC_SCOPE: ${{ inputs.scope }}
