@@ -6,5 +6,6 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
         <Deterministic>true</Deterministic>
+        <TestingPlatformCommandLineArguments>$(TestingPlatformCommandLineArguments) --config-file &quot;$(MSBuildThisFileDirectory)tests\testconfig.json&quot;</TestingPlatformCommandLineArguments>
     </PropertyGroup>
 </Project>

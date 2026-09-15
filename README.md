@@ -110,10 +110,10 @@ Install the [.NET SDK](https://dotnet.microsoft.com/download) version pinned in 
 
 ```powershell
 dotnet build .\CodexUsageTray.slnx -c Release
-dotnet test --project .\tests\CodexUsageTray.Tests\CodexUsageTray.Tests.csproj -c Release --no-build
+dotnet test --solution .\CodexUsageTray.slnx -c Release --no-build
 ```
 
-The test project uses xUnit.net 4 and Microsoft Testing Platform v2. To collect a Cobertura report with the MTP coverage extension, run:
+The test projects use xUnit.net 4 and Microsoft Testing Platform v2. To collect a Cobertura report with the MTP coverage extension, run:
 
 ```powershell
 dotnet test --solution .\CodexUsageTray.slnx `
