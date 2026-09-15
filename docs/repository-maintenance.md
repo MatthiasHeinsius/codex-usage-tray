@@ -30,9 +30,11 @@ The release build validates the solution and published executable before generat
 
 ### Process cancellation diagnostics
 
-The manually triggered `Process cancellation diagnostics` workflow runs the four blocked-I/O cancellation cases ten times with coverage, then ten times without coverage on the same Windows runner. Each attempt uses a fresh test process. It saves console output, TRX results, coverage reports where applicable, and `summary.csv` in the `process-diagnostics` artifact for seven days. A failed attempt remains a failure even if later attempts pass.
+The manually triggered `Process cancellation diagnostics` workflow defaults to repeating the full test suite three times on each of four fresh Windows runners: two with coverage and two without. Select `Targeted` to run only the four blocked-I/O cancellation cases. An optional full-suite filter can isolate preceding tests but must retain those four cases. Each attempt uses a fresh test process. Per-runner artifacts save console output, TRX results, coverage reports where applicable, and `summary.csv` for seven days. A failed attempt remains a failure even if later attempts pass.
 
-To run the same comparison locally, build the test project in Release, then run `./.github/scripts/diagnose-process-tests.ps1`. Use `-Repetitions 1` for a short check and `-ResultsDirectory <new-directory>` for a subsequent run. Existing attempt directories are rejected to avoid mixing old and new results. Test output records startup, readiness, I/O, cancellation, cleanup, and the last child stderr line. The existing test deadlines remain in effect so this comparison can expose the original timing failure.
+To run locally, build the test project in Release, then run `./.github/scripts/diagnose-process-tests.ps1`. Its default is ten targeted attempts with coverage followed by ten without. Use `-Scope Full -Coverage On -Repetitions 3` for full-suite runs with coverage, `-Coverage Off` for the comparison, and `-Filter <expression>` for isolation. Use `-ResultsDirectory <new-directory>` for a subsequent run. Existing attempt directories are rejected to avoid mixing old and new results.
+
+Test output records startup, readiness, I/O, cancellation, cleanup, and the last child stderr line. During slow startup, a dedicated observer checks batch/script marker files, the PID file, newly observed PowerShell process candidates, and thread-pool availability. These observations do not depend on receiving stdout or stderr. The existing test deadlines remain in effect so this comparison can expose the original timing failure.
 
 ### Artifact retention
 

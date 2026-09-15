@@ -2,6 +2,20 @@ name: Process cancellation diagnostics
 
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: Tests to repeat
+        type: choice
+        options: [Full, Targeted]
+        default: Full
+      repetitions:
+        description: Attempts per fresh runner, from 1 to 20
+        type: number
+        default: 3
+      filter:
+        description: Optional full-suite isolation filter; include the four cancellation cases
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -10,6 +24,11 @@ jobs:
   diagnose:
     runs-on: windows-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        coverage: [On, Off]
+        replica: [1, 2]
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -25,15 +44,25 @@ jobs:
         shell: pwsh
         run: dotnet build ./tests/CodexUsageTray.Tests/CodexUsageTray.Tests.csproj -c Release
 
-      - name: Repeat cancellation tests with and without coverage
+      - name: Repeat diagnostic tests
         shell: pwsh
-        run: ./.github/scripts/diagnose-process-tests.ps1
+        env:
+          DIAGNOSTIC_SCOPE: ${{ inputs.scope }}
+          DIAGNOSTIC_REPETITIONS: ${{ inputs.repetitions }}
+          DIAGNOSTIC_FILTER: ${{ inputs.filter }}
+          DIAGNOSTIC_COVERAGE: ${{ matrix.coverage }}
+        run: >-
+          ./.github/scripts/diagnose-process-tests.ps1
+          -Scope $env:DIAGNOSTIC_SCOPE
+          -Repetitions ([int]$env:DIAGNOSTIC_REPETITIONS)
+          -Filter $env:DIAGNOSTIC_FILTER
+          -Coverage $env:DIAGNOSTIC_COVERAGE
 
       - name: Upload diagnostic results
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: process-diagnostics
+          name: process-diagnostics-${{ matrix.coverage }}-${{ matrix.replica }}
           path: TestResults/process-diagnostics/
           if-no-files-found: error
           retention-days: 7

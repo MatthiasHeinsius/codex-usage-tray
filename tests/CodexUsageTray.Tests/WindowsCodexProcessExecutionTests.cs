@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 
 namespace CodexUsageTray.Tests;
@@ -7,6 +8,8 @@ namespace CodexUsageTray.Tests;
 [Collection<ProcessEnvironmentIsolation>]
 public sealed class WindowsCodexProcessExecutionTests(ITestOutputHelper output)
 {
+    private static readonly int[] StartupObservationDelays = [1, 3, 5];
+
     [Fact]
     public async Task CaptureReturnsArgumentsStreamsAndExitCode()
     {
@@ -106,7 +109,8 @@ public sealed class WindowsCodexProcessExecutionTests(ITestOutputHelper output)
             """
             @echo off
             set "CODEX_USAGE_TEST_PID_PATH=%~1"
-            powershell.exe -NoLogo -NoProfile -NonInteractive -Command "[Console]::Error.WriteLine('child started at ' + [DateTimeOffset]::UtcNow.ToString('O')); $path = $env:CODEX_USAGE_TEST_PID_PATH; $PID | Set-Content -LiteralPath ($path + '.tmp'); Move-Item -LiteralPath ($path + '.tmp') -Destination $path; Write-Output 'ready'; Start-Sleep -Seconds 20"
+            > "%~1.command-started" echo started
+            powershell.exe -NoLogo -NoProfile -NonInteractive -Command "$path = $env:CODEX_USAGE_TEST_PID_PATH; [IO.File]::WriteAllText($path + '.script-started', [DateTimeOffset]::UtcNow.ToString('O')); [Console]::Error.WriteLine('child started at ' + [DateTimeOffset]::UtcNow.ToString('O')); $PID | Set-Content -LiteralPath ($path + '.tmp'); Move-Item -LiteralPath ($path + '.tmp') -Destination $path; Write-Output 'ready'; Start-Sleep -Seconds 20"
             """,
             async (execution, directory) =>
             {
@@ -121,6 +125,38 @@ public sealed class WindowsCodexProcessExecutionTests(ITestOutputHelper output)
                 ICodexLineExchange? usedLines = null;
                 Exception? testFailure = null;
                 using var cancellation = new CancellationTokenSource();
+                var existingPowerShellIds = new HashSet<int>();
+                foreach (var process in Process.GetProcessesByName("powershell"))
+                {
+                    using (process)
+                    {
+                        existingPowerShellIds.Add(process.Id);
+                    }
+                }
+
+                using var stopObserver = new ManualResetEventSlim();
+                var observer = new Thread(() =>
+                {
+                    try
+                    {
+                        // A dedicated thread can inspect startup even if test worker threads are busy.
+                        foreach (var delay in StartupObservationDelays)
+                        {
+                            if (stopObserver.Wait(TimeSpan.FromSeconds(delay)) || ioStarted.Task.IsCompleted)
+                            {
+                                return;
+                            }
+
+                            Record(DescribeStartup(pidPath, existingPowerShellIds));
+                        }
+                    }
+                    catch (Exception exception)
+                    {
+                        Record($"Startup observer failed: {exception.Message}");
+                    }
+                })
+                { IsBackground = true };
+                observer.Start();
                 Record($"Launching command; exchange deadline is {(timeout ? 5 : 30)} seconds");
                 var exchange = execution.ExchangeLinesAsync(
                     $"\"{pidPath}\"",
@@ -176,10 +212,16 @@ public sealed class WindowsCodexProcessExecutionTests(ITestOutputHelper output)
                 {
                     testFailure = exception;
                     Record($"Test failed: {exception}");
+                    Record(DescribeStartup(pidPath, existingPowerShellIds));
                     throw;
                 }
                 finally
                 {
+                    stopObserver.Set();
+                    if (!observer.Join(TimeSpan.FromSeconds(1)))
+                    {
+                        Record("Startup observer did not stop within one second");
+                    }
                     Record($"Cleanup starting; exchange={exchange.Status}; readiness={ioStarted.Task.Status}; last stderr={usedLines?.LastStandardErrorLine ?? "<none>"}");
                     try
                     {
@@ -353,6 +395,39 @@ public sealed class WindowsCodexProcessExecutionTests(ITestOutputHelper output)
             WaitForIoStartedAsync(ready.Task, Task.CompletedTask, TimeSpan.FromMilliseconds(100)));
 
         Assert.Equal("The exchange completed before blocked I/O started.", failure.Message);
+    }
+
+    private static string DescribeStartup(string pidPath, HashSet<int> existingPowerShellIds)
+    {
+        try
+        {
+            var state = new StringBuilder($"Startup snapshot: commandMarker={File.Exists(pidPath + ".command-started")}; scriptMarker={File.Exists(pidPath + ".script-started")}; pidFile={File.Exists(pidPath)}; temporaryPidFile={File.Exists(pidPath + ".tmp")}");
+            foreach (var process in Process.GetProcessesByName("powershell"))
+            {
+                using (process)
+                {
+                    if (!existingPowerShellIds.Contains(process.Id))
+                    {
+                        try
+                        {
+                            state.Append(CultureInfo.InvariantCulture, $"; newPowerShellCandidate={process.Id}, started={process.StartTime.ToUniversalTime():O}, cpuMs={process.TotalProcessorTime.TotalMilliseconds:F1}, threads={process.Threads.Count}");
+                        }
+                        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+                        {
+                            state.Append(CultureInfo.InvariantCulture, $"; processStateUnavailable={exception.Message}");
+                        }
+                    }
+                }
+            }
+
+            ThreadPool.GetAvailableThreads(out var workerThreads, out var completionThreads);
+            state.Append(CultureInfo.InvariantCulture, $"; workerThreadsAvailable={workerThreads}; completionThreadsAvailable={completionThreads}; pendingWorkItems={ThreadPool.PendingWorkItemCount}");
+            return state.ToString();
+        }
+        catch (Exception exception)
+        {
+            return $"Startup snapshot unavailable: {exception.Message}";
+        }
     }
 
     private static async Task WaitForIoStartedAsync(Task ioStarted, Task exchange, TimeSpan timeout)
