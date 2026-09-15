@@ -9,6 +9,7 @@
 *.slnx text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+*.bat text eol=crlf
 *.cmd text eol=crlf
 
 *.ico binary

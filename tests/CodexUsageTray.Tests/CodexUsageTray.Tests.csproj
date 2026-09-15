@@ -1,41 +1,41 @@
 <Project Sdk="Microsoft.NET.Sdk">
-    <PropertyGroup>
-        <TargetFramework>net10.0-windows</TargetFramework>
-        <OutputType>Exe</OutputType>
-        <UseWindowsForms>true</UseWindowsForms>
-        <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
-        <IsPackable>false</IsPackable>
-        <IsTestProject>true</IsTestProject>
-        <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
-    </PropertyGroup>
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CodexUsageTray\CodexUsageTray.csproj" />
+    <ProjectReference Include="..\CodexUsageTray.ProcessFixture\CodexUsageTray.ProcessFixture.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <Target Name="CopyProcessFixture" AfterTargets="Build">
+    <MSBuild Projects="..\CodexUsageTray.ProcessFixture\CodexUsageTray.ProcessFixture.csproj"
+             Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_ProcessFixtureTarget" />
+    </MSBuild>
     <ItemGroup>
-        <PackageReference Include="Microsoft.Testing.Extensions.CodeCoverage" />
-        <PackageReference Include="xunit.v3.mtp-v2" />
+      <_ProcessFixtureFile Include="@(_ProcessFixtureTarget)" />
+      <_ProcessFixtureFile Include="@(_ProcessFixtureTarget->'%(RootDir)%(Directory)%(Filename).exe')" />
+      <_ProcessFixtureFile Include="@(_ProcessFixtureTarget->'%(RootDir)%(Directory)%(Filename).deps.json')" />
+      <_ProcessFixtureFile Include="@(_ProcessFixtureTarget->'%(RootDir)%(Directory)%(Filename).runtimeconfig.json')" />
     </ItemGroup>
-
-    <ItemGroup>
-        <ProjectReference Include="..\..\src\CodexUsageTray\CodexUsageTray.csproj" />
-        <ProjectReference Include="..\CodexUsageTray.ProcessFixture\CodexUsageTray.ProcessFixture.csproj" ReferenceOutputAssembly="false" />
-    </ItemGroup>
-
-    <ItemGroup>
-        <Using Include="Xunit" />
-    </ItemGroup>
-
-    <Target Name="CopyProcessFixture" AfterTargets="Build">
-        <MSBuild Projects="..\CodexUsageTray.ProcessFixture\CodexUsageTray.ProcessFixture.csproj"
-                 Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
-            <Output TaskParameter="TargetOutputs" ItemName="_ProcessFixtureTarget" />
-        </MSBuild>
-        <ItemGroup>
-            <_ProcessFixtureFile Include="@(_ProcessFixtureTarget)" />
-            <_ProcessFixtureFile Include="@(_ProcessFixtureTarget->'%(RootDir)%(Directory)%(Filename).exe')" />
-            <_ProcessFixtureFile Include="@(_ProcessFixtureTarget->'%(RootDir)%(Directory)%(Filename).deps.json')" />
-            <_ProcessFixtureFile Include="@(_ProcessFixtureTarget->'%(RootDir)%(Directory)%(Filename).runtimeconfig.json')" />
-        </ItemGroup>
-        <Copy SourceFiles="@(_ProcessFixtureFile)" DestinationFolder="$(OutDir)ProcessFixture" SkipUnchangedFiles="true">
-            <Output TaskParameter="CopiedFiles" ItemName="FileWrites" />
-        </Copy>
-    </Target>
+    <Copy SourceFiles="@(_ProcessFixtureFile)" DestinationFolder="$(OutDir)ProcessFixture" SkipUnchangedFiles="true">
+      <Output TaskParameter="CopiedFiles" ItemName="FileWrites" />
+    </Copy>
+  </Target>
 </Project>
