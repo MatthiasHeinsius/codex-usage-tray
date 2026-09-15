@@ -19,7 +19,11 @@ runs:
 
     - name: Restore
       shell: pwsh
-      run: dotnet restore .\CodexUsageTray.slnx
+      run: |
+        if (-not (Test-Path -LiteralPath .\tests\CodexUsageTray.Tests\packages.lock.json)) {
+          throw 'The test dependency lock file is missing.'
+        }
+        dotnet restore .\CodexUsageTray.slnx
 
     - name: Build
       shell: pwsh
