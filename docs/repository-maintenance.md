@@ -28,6 +28,18 @@ The release build validates the solution and published executable before generat
 
 ## Actions storage
 
+### Process cancellation diagnostics
+
+The manually triggered `Process cancellation diagnostics` workflow defaults to running the five-second blocked-write deadline case first on each fresh runner, then repeating the full test suite three times. It uses four runners: two with coverage and two without. The initial case checks that startup fits inside the deadline without a previous test warming the fixture. Disable `cold_start` to reproduce the normal suite order. Select `Targeted` to run only the four blocked-I/O cancellation cases after that initial check. An optional full-suite filter can isolate preceding tests but must retain those four cases. Each attempt uses a fresh test process. Per-runner artifacts save console output, TRX results, coverage reports where applicable, and `summary.csv` for seven days. A failed attempt remains a failure even if later attempts pass.
+
+To run locally, build the test project in Release, then run `./.github/scripts/diagnose-process-tests.ps1`. Its default is ten targeted attempts with coverage followed by ten without. Use `-Scope Full -Coverage On -Repetitions 3` for full-suite runs with coverage, `-Coverage Off` for the comparison, and `-Filter <expression>` for isolation. Use `-ResultsDirectory <new-directory>` for a subsequent run. Existing attempt directories are rejected to avoid mixing old and new results.
+
+The process tests build and copy `CodexUsageTray.ProcessFixture` into their output directory. This small console executable replaces PowerShell startup and cmdlet initialization in the fixtures. It publishes its PID before emitting and flushing `ready`, never reads stdin, and exits after twenty seconds if cleanup fails. Tests still launch it through a batch file to exercise the production command interpreter and process-tree cleanup. The helper is a test-only build dependency and is not included in the application release.
+
+Test output records readiness, I/O, cancellation, cleanup, PID-file state, and the last child stderr line. Tests assert that I/O remains pending before requesting cancellation. The existing readiness, exchange, and child-exit deadlines remain unchanged. To run the initial deadline case locally, use `-Scope Cold -Coverage On -Repetitions 1` with a new results directory.
+
+### Artifact retention
+
 Build runs on pull requests and pushes to `main`. Superseded runs are cancelled. Only `main` builds upload portable executables; test results and these executables expire after seven days. Release staging artifacts expire after one day. The repository default for future artifacts and logs is seven days. GitHub release assets are separate and remain available.
 
 Changing retention does not alter expiry dates on existing artifacts. Existing artifacts keep their original expiry dates.

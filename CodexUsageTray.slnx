@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="src/CodexUsageTray/CodexUsageTray.csproj" />
   <Project Path="tests/CodexUsageTray.Tests/CodexUsageTray.Tests.csproj" />
+  <Project Path="tests/CodexUsageTray.ProcessFixture/CodexUsageTray.ProcessFixture.csproj" />
   <Project Path="tools/CodexUsageTray.ScreenshotGenerator/CodexUsageTray.ScreenshotGenerator.csproj" />
 </Solution>

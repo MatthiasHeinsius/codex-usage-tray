@@ -15,9 +15,26 @@
 
     <ItemGroup>
         <ProjectReference Include="..\..\src\CodexUsageTray\CodexUsageTray.csproj" />
+        <ProjectReference Include="..\CodexUsageTray.ProcessFixture\CodexUsageTray.ProcessFixture.csproj" ReferenceOutputAssembly="false" />
     </ItemGroup>
 
     <ItemGroup>
         <Using Include="Xunit" />
     </ItemGroup>
+
+    <Target Name="CopyProcessFixture" AfterTargets="Build">
+        <MSBuild Projects="..\CodexUsageTray.ProcessFixture\CodexUsageTray.ProcessFixture.csproj"
+                 Targets="GetTargetPath" Properties="Configuration=$(Configuration)">
+            <Output TaskParameter="TargetOutputs" ItemName="_ProcessFixtureTarget" />
+        </MSBuild>
+        <ItemGroup>
+            <_ProcessFixtureFile Include="@(_ProcessFixtureTarget)" />
+            <_ProcessFixtureFile Include="@(_ProcessFixtureTarget->'%(RootDir)%(Directory)%(Filename).exe')" />
+            <_ProcessFixtureFile Include="@(_ProcessFixtureTarget->'%(RootDir)%(Directory)%(Filename).deps.json')" />
+            <_ProcessFixtureFile Include="@(_ProcessFixtureTarget->'%(RootDir)%(Directory)%(Filename).runtimeconfig.json')" />
+        </ItemGroup>
+        <Copy SourceFiles="@(_ProcessFixtureFile)" DestinationFolder="$(OutDir)ProcessFixture" SkipUnchangedFiles="true">
+            <Output TaskParameter="CopiedFiles" ItemName="FileWrites" />
+        </Copy>
+    </Target>
 </Project>
