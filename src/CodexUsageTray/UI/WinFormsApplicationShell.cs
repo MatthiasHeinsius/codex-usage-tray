@@ -19,7 +19,7 @@ internal sealed class WinFormsApplicationShell :
     private readonly Action<string> showSettingFailure;
     private readonly Func<Uri, bool> confirmAndOpenSignIn;
     private readonly UsagePopupForm popup;
-    private readonly NotifyIcon notifyIcon;
+    private readonly GuidNotifyIcon notifyIcon;
     private readonly ContextMenuStrip contextMenu;
     private readonly ToolStripMenuItem startupItem;
     private readonly ToolStripMenuItem automaticUpdateItem;
@@ -50,7 +50,7 @@ internal sealed class WinFormsApplicationShell :
         popup.CreateControl();
         _ = popup.Handle;
         currentIcon = TrayIconRenderer.Create(100, 100);
-        notifyIcon = new NotifyIcon
+        notifyIcon = new GuidNotifyIcon
         {
             Icon = currentIcon,
             Text = "Codex usage · connecting"
