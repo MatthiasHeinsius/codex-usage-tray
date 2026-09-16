@@ -277,7 +277,11 @@ internal sealed class UsagePopupForm : Form
         var visibleAllowanceCount = (fiveHourVisible ? 1 : 0) + (weeklyVisible ? 1 : 0);
         compactView = compact;
 
-        statusLabel.Visible = !compact;
+        statusLabel.Visible = true;
+        statusLabel.Location = new Point(80, 50);
+        statusLabel.Size = new Size(
+            PopupWidth - ContentInset - statusLabel.Left,
+            LabelHeight(statusLabel, 28));
         fiveHourAllowance.SetVisibility(fiveHourVisible, compact);
         weeklyAllowance.SetVisibility(weeklyVisible, compact);
         limitsDivider.Visible = !compact && visibleAllowanceCount > 0;
@@ -317,11 +321,6 @@ internal sealed class UsagePopupForm : Form
         }
         else
         {
-            statusLabel.Location = new Point(80, 50);
-            statusLabel.Size = new Size(
-                PopupWidth - ContentInset - statusLabel.Left,
-                LabelHeight(statusLabel, 28));
-
             var section = 0;
             if (fiveHourVisible)
             {
