@@ -12,6 +12,10 @@ _Avoid_: Raw account response, usage response
 A source-specific reading of usage facts before they are reconciled into a Usage Snapshot.
 _Avoid_: Usage Snapshot, raw response
 
+**Session Activity**:
+The most recent token activity and model identified from local Codex session logs. It drives the popup activity indicator and does not alter a Usage Snapshot.
+_Avoid_: Usage Observation, inference total
+
 **Usage Update**:
 One requested refresh that produces a final Usage Snapshot and its corresponding user-facing presentation after any Allowance Window Activation work finishes.
 _Avoid_: Refresh cycle, display cycle
