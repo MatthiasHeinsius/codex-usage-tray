@@ -45,8 +45,10 @@ public sealed class UsagePopupFormTests
         });
     }
 
-    [Fact]
-    public Task AccountStatusShowsTheActiveModelOrIdleState()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task AccountStatusShowsTheActiveModelOrIdleState(bool compact)
     {
         return StaTest.RunAsync(() =>
         {
@@ -63,11 +65,18 @@ public sealed class UsagePopupFormTests
                     limitName: "Codex"),
                 now,
                 CultureInfo.InvariantCulture);
-            using var popup = new UsagePopupForm(initialCompactView: false);
+            using var popup = new UsagePopupForm(initialCompactView: compact)
+            {
+                Location = new Point(-10_000, -10_000),
+                Opacity = 0
+            };
             popup.ShowPresentation(presentation);
+            popup.Show();
+            Application.DoEvents();
 
             popup.SetActivityForScreenshot(new CodexSessionActivity(now, CodexModel.Sol));
             var activeStatus = ControlWithText<Label>(popup, "Plus · using Sol");
+            Assert.True(activeStatus.Visible);
             Assert.True(activeStatus.PreferredWidth <= activeStatus.Width);
 
             popup.SetActivityForScreenshot(new CodexSessionActivity(now, CodexModel.Unknown));
