@@ -35,6 +35,8 @@ internal static class Program
             CultureInfo.CurrentCulture);
 
         using var popup = new CodexUsageTray.UsagePopupForm(initialCompactView: false);
+        popup.SetActivityForScreenshot(
+            new CodexUsageTray.CodexSessionActivity(DateTimeOffset.Now, CodexUsageTray.CodexModel.Astra));
         popup.ShowPresentation(presentation);
         popup.Location = new Point(-10_000, -10_000);
         popup.Show();
@@ -104,6 +106,19 @@ internal static class Program
 
         using var bitmap = new Bitmap(control.ClientSize.Width, control.ClientSize.Height);
         control.DrawToBitmap(bitmap, control.ClientRectangle);
+        if (control is CodexUsageTray.UsagePopupForm popup
+            && popup.OwnedForms.SingleOrDefault() is { } overlay)
+        {
+            using var overlayBitmap = new Bitmap(overlay.Width, overlay.Height);
+            overlay.DrawToBitmap(overlayBitmap, overlay.ClientRectangle);
+            overlayBitmap.MakeTransparent(overlay.TransparencyKey);
+            using var graphics = Graphics.FromImage(bitmap);
+            graphics.DrawImageUnscaled(
+                overlayBitmap,
+                overlay.Left - popup.Left,
+                overlay.Top - popup.Top);
+        }
+
         bitmap.Save(path, ImageFormat.Png);
     }
 

@@ -129,7 +129,8 @@ public sealed class WinFormsApplicationShellTests
                 UsagePresentation.AllowancePresentation.Show(60, "60% left", "Resets Friday", "4d"),
                 "1.2K tokens",
                 "4.5M tokens",
-                "Updated 12:00");
+                "Updated 12:00",
+                UsagePresentation.ActivityIndicatorPresentation.Unavailable);
             var tooltip = new string('x', 70);
             var notice = new UsagePresentation.NoticePresentation(
                 "5-hour allowance reset.",

@@ -34,10 +34,79 @@ public sealed class UsagePresentationTests
         Assert.Equal("784.2K tokens", presentation.Popup.TodayTokens);
         Assert.Equal("123.46M tokens", presentation.Popup.LifetimeTokens);
         Assert.Equal($"Updated {now.LocalDateTime.ToString("t", culture)}", presentation.Popup.UpdatedText);
+        Assert.Equal(64, presentation.Popup.ActivityIndicator.RemainingPercent);
+        Assert.Equal(fiveHourReset, presentation.Popup.ActivityIndicator.ResetsAt);
+        Assert.Equal(TimeSpan.FromHours(5), presentation.Popup.ActivityIndicator.WindowDuration);
+        Assert.Null(presentation.Popup.ActivityIndicator.ResetObservedAt);
         Assert.Equal(64, presentation.Tray.FiveHourRemaining);
         Assert.Equal(42, presentation.Tray.WeeklyRemaining);
         Assert.Equal("Codex · 5h 64% · week 42%", presentation.Tray.Tooltip);
         Assert.Empty(presentation.Notices);
+    }
+
+    [Fact]
+    public void CreateMarksAResetForTheIndicator()
+    {
+        var now = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.Zero);
+        var snapshot = CreateSnapshot(
+            now,
+            new AllowanceWindow(0, TimeSpan.FromHours(5), now.AddHours(5)),
+            weekly: null,
+            lifetimeTokens: null,
+            todayTokens: null,
+            plan: "plus",
+            limitName: "Codex");
+
+        var presentation = UsagePresentation.Create(
+            snapshot,
+            new AllowanceWindowActivationResult(AllowanceWindows.FiveHour, AllowanceWindows.None),
+            notificationsEnabled: false,
+            now,
+            CultureInfo.InvariantCulture);
+
+        Assert.Equal(now, presentation.Popup.ActivityIndicator.ResetObservedAt);
+    }
+
+    [Fact]
+    public void CreateMarksOnlyTheResetForTheWindowShownByTheIndicator()
+    {
+        var now = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.Zero);
+        var weekly = new AllowanceWindow(0, TimeSpan.FromDays(7), now.AddDays(7));
+        var bothWindows = CreateSnapshot(
+            now,
+            new AllowanceWindow(20, TimeSpan.FromHours(5), now.AddHours(4)),
+            weekly,
+            lifetimeTokens: null,
+            todayTokens: null,
+            plan: "plus",
+            limitName: "Codex");
+        var weeklyOnly = CreateSnapshot(
+            now,
+            fiveHour: null,
+            weekly,
+            lifetimeTokens: null,
+            todayTokens: null,
+            plan: "plus",
+            limitName: "Codex");
+        var weeklyReset = new AllowanceWindowActivationResult(
+            AllowanceWindows.Weekly,
+            AllowanceWindows.None);
+
+        var primaryFiveHourPresentation = UsagePresentation.Create(
+            bothWindows,
+            weeklyReset,
+            notificationsEnabled: false,
+            now,
+            CultureInfo.InvariantCulture);
+        var primaryWeeklyPresentation = UsagePresentation.Create(
+            weeklyOnly,
+            weeklyReset,
+            notificationsEnabled: false,
+            now,
+            CultureInfo.InvariantCulture);
+
+        Assert.Null(primaryFiveHourPresentation.Popup.ActivityIndicator.ResetObservedAt);
+        Assert.Equal(now, primaryWeeklyPresentation.Popup.ActivityIndicator.ResetObservedAt);
     }
 
     [Fact]
