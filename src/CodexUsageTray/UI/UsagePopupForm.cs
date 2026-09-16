@@ -1,3 +1,5 @@
+using System.Drawing.Drawing2D;
+
 namespace CodexUsageTray;
 
 internal sealed class UsagePopupForm : Form
@@ -5,6 +7,8 @@ internal sealed class UsagePopupForm : Form
     private const int ContentInset = 20;
     private const int PopupWidth = 428;
     private const int ContentWidth = PopupWidth - (2 * ContentInset);
+    private static readonly Color PopupBackColor = Color.FromArgb(24, 27, 34);
+    private static readonly Color PopupBorderColor = Color.FromArgb(61, 68, 82);
     private readonly UsageActivityIndicator activityIndicator;
     private readonly ActivityOverlayForm activityOverlay;
     private readonly Label title;
@@ -62,7 +66,7 @@ internal sealed class UsagePopupForm : Form
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
-        BackColor = Color.FromArgb(24, 27, 34);
+        BackColor = PopupBackColor;
         ForeColor = Color.FromArgb(235, 238, 244);
         ClientSize = new Size(PopupWidth, 411);
         Padding = new Padding(ContentInset);
@@ -407,9 +411,9 @@ internal sealed class UsagePopupForm : Form
     protected override void OnPaint(PaintEventArgs eventArgs)
     {
         base.OnPaint(eventArgs);
-        using var pen = new Pen(Color.FromArgb(61, 68, 82))
+        using var pen = new Pen(PopupBorderColor)
         {
-            Alignment = System.Drawing.Drawing2D.PenAlignment.Inset
+            Alignment = PenAlignment.Inset
         };
         eventArgs.Graphics.DrawRectangle(pen, 0, 0, ClientSize.Width - 1, ClientSize.Height - 1);
     }
@@ -678,6 +682,7 @@ internal sealed class UsagePopupForm : Form
     private void PositionActivityOverlay()
     {
         var titleCenterY = title.Top + (title.Height / 2);
+        activityOverlay.SetPopupInset((activityOverlay.Width / 2) - titleCenterY);
         activityOverlay.Location = new Point(
             Left + titleCenterY - (activityOverlay.Width / 2),
             Top + titleCenterY - (activityOverlay.Height / 2));
@@ -688,17 +693,82 @@ internal sealed class UsagePopupForm : Form
         private const int WsExTransparent = 0x20;
         private const int WsExToolWindow = 0x80;
         private const int WsExNoActivate = 0x08000000;
+        private const float OutlineRadius = 50;
+        private int popupInset;
 
         public ActivityOverlayForm(UsageActivityIndicator indicator)
         {
             AutoScaleMode = AutoScaleMode.None;
-            BackColor = Color.FromArgb(24, 27, 34);
-            ClientSize = indicator.Size;
+            BackColor = Color.FromArgb(23, 26, 33);
+            ClientSize = indicator.Size + new Size(1, 1);
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual;
             TransparencyKey = BackColor;
             Controls.Add(indicator);
+        }
+
+        public void SetPopupInset(int inset)
+        {
+            popupInset = inset;
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs eventArgs)
+        {
+            base.OnPaint(eventArgs);
+            eventArgs.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            var farEdge = ClientSize.Width - 1;
+            var circle = new RectangleF(
+                (ClientSize.Width / 2f) - OutlineRadius,
+                (ClientSize.Height / 2f) - OutlineRadius,
+                OutlineRadius * 2,
+                OutlineRadius * 2);
+
+            using var fillPath = new GraphicsPath();
+            AddCornerOutline(fillPath, circle, farEdge);
+            fillPath.AddLine(popupInset, farEdge, popupInset, farEdge + 2);
+            fillPath.AddLine(popupInset, farEdge + 2, farEdge + 2, farEdge + 2);
+            fillPath.AddLine(farEdge + 2, farEdge + 2, farEdge + 2, popupInset);
+            fillPath.AddLine(farEdge + 2, popupInset, farEdge, popupInset);
+            fillPath.CloseFigure();
+            using (var background = new SolidBrush(PopupBackColor))
+            {
+                eventArgs.Graphics.FillPath(background, fillPath);
+            }
+
+            using var outlinePath = new GraphicsPath();
+            AddCornerOutline(outlinePath, circle, farEdge);
+            using var border = new Pen(PopupBorderColor);
+            eventArgs.Graphics.DrawPath(border, outlinePath);
+        }
+
+        private void AddCornerOutline(GraphicsPath path, RectangleF circle, int farEdge)
+        {
+            const float startAngle = -60;
+            const float sweepAngle = -150;
+            var center = new PointF(circle.Left + (circle.Width / 2), circle.Top + (circle.Height / 2));
+            var start = PointOnCircle(center, OutlineRadius, startAngle);
+            var end = PointOnCircle(center, OutlineRadius, startAngle + sweepAngle);
+            path.AddBezier(
+                new PointF(farEdge, popupInset),
+                new PointF(farEdge - 8, popupInset),
+                new PointF(start.X + 9, start.Y + 5),
+                start);
+            path.AddArc(circle, startAngle, sweepAngle);
+            path.AddBezier(
+                end,
+                new PointF(end.X + 5, end.Y + 9),
+                new PointF(popupInset, farEdge - 8),
+                new PointF(popupInset, farEdge));
+        }
+
+        private static PointF PointOnCircle(PointF center, float radius, float angle)
+        {
+            var radians = angle * MathF.PI / 180;
+            return new PointF(
+                center.X + (radius * MathF.Cos(radians)),
+                center.Y + (radius * MathF.Sin(radians)));
         }
 
         protected override bool ShowWithoutActivation => true;
