@@ -10,7 +10,7 @@ public sealed class UsagePopupFormTests
         return StaTest.RunAsync(() =>
         {
             using var popup = ShowExtendedPopup();
-            var title = ControlWithText<Label>(popup, "Codex usage");
+            var title = ControlWithText<Label>(popup, "Codex Usage");
             var status = ControlWithText<Label>(popup, "Reading your Codex account");
             var fiveHourTitle = ControlWithText<Label>(popup, "5-hour limit");
             var todayTitle = ControlWithText<Label>(popup, "Inference today");
@@ -46,6 +46,29 @@ public sealed class UsagePopupFormTests
     }
 
     [Fact]
+    public Task ActivityIndicatorUsesATransparentOverlayOutsideThePopup()
+    {
+        return StaTest.RunAsync(() =>
+        {
+            using var popup = ShowExtendedPopup();
+            var title = ControlWithText<Label>(popup, "Codex Usage");
+            var overlay = Assert.Single(popup.OwnedForms);
+            var indicator = Assert.Single(overlay.Controls.OfType<UsageActivityIndicator>());
+            const int ringInset = 13;
+            var leftOverhang = popup.Left - (overlay.Left + ringInset);
+            var topOverhang = popup.Top - (overlay.Top + ringInset);
+
+            Assert.InRange(Math.Abs(leftOverhang - topOverhang), 0, 1);
+            Assert.True(leftOverhang > 0);
+            Assert.Equal(
+                popup.Top + title.Top + (title.Height / 2),
+                overlay.Top + indicator.Top + (indicator.Height / 2));
+            Assert.Equal(overlay.BackColor, overlay.TransparencyKey);
+            Assert.Equal(FormBorderStyle.None, overlay.FormBorderStyle);
+        });
+    }
+
+    [Fact]
     public Task ChangingViewModeKeepsRefreshInsetsAndTopSnap()
     {
         return StaTest.RunAsync(() =>
@@ -62,8 +85,19 @@ public sealed class UsagePopupFormTests
 
             popup.Controls.OfType<ViewModeIconButton>().Single().PerformClick();
 
+            var fiveHourTitle = ControlWithText<Label>(popup, "5-hour limit");
+            var weeklyTitle = ControlWithText<Label>(popup, "Weekly limit");
+            var fiveHourValue = popup.Controls.OfType<Label>()
+                .Where(label => label.Text == "Unavailable" && label.TextAlign == ContentAlignment.MiddleRight)
+                .OrderBy(label => label.Top)
+                .First();
             Assert.True(refreshButton.Visible);
             Assert.False(updatedLabel.Visible);
+            Assert.True(
+                fiveHourTitle.Right <= fiveHourValue.Left,
+                $"Title {fiveHourTitle.Bounds} overlaps value {fiveHourValue.Bounds}.");
+            Assert.Equal(ControlWithText<Label>(popup, "Codex Usage").Left, fiveHourTitle.Left);
+            Assert.Equal(fiveHourTitle.Left, weeklyTitle.Left);
             Assert.Equal(popup.Padding.Right, popup.ClientSize.Width - refreshButton.Right);
             Assert.Equal(popup.Padding.Bottom, popup.ClientSize.Height - refreshButton.Bottom);
             Assert.Equal(extendedRefreshInset, popup.ClientSize.Height - refreshButton.Bottom);

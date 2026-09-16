@@ -18,7 +18,8 @@ internal abstract record UsagePresentation(
                 unavailable,
                 "Unavailable",
                 "Unavailable",
-                "Not updated yet"),
+                "Not updated yet",
+                ActivityIndicatorPresentation.Unavailable),
             new TrayPresentation(100, 100, "Codex usage · connecting"));
     }
 
@@ -43,13 +44,26 @@ internal abstract record UsagePresentation(
         var fiveHour = PresentAllowance(snapshot.FiveHour, now, formatProvider);
         var weekly = PresentAllowance(snapshot.Weekly, now, formatProvider);
         var observationText = PresentLatestObservationTime(snapshot, formatProvider);
+        var indicatorWindow = snapshot.FiveHour ?? snapshot.Weekly;
+        var indicatorSelection = snapshot.FiveHour is not null
+            ? AllowanceWindows.FiveHour
+            : snapshot.Weekly is not null
+                ? AllowanceWindows.Weekly
+                : AllowanceWindows.None;
         var popup = new PopupPresentation(
             AccountStatus(snapshot),
             fiveHour,
             weekly,
             TokenLabel(snapshot.TodayTokens, formatProvider),
             TokenLabel(snapshot.LifetimeTokens, formatProvider),
-            observationText);
+            observationText,
+            indicatorWindow is null
+                ? ActivityIndicatorPresentation.Unavailable
+                : new ActivityIndicatorPresentation(
+                    indicatorWindow.RemainingPercent,
+                    indicatorWindow.ResetsAt,
+                    indicatorWindow.Duration,
+                    (allowanceEvents.Reset & indicatorSelection) == AllowanceWindows.None ? null : now));
         var tray = new TrayPresentation(
             snapshot.FiveHour?.RemainingPercent,
             snapshot.Weekly?.RemainingPercent,
@@ -273,7 +287,17 @@ internal abstract record UsagePresentation(
         AllowancePresentation Weekly,
         string TodayTokens,
         string LifetimeTokens,
-        string UpdatedText);
+        string UpdatedText,
+        ActivityIndicatorPresentation ActivityIndicator);
+
+    internal sealed record ActivityIndicatorPresentation(
+        int? RemainingPercent,
+        DateTimeOffset? ResetsAt,
+        TimeSpan? WindowDuration,
+        DateTimeOffset? ResetObservedAt)
+    {
+        public static ActivityIndicatorPresentation Unavailable { get; } = new(null, null, null, null);
+    }
 
     internal sealed record AllowancePresentation
     {

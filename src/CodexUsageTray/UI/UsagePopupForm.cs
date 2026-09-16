@@ -5,6 +5,8 @@ internal sealed class UsagePopupForm : Form
     private const int ContentInset = 20;
     private const int PopupWidth = 428;
     private const int ContentWidth = PopupWidth - (2 * ContentInset);
+    private readonly UsageActivityIndicator activityIndicator;
+    private readonly ActivityOverlayForm activityOverlay;
     private readonly Label title;
     private readonly Label statusLabel;
     private readonly AllowanceControls fiveHourAllowance;
@@ -22,6 +24,8 @@ internal sealed class UsagePopupForm : Form
     private readonly RefreshIconButton refreshButton;
     private readonly ToolTip toolTip = new();
     private readonly System.Windows.Forms.Timer deactivateTimer = new() { Interval = 100 };
+    private readonly System.Windows.Forms.Timer animationTimer = new() { Interval = 50 };
+    private readonly CodexSessionActivityMonitor? activityMonitor;
     private UsagePresentation.PopupPresentation? displayedPresentation;
     private bool compactView;
     private Control? dragControl;
@@ -37,13 +41,23 @@ internal sealed class UsagePopupForm : Form
     public UsagePopupForm()
         : this(
             RegistryApplicationSettings.Current.CompactPopup,
-            compact => RegistryApplicationSettings.Current.CompactPopup = compact)
+            compact => RegistryApplicationSettings.Current.CompactPopup = compact,
+            new CodexSessionActivityMonitor())
     {
     }
 
     internal UsagePopupForm(bool initialCompactView, Action<bool>? saveViewMode = null)
+        : this(initialCompactView, saveViewMode, activityMonitor: null)
     {
-        Text = "Codex usage";
+    }
+
+    private UsagePopupForm(
+        bool initialCompactView,
+        Action<bool>? saveViewMode,
+        CodexSessionActivityMonitor? activityMonitor)
+    {
+        this.activityMonitor = activityMonitor;
+        Text = "Codex Usage";
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
@@ -54,12 +68,19 @@ internal sealed class UsagePopupForm : Form
         Font = new Font("Segoe UI", 9.25f);
         SetStyle(ControlStyles.ResizeRedraw | ControlStyles.OptimizedDoubleBuffer, true);
 
+        activityIndicator = new UsageActivityIndicator
+        {
+            Location = Point.Empty
+        };
+        activityIndicator.ShowSession(activityMonitor?.Current ?? CodexSessionActivity.Empty);
+        activityOverlay = new ActivityOverlayForm(activityIndicator);
+
         title = new Label
         {
-            Text = "Codex usage",
+            Text = "Codex Usage",
             Font = new Font("Segoe UI Semibold", 15f, FontStyle.Bold),
             AutoSize = true,
-            Location = new Point(ContentInset, 11)
+            Location = new Point(80, 11)
         };
 
         usagePageButton = new UsageLinkIconButton
@@ -149,6 +170,7 @@ internal sealed class UsagePopupForm : Form
             }
         };
         Activated += (_, _) => deactivateTimer.Stop();
+        animationTimer.Tick += (_, _) => activityIndicator.Advance(DateTimeOffset.Now);
 
         refreshButton = new RefreshIconButton
         {
@@ -188,7 +210,13 @@ internal sealed class UsagePopupForm : Form
             .. weeklyAllowance.All,
             limitsDivider, todayTitle, todayTokens, lifetimeTitle, lifetimeTokens, inferenceDivider, updatedLabel
         ]);
+        if (activityMonitor is not null)
+        {
+            activityMonitor.Changed += ActivityMonitorOnChanged;
+        }
+
         AddDragHandlers(this);
+        LocationChanged += (_, _) => PositionActivityOverlay();
         ApplyViewMode(viewModeButton.IsCompact, preserveBottom: false);
     }
 
@@ -218,6 +246,9 @@ internal sealed class UsagePopupForm : Form
         ApplyViewMode(compact, preserveBottom: false);
     }
 
+    internal void SetActivityForScreenshot(CodexSessionActivity activity) =>
+        activityIndicator.ShowSession(activity);
+
     private void RenderPresentation(UsagePresentation.PopupPresentation presentation)
     {
         statusLabel.Text = presentation.AccountStatus;
@@ -226,6 +257,7 @@ internal sealed class UsagePopupForm : Form
         todayTokens.Text = presentation.TodayTokens;
         lifetimeTokens.Text = presentation.LifetimeTokens;
         updatedLabel.Text = presentation.UpdatedText;
+        activityIndicator.ShowAllowance(presentation.ActivityIndicator);
     }
 
     private void ApplyViewMode(bool compact, bool preserveBottom)
@@ -277,8 +309,8 @@ internal sealed class UsagePopupForm : Form
         }
         else
         {
-            statusLabel.Location = new Point(21, 46);
-            statusLabel.Size = new Size(261, LabelHeight(statusLabel, 28));
+            statusLabel.Location = new Point(80, 46);
+            statusLabel.Size = new Size(194, LabelHeight(statusLabel, 28));
 
             var section = 0;
             if (fiveHourVisible)
@@ -380,8 +412,16 @@ internal sealed class UsagePopupForm : Form
     {
         if (disposing)
         {
+            if (activityMonitor is not null)
+            {
+                activityMonitor.Changed -= ActivityMonitorOnChanged;
+                activityMonitor.Dispose();
+            }
+
+            animationTimer.Dispose();
             deactivateTimer.Dispose();
             toolTip.Dispose();
+            activityOverlay.Dispose();
         }
 
         base.Dispose(disposing);
@@ -391,8 +431,27 @@ internal sealed class UsagePopupForm : Form
     {
         if (!Visible)
         {
+            activityOverlay.Hide();
+            animationTimer.Stop();
             deactivateTimer.Stop();
             StopDragging();
+        }
+        else
+        {
+            if (activityMonitor is not null)
+            {
+                activityIndicator.ShowSession(activityMonitor.Current);
+            }
+
+            activityIndicator.Advance(DateTimeOffset.Now);
+            PositionActivityOverlay();
+            activityOverlay.Opacity = Opacity;
+            if (!activityOverlay.Visible)
+            {
+                activityOverlay.Show(this);
+            }
+
+            animationTimer.Start();
         }
 
         base.OnVisibleChanged(eventArgs);
@@ -476,11 +535,11 @@ internal sealed class UsagePopupForm : Form
         public void LayoutCompact(int row, bool sharesRefreshRow)
         {
             var top = 64 + (36 * row);
-            Title.Location = new Point(ContentInset, top);
-            Value.Location = new Point(136, top - 2);
-            Value.Size = new Size(112, LabelHeight(Value, 24));
-            Reset.Location = new Point(264, top);
-            Reset.Size = new Size(sharesRefreshRow ? 100 : 144, LabelHeight(Reset, 24));
+            Title.Location = new Point(80, top);
+            Value.Location = new Point(198, top - 2);
+            Value.Size = new Size(76, LabelHeight(Value, 24));
+            Reset.Location = new Point(282, top);
+            Reset.Size = new Size(sharesRefreshRow ? 82 : 126, LabelHeight(Reset, 24));
         }
 
         public void LayoutExtended(int section)
@@ -568,6 +627,68 @@ internal sealed class UsagePopupForm : Form
         if (capturedControl is not null)
         {
             capturedControl.Capture = false;
+        }
+    }
+
+    private void ActivityMonitorOnChanged(object? sender, EventArgs eventArgs)
+    {
+        if (activityMonitor is null || IsDisposed || Disposing)
+        {
+            return;
+        }
+
+        var activity = activityMonitor.Current;
+        if (!IsHandleCreated)
+        {
+            return;
+        }
+
+        try
+        {
+            BeginInvoke(() => activityIndicator.ShowSession(activity));
+        }
+        catch (InvalidOperationException)
+        {
+            // The form handle can disappear while the application is shutting down.
+        }
+    }
+
+    private void PositionActivityOverlay()
+    {
+        var titleCenterY = title.Top + (title.Height / 2);
+        activityOverlay.Location = new Point(
+            Left + titleCenterY - (activityOverlay.Width / 2),
+            Top + titleCenterY - (activityOverlay.Height / 2));
+    }
+
+    private sealed class ActivityOverlayForm : Form
+    {
+        private const int WsExTransparent = 0x20;
+        private const int WsExToolWindow = 0x80;
+        private const int WsExNoActivate = 0x08000000;
+
+        public ActivityOverlayForm(UsageActivityIndicator indicator)
+        {
+            AutoScaleMode = AutoScaleMode.None;
+            BackColor = Color.FromArgb(24, 27, 34);
+            ClientSize = indicator.Size;
+            FormBorderStyle = FormBorderStyle.None;
+            ShowInTaskbar = false;
+            StartPosition = FormStartPosition.Manual;
+            TransparencyKey = BackColor;
+            Controls.Add(indicator);
+        }
+
+        protected override bool ShowWithoutActivation => true;
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                var parameters = base.CreateParams;
+                parameters.ExStyle |= WsExTransparent | WsExToolWindow | WsExNoActivate;
+                return parameters;
+            }
         }
     }
 
