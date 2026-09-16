@@ -27,6 +27,7 @@ internal sealed class UsagePopupForm : Form
     private readonly System.Windows.Forms.Timer animationTimer = new() { Interval = 50 };
     private readonly CodexSessionActivityMonitor? activityMonitor;
     private UsagePresentation.PopupPresentation? displayedPresentation;
+    private CodexSessionActivity sessionActivity = CodexSessionActivity.Empty;
     private bool compactView;
     private Control? dragControl;
     private Point dragStartCursor;
@@ -170,7 +171,11 @@ internal sealed class UsagePopupForm : Form
             }
         };
         Activated += (_, _) => deactivateTimer.Stop();
-        animationTimer.Tick += (_, _) => activityIndicator.Advance(DateTimeOffset.Now);
+        animationTimer.Tick += (_, _) =>
+        {
+            activityIndicator.Advance(DateTimeOffset.Now);
+            RenderAccountStatus();
+        };
 
         refreshButton = new RefreshIconButton
         {
@@ -246,12 +251,11 @@ internal sealed class UsagePopupForm : Form
         ApplyViewMode(compact, preserveBottom: false);
     }
 
-    internal void SetActivityForScreenshot(CodexSessionActivity activity) =>
-        activityIndicator.ShowSession(activity);
+    internal void SetActivityForScreenshot(CodexSessionActivity activity) => ShowActivity(activity);
 
     private void RenderPresentation(UsagePresentation.PopupPresentation presentation)
     {
-        statusLabel.Text = presentation.AccountStatus;
+        RenderAccountStatus();
         fiveHourAllowance.Render(presentation.FiveHour, compactView);
         weeklyAllowance.Render(presentation.Weekly, compactView);
         todayTokens.Text = presentation.TodayTokens;
@@ -309,8 +313,10 @@ internal sealed class UsagePopupForm : Form
         }
         else
         {
-            statusLabel.Location = new Point(80, 46);
-            statusLabel.Size = new Size(194, LabelHeight(statusLabel, 28));
+            statusLabel.Location = new Point(80, 50);
+            statusLabel.Size = new Size(
+                PopupWidth - ContentInset - statusLabel.Left,
+                LabelHeight(statusLabel, 28));
 
             var section = 0;
             if (fiveHourVisible)
@@ -440,10 +446,11 @@ internal sealed class UsagePopupForm : Form
         {
             if (activityMonitor is not null)
             {
-                activityIndicator.ShowSession(activityMonitor.Current);
+                ShowActivity(activityMonitor.Current);
             }
 
             activityIndicator.Advance(DateTimeOffset.Now);
+            RenderAccountStatus();
             PositionActivityOverlay();
             activityOverlay.Opacity = Opacity;
             if (!activityOverlay.Visible)
@@ -534,8 +541,8 @@ internal sealed class UsagePopupForm : Form
 
         public void LayoutCompact(int row, bool sharesRefreshRow)
         {
-            var top = 64 + (36 * row);
-            Title.Location = new Point(80, top);
+            var top = 86 + (36 * row);
+            Title.Location = new Point(ContentInset, top);
             Value.Location = new Point(198, top - 2);
             Value.Size = new Size(76, LabelHeight(Value, 24));
             Reset.Location = new Point(282, top);
@@ -645,11 +652,26 @@ internal sealed class UsagePopupForm : Form
 
         try
         {
-            BeginInvoke(() => activityIndicator.ShowSession(activity));
+            BeginInvoke(() => ShowActivity(activity));
         }
         catch (InvalidOperationException)
         {
             // The form handle can disappear while the application is shutting down.
+        }
+    }
+
+    private void ShowActivity(CodexSessionActivity activity)
+    {
+        sessionActivity = activity;
+        activityIndicator.ShowSession(activity);
+        RenderAccountStatus();
+    }
+
+    private void RenderAccountStatus()
+    {
+        if (displayedPresentation is not null)
+        {
+            statusLabel.Text = displayedPresentation.StatusText(sessionActivity, activityIndicator.IsActive);
         }
     }
 

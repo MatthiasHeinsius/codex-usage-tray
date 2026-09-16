@@ -46,6 +46,39 @@ public sealed class UsagePopupFormTests
     }
 
     [Fact]
+    public Task AccountStatusShowsTheActiveModelOrIdleState()
+    {
+        return StaTest.RunAsync(() =>
+        {
+            var now = DateTimeOffset.Now;
+            var presentation = UsagePresentation.Create(
+                new UsageSnapshot(
+                    now,
+                    now,
+                    fiveHour: null,
+                    weekly: null,
+                    lifetimeTokens: null,
+                    todayTokens: null,
+                    plan: "plus",
+                    limitName: "Codex"),
+                now,
+                CultureInfo.InvariantCulture);
+            using var popup = new UsagePopupForm(initialCompactView: false);
+            popup.ShowPresentation(presentation);
+
+            popup.SetActivityForScreenshot(new CodexSessionActivity(now, CodexModel.Sol));
+            var activeStatus = ControlWithText<Label>(popup, "Plus · using Sol");
+            Assert.True(activeStatus.PreferredWidth <= activeStatus.Width);
+
+            popup.SetActivityForScreenshot(new CodexSessionActivity(now, CodexModel.Unknown));
+            Assert.NotNull(ControlWithText<Label>(popup, "Plus · using unknown model"));
+
+            popup.SetActivityForScreenshot(new CodexSessionActivity(now.AddMinutes(-1), CodexModel.Sol));
+            Assert.NotNull(ControlWithText<Label>(popup, "Plus · idle"));
+        });
+    }
+
+    [Fact]
     public Task ActivityIndicatorUsesATransparentOverlayOutsideThePopup()
     {
         return StaTest.RunAsync(() =>
@@ -96,7 +129,8 @@ public sealed class UsagePopupFormTests
             Assert.True(
                 fiveHourTitle.Right <= fiveHourValue.Left,
                 $"Title {fiveHourTitle.Bounds} overlaps value {fiveHourValue.Bounds}.");
-            Assert.Equal(ControlWithText<Label>(popup, "Codex Usage").Left, fiveHourTitle.Left);
+            Assert.Equal(popup.Padding.Left, fiveHourTitle.Left);
+            Assert.Equal(86, fiveHourTitle.Top);
             Assert.Equal(fiveHourTitle.Left, weeklyTitle.Left);
             Assert.Equal(popup.Padding.Right, popup.ClientSize.Width - refreshButton.Right);
             Assert.Equal(popup.Padding.Bottom, popup.ClientSize.Height - refreshButton.Bottom);
@@ -206,11 +240,12 @@ public sealed class UsagePopupFormTests
             Assert.Single(popup.Controls.OfType<UsageProgressBar>(), bar => bar.Visible);
             Assert.True(popup.ClientSize.Height < 411);
             Assert.Equal(20, popup.ClientSize.Height - updatedLabel.Bottom);
+            var extendedHeight = popup.ClientSize.Height;
 
             popup.Controls.OfType<ViewModeIconButton>().Single().PerformClick();
 
-            Assert.Equal(64, weeklyTitle.Top);
-            Assert.True(popup.ClientSize.Height < 141);
+            Assert.Equal(86, weeklyTitle.Top);
+            Assert.True(popup.ClientSize.Height < extendedHeight);
             Assert.Equal(20, popup.ClientSize.Height - refreshButton.Bottom);
         });
     }
