@@ -22,7 +22,7 @@ public sealed partial class UsageUpdatesTests
                     LatestDailyBucketDate: DateOnly.FromDateTime(observedAt.LocalDateTime))),
             Local: null));
 
-        Assert.Equal("Plus · Codex", presentation.Popup.AccountStatus);
+        Assert.Equal("Plus", presentation.Popup.AccountStatus);
         Assert.Equal("76% left", presentation.Popup.FiveHour.RemainingText);
         Assert.Equal("39% left", presentation.Popup.Weekly.RemainingText);
         Assert.Equal("123.46M tokens", presentation.Popup.LifetimeTokens);
@@ -56,7 +56,7 @@ public sealed partial class UsageUpdatesTests
                     new AccountActivityObservation.NotRequested()),
                 Local: null));
 
-        Assert.Equal("Team · Codex", presentation.Popup.AccountStatus);
+        Assert.Equal("Team", presentation.Popup.AccountStatus);
         Assert.Equal("75% left", presentation.Popup.FiveHour.RemainingText);
         Assert.Equal("123.46M tokens", presentation.Popup.LifetimeTokens);
         Assert.Equal("987.7K tokens", presentation.Popup.TodayTokens);

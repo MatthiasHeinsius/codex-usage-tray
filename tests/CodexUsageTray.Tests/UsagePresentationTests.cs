@@ -22,7 +22,7 @@ public sealed class UsagePresentationTests
 
         var presentation = UsagePresentation.Create(snapshot, now, culture);
 
-        Assert.Equal("Plus · Codex", presentation.Popup.AccountStatus);
+        Assert.Equal("Plus", presentation.Popup.AccountStatus);
         Assert.Equal(64, presentation.Popup.FiveHour.ProgressValue);
         Assert.Equal("64% left", presentation.Popup.FiveHour.RemainingText);
         Assert.Equal("3h 12m", presentation.Popup.FiveHour.CompactResetText);
@@ -42,6 +42,26 @@ public sealed class UsagePresentationTests
         Assert.Equal(42, presentation.Tray.WeeklyRemaining);
         Assert.Equal("Codex · 5h 64% · week 42%", presentation.Tray.Tooltip);
         Assert.Empty(presentation.Notices);
+    }
+
+    [Fact]
+    public void RefreshStatesRetainTheKnownSubscription()
+    {
+        var now = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.Zero);
+        var ready = UsagePresentation.Create(
+            CreateSnapshot(
+                now,
+                fiveHour: null,
+                weekly: null,
+                lifetimeTokens: null,
+                todayTokens: null,
+                plan: "plus",
+                limitName: "Codex"),
+            now,
+            CultureInfo.InvariantCulture);
+
+        Assert.Equal("Plus", UsagePresentation.CreateLoading(ready).Popup.AccountStatus);
+        Assert.Equal("Plus", UsagePresentation.CreateFailed(ready, "Unavailable").Popup.AccountStatus);
     }
 
     [Fact]
@@ -169,7 +189,7 @@ public sealed class UsagePresentationTests
             now,
             CultureInfo.GetCultureInfo("en-US"));
 
-        Assert.Equal("Codex", presentation.Popup.AccountStatus);
+        Assert.Equal("Subscription unavailable", presentation.Popup.AccountStatus);
         Assert.Equal(0, presentation.Popup.FiveHour.ProgressValue);
         Assert.Equal("Unavailable", presentation.Popup.FiveHour.RemainingText);
         Assert.Equal("Reset time unavailable", presentation.Popup.FiveHour.ResetText);
@@ -198,7 +218,7 @@ public sealed class UsagePresentationTests
             now,
             CultureInfo.GetCultureInfo("de-DE"));
 
-        Assert.Equal("Signed in through Codex", presentation.Popup.AccountStatus);
+        Assert.Equal("Subscription unavailable", presentation.Popup.AccountStatus);
         Assert.Equal("1,2K tokens", presentation.Popup.TodayTokens);
         Assert.Equal("123,46M tokens", presentation.Popup.LifetimeTokens);
     }

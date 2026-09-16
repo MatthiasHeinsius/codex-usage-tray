@@ -63,7 +63,8 @@ internal abstract record UsagePresentation(
                     indicatorWindow.RemainingPercent,
                     indicatorWindow.ResetsAt,
                     indicatorWindow.Duration,
-                    (allowanceEvents.Reset & indicatorSelection) == AllowanceWindows.None ? null : now));
+                    (allowanceEvents.Reset & indicatorSelection) == AllowanceWindows.None ? null : now),
+            ShowsSessionActivity: true);
         var tray = new TrayPresentation(
             snapshot.FiveHour?.RemainingPercent,
             snapshot.Weekly?.RemainingPercent,
@@ -84,7 +85,7 @@ internal abstract record UsagePresentation(
         var popup = previous?.Popup ?? initial!.Popup;
         popup = popup with
         {
-            AccountStatus = "Reading your Codex account",
+            AccountStatus = previous is null ? "Reading your Codex account" : popup.AccountStatus,
             UpdatedText = failureMessage is null
                 ? previous is null ? "Not updated yet" : $"{previous.Popup.UpdatedText} · Updating"
                 : previous is null ? failureMessage : $"Stale · {failureMessage}"
@@ -112,7 +113,7 @@ internal abstract record UsagePresentation(
         var initial = previous is null ? CreateInitial() : null;
         var popup = (previous?.Popup ?? initial!.Popup) with
         {
-            AccountStatus = "Could not refresh",
+            AccountStatus = previous is null ? "Could not refresh" : previous.Popup.AccountStatus,
             UpdatedText = previous is null ? failureMessage : $"Stale · {failureMessage}"
         };
         var priorTray = previous?.Tray ?? initial!.Tray;
@@ -202,15 +203,12 @@ internal abstract record UsagePresentation(
 
     private static string AccountStatus(UsageSnapshot snapshot)
     {
-        if (string.IsNullOrWhiteSpace(snapshot.Plan) && string.IsNullOrWhiteSpace(snapshot.LimitName))
+        if (string.IsNullOrWhiteSpace(snapshot.Plan))
         {
-            return "Signed in through Codex";
+            return "Subscription unavailable";
         }
 
-        var plan = string.IsNullOrWhiteSpace(snapshot.Plan)
-            ? null
-            : char.ToUpperInvariant(snapshot.Plan[0]) + snapshot.Plan[1..];
-        return string.Join(" · ", new[] { plan, snapshot.LimitName }.Where(value => !string.IsNullOrWhiteSpace(value)));
+        return char.ToUpperInvariant(snapshot.Plan[0]) + snapshot.Plan[1..];
     }
 
     private static string TokenLabel(long? tokens, IFormatProvider formatProvider) =>
@@ -288,7 +286,27 @@ internal abstract record UsagePresentation(
         string TodayTokens,
         string LifetimeTokens,
         string UpdatedText,
-        ActivityIndicatorPresentation ActivityIndicator);
+        ActivityIndicatorPresentation ActivityIndicator,
+        bool ShowsSessionActivity = false)
+    {
+        public string StatusText(CodexSessionActivity activity, bool isActive)
+        {
+            if (!ShowsSessionActivity)
+            {
+                return AccountStatus;
+            }
+
+            if (!isActive)
+            {
+                return $"{AccountStatus} · idle";
+            }
+
+            var model = activity.Model == CodexModel.Unknown
+                ? "unknown model"
+                : activity.Model.ToString();
+            return $"{AccountStatus} · using {model}";
+        }
+    }
 
     internal sealed record ActivityIndicatorPresentation(
         int? RemainingPercent,
