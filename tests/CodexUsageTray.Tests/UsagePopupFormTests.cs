@@ -97,6 +97,8 @@ public sealed class UsagePopupFormTests
                 popup.Top + title.Top + (title.Height / 2),
                 overlay.Top + indicator.Top + (indicator.Height / 2));
             Assert.Equal(overlay.BackColor, overlay.TransparencyKey);
+            Assert.NotEqual(popup.BackColor, overlay.TransparencyKey);
+            Assert.Equal(indicator.Size + new Size(1, 1), overlay.ClientSize);
             Assert.Equal(FormBorderStyle.None, overlay.FormBorderStyle);
         });
     }

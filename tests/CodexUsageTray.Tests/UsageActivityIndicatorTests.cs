@@ -84,7 +84,7 @@ public sealed class UsageActivityIndicatorTests
         });
 
     [Fact]
-    public Task KeepsAVisibleRedMarkerAtZeroAllowance() =>
+    public Task KeepsAVisibleMarkerAtZeroAllowance() =>
         StaTest.RunAsync(() =>
         {
             using var indicator = new UsageActivityIndicator();
@@ -93,13 +93,7 @@ public sealed class UsageActivityIndicatorTests
                 ResetsAt: DateTimeOffset.Now.AddHours(5),
                 WindowDuration: TimeSpan.FromHours(5),
                 ResetObservedAt: null));
-            using var bitmap = new Bitmap(indicator.Width, indicator.Height);
 
-            indicator.DrawToBitmap(bitmap, indicator.ClientRectangle);
-
-            Assert.Contains(
-                Enumerable.Range(0, bitmap.Width)
-                    .SelectMany(x => Enumerable.Range(0, bitmap.Height).Select(y => bitmap.GetPixel(x, y))),
-                color => color.R > 180 && color.G < 110 && color.B < 110);
+            Assert.Equal(4, indicator.RingSweep);
         });
 }

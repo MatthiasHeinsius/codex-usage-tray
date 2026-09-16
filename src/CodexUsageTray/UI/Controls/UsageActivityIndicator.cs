@@ -50,6 +50,9 @@ internal sealed class UsageActivityIndicator : Control
 
     internal bool IsActive => activityLatched;
     internal float ActivityMotion => activityMotion;
+    internal float RingSweep => Math.Max(
+        4,
+        Math.Clamp(allowance.RemainingPercent ?? 100, 0, 100) * 3.6f);
 
     private bool HasRecentToken(DateTimeOffset now) =>
         session.LastTokenAt is { } lastTokenAt
@@ -196,7 +199,7 @@ internal sealed class UsageActivityIndicator : Control
 
         using (var value = new Pen(usageColor, 7))
         {
-            graphics.DrawArc(value, bounds, start, Math.Max(4, remaining * 3.6f));
+            graphics.DrawArc(value, bounds, start, RingSweep);
         }
 
         DrawResetPulse(graphics, bounds, now);

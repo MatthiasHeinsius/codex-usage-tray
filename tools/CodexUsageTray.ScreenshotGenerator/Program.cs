@@ -104,10 +104,21 @@ internal static class Program
         control.CreateControl();
         control.PerformLayout();
 
-        using var bitmap = new Bitmap(control.ClientSize.Width, control.ClientSize.Height);
-        control.DrawToBitmap(bitmap, control.ClientRectangle);
-        if (control is CodexUsageTray.UsagePopupForm popup
-            && popup.OwnedForms.SingleOrDefault() is { } overlay)
+        var captureBounds = new Rectangle(Point.Empty, control.ClientSize);
+        var overlay = (control as CodexUsageTray.UsagePopupForm)?.OwnedForms.SingleOrDefault();
+        var overlayOffset = overlay is null
+            ? Point.Empty
+            : new Point(overlay.Left - control.Left, overlay.Top - control.Top);
+        if (overlay is not null)
+        {
+            captureBounds = Rectangle.Union(captureBounds, new Rectangle(overlayOffset, overlay.Size));
+        }
+
+        using var bitmap = new Bitmap(captureBounds.Width, captureBounds.Height);
+        control.DrawToBitmap(
+            bitmap,
+            new Rectangle(-captureBounds.X, -captureBounds.Y, control.ClientSize.Width, control.ClientSize.Height));
+        if (overlay is not null)
         {
             using var overlayBitmap = new Bitmap(overlay.Width, overlay.Height);
             overlay.DrawToBitmap(overlayBitmap, overlay.ClientRectangle);
@@ -115,8 +126,8 @@ internal static class Program
             using var graphics = Graphics.FromImage(bitmap);
             graphics.DrawImageUnscaled(
                 overlayBitmap,
-                overlay.Left - popup.Left,
-                overlay.Top - popup.Top);
+                overlayOffset.X - captureBounds.X,
+                overlayOffset.Y - captureBounds.Y);
         }
 
         bitmap.Save(path, ImageFormat.Png);
