@@ -48,11 +48,13 @@ public sealed partial class UsageUpdatesTests
             afterRestartCommand,
             settings,
             time);
-        await afterRestart.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+        var resumedPresentation = await afterRestart.RequestAsync(
+            UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
 
         Assert.Equal(1, command.CallCount);
         Assert.Equal(0, afterRestartCommand.CallCount);
         Assert.Equal(activatedReset, settings.ReadActivatedReset(AllowanceWindowKind.FiveHour));
+        Assert.Equal(activatedReset, resumedPresentation.Popup.ActivityIndicator.ActivatedResetAt);
     }
 
     [Fact]

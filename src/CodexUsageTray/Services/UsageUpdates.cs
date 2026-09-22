@@ -158,12 +158,16 @@ internal sealed partial class UsageUpdates : IUsageUpdates
                     cancellation.Token)
                 .ConfigureAwait(false);
             cancellation.Token.ThrowIfCancellationRequested();
+            var indicatorWindow = finalSnapshot.FiveHour is not null
+                ? AllowanceWindowKind.FiveHour
+                : AllowanceWindowKind.Weekly;
             return UsagePresentation.Create(
                 finalSnapshot,
                 allowanceEvents,
                 preferences.NotificationsEnabled,
                 timeProvider.GetLocalNow(),
-                formatProvider);
+                formatProvider,
+                settings.ReadActivatedReset(indicatorWindow));
         }
         finally
         {
