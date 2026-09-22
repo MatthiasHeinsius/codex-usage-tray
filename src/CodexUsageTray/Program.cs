@@ -24,6 +24,13 @@ internal static class Program
             }
         }
 
+        if (args.Contains("--demo", StringComparer.OrdinalIgnoreCase))
+        {
+            ApplicationConfiguration.Initialize();
+            AllowanceDemo.Run();
+            return 0;
+        }
+
         using var singleInstance = new Mutex(true, "Local\\CodexUsageTray.SingleInstance", out var isFirstInstance);
         if (!isFirstInstance)
         {

@@ -16,7 +16,7 @@ This is an unofficial community project. It is not affiliated with OpenAI.
 
 The tray icon uses an outer ring for the 5-hour allowance and an inner ring for the weekly allowance. When the account reports only one allowance, that allowance uses a single outer ring. The popup omits allowances the account does not report and resizes to fit. The rings and extended-view bars change color continuously from green at 100% remaining through yellow near 50%, orange at 25%, and red at 10%. The app refreshes the limits and countdowns once a minute. It refreshes daily and lifetime activity when you open or switch to the extended view.
 
-The popup's pixel-art indicator shows Luna, Terra, Sol, or Astra when it can identify the active model from local Codex session logs. Its ring rotates at a speed based on allowance use relative to elapsed time, including while Codex is idle. A separate glow shows recent token activity and fades over 15 seconds. The indicator pulses near or after an allowance reset. The account line shows the subscription with the active model and its version, such as `GPT-6 Astra`, or `idle` in both views.
+The popup's pixel-art indicator shows Luna, Terra, Sol, or Astra when it can identify the active model from local Codex session logs. Its ring rotates at a speed based on allowance use relative to elapsed time, including while Codex is idle. A separate glow shows recent token activity and fades over 15 seconds. When the allowance reaches zero, the ring shows a repeating red flash. During the final 15 minutes before reset, a double flash in the green used for a full ring takes priority. After reset, it flashes cyan until the new window is activated and for five minutes afterward. The account line shows the subscription with the active model and its version, such as `GPT-6 Astra`, or `idle` in both views.
 
 ## Screenshots
 
@@ -117,6 +117,14 @@ Install the [.NET SDK](https://dotnet.microsoft.com/download) version pinned in 
 dotnet build .\CodexUsageTray.slnx -c Release
 dotnet test --solution .\CodexUsageTray.slnx -c Release --no-build
 ```
+
+To see a one-minute demo of the allowance lifecycle in the actual indicator, run:
+
+```powershell
+.\src\CodexUsageTray\bin\Release\net10.0-windows\CodexUsageTray.exe --demo
+```
+
+The demo uses sample allowance data and repeats two 30-second runs. A fast burn reaches zero; a slower burn resets with 60% remaining. Each run shows the final 15 minutes before reset, the reset, activation, and the end of the cyan flash. It opens separately from the tray app.
 
 The test project uses xUnit.net 4 and Microsoft Testing Platform v2. To collect a Cobertura report with the MTP coverage extension, run:
 

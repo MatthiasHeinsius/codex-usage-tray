@@ -1,0 +1,1420 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codex activity indicator prototype</title>
+  <style>
+    /* PROTOTYPE: three activity-indicator directions, switchable with ?variant=A|B|C. */
+    :root {
+      color-scheme: dark;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      --bg: #10131a;
+      --popup: #181b22;
+      --panel: #202630;
+      --line: #3d4452;
+      --text: #ebeef4;
+      --muted: #94a3b8;
+      --blue: #60a5fa;
+      --usage: #eab308;
+      --pace: 1.3s;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      overflow-x: hidden;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 50% 10%, #1c2330 0, transparent 38rem),
+        var(--bg);
+    }
+
+    .stage {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(460px, 1fr) 280px;
+      align-items: center;
+      justify-items: center;
+      gap: 52px;
+      padding: 48px 48px 112px;
+    }
+
+    .mock-wrap { position: relative; }
+    .prototype-note {
+      margin: 0 0 18px 2px;
+      color: #718096;
+      font-size: 12px;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    .popup {
+      position: relative;
+      width: 428px;
+      height: 411px;
+      padding: 20px;
+      background: var(--popup);
+      border: 1px solid var(--line);
+      box-shadow: 0 26px 80px #0009, 0 4px 18px #0008;
+      overflow: visible;
+    }
+
+    .header { position: relative; height: 55px; }
+    .title {
+      position: absolute;
+      top: -10px;
+      left: 34px;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -.025em;
+    }
+    .account {
+      position: absolute;
+      top: 24px;
+      left: 34px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .actions {
+      position: absolute;
+      right: 0;
+      top: 0;
+      display: flex;
+      gap: 8px;
+    }
+    .icon-button {
+      width: 34px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      color: #cbd5e1;
+      background: #242933;
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      font-size: 14px;
+    }
+    .icon-button:first-child { color: var(--blue); background: #1e293b; }
+
+    .limit { margin-top: 11px; }
+    .limit + .limit { margin-top: 24px; }
+    .limit-head { display: flex; justify-content: space-between; align-items: baseline; }
+    .limit-name, .limit-value { font-size: 14px; font-weight: 700; }
+    .reset { margin-top: 9px; color: var(--muted); font-size: 13px; }
+    .bar {
+      height: 11px;
+      margin-top: 9px;
+      overflow: hidden;
+      background: #323844;
+      border-radius: 6px;
+    }
+    .bar > span {
+      display: block;
+      width: var(--remaining);
+      height: 100%;
+      background: var(--usage);
+      border-radius: inherit;
+      transition: width .45s cubic-bezier(.2,.8,.2,1), background .45s ease;
+    }
+    .divider { height: 1px; margin: 23px 0 13px; background: #303642; }
+    .metric { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; }
+    .metric span:first-child, .updated { color: var(--muted); }
+    .metric strong { font-size: 13px; }
+    .footer { display: flex; align-items: center; justify-content: space-between; margin-top: 13px; }
+    .updated { font-size: 12px; }
+    .refresh { color: #cbd5e1; font-size: 18px; }
+
+    .indicator { z-index: 4; }
+    .variant { display: none; }
+    body[data-variant="A"] .candidate-a,
+    body[data-variant="B"] .candidate-b,
+    body[data-variant="C"] .candidate-c { display: block; }
+    body[data-variant="A"] .title,
+    body[data-variant="A"] .account { left: 88px; }
+    body[data-variant="B"] .title,
+    body[data-variant="B"] .account { left: 112px; }
+    body[data-variant="C"] .title,
+    body[data-variant="C"] .account { left: 104px; }
+
+    /* A: a rounded companion that perches on the broken corner. */
+    .variant-a {
+      position: absolute;
+      left: -20px;
+      top: -20px;
+      width: 76px;
+      height: 76px;
+      filter: drop-shadow(0 8px 10px #0007);
+    }
+    .orb-aura {
+      position: absolute;
+      inset: 8px;
+      border: 1px solid color-mix(in srgb, var(--usage) 60%, transparent);
+      border-radius: 50%;
+      opacity: 0;
+    }
+    .is-active .orb-aura { animation: pulse-a 1.05s ease-out infinite; }
+    .orb-body {
+      position: absolute;
+      left: 17px;
+      top: 17px;
+      width: 44px;
+      height: 44px;
+      border: 2px solid #0f172acc;
+      border-radius: 47% 53% 51% 49%;
+      background:
+        radial-gradient(circle at 34% 24%, #ffffff70 0 8%, transparent 9%),
+        var(--usage);
+      animation: breathe-a var(--pace) ease-in-out infinite alternate;
+      transition: background .45s ease;
+    }
+    .is-active .orb-body { animation: hop-a .58s cubic-bezier(.3,.7,.2,1) infinite; }
+    .eye {
+      position: absolute;
+      top: 18px;
+      width: 4px;
+      height: 5px;
+      border-radius: 50%;
+      background: #0f172a;
+    }
+    .eye.left { left: 12px; }
+    .eye.right { right: 12px; }
+    .mouth {
+      position: absolute;
+      left: 17px;
+      top: 27px;
+      width: 10px;
+      height: 4px;
+      border-bottom: 2px solid #0f172a;
+      border-radius: 0 0 10px 10px;
+    }
+    .is-idle .mouth { width: 7px; left: 19px; border-radius: 0; }
+    .orb-dot {
+      position: absolute;
+      left: 36px;
+      top: 3px;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #e2e8f0;
+      transform-origin: 2px 35px;
+      animation: orbit-a var(--pace) linear infinite;
+    }
+    .orb-dot:nth-child(2) { animation-delay: calc(var(--pace) / -3); opacity: .72; }
+    .orb-dot:nth-child(3) { animation-delay: calc(var(--pace) / -1.5); opacity: .45; }
+    .model-badge {
+      position: absolute;
+      right: 5px;
+      bottom: 4px;
+      min-width: 21px;
+      height: 21px;
+      display: grid;
+      place-items: center;
+      color: #f8fafc;
+      background: #1e293bf2;
+      border: 1px solid #94a3b8;
+      border-radius: 7px;
+      font-size: 10px;
+      font-weight: 800;
+    }
+    .sparkles { display: none; }
+    .is-reset .sparkles { display: block; }
+    .sparkles i {
+      position: absolute;
+      width: 6px;
+      height: 6px;
+      border-radius: 1px;
+      background: #67e8f9;
+      box-shadow: 0 0 9px #67e8f9;
+      animation: sparkle-a 1.8s ease-in-out infinite;
+    }
+    .sparkles i:nth-child(1) { left: 6px; top: 28px; }
+    .sparkles i:nth-child(2) { right: 4px; top: 15px; animation-delay: -.6s; }
+    .sparkles i:nth-child(3) { left: 31px; bottom: 2px; animation-delay: -1.2s; }
+
+    /* B: a responsive signal ribbon with a small curious head. */
+    .variant-b {
+      position: absolute;
+      left: -15px;
+      top: -17px;
+      width: 106px;
+      height: 55px;
+      background: var(--popup);
+    }
+    .signal-svg { width: 106px; height: 55px; overflow: visible; }
+    .signal-path {
+      fill: none;
+      stroke: var(--usage);
+      stroke-width: 6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      filter: drop-shadow(0 0 7px color-mix(in srgb, var(--usage) 48%, transparent));
+      stroke-dasharray: 10 5;
+      animation: flow-b var(--pace) linear infinite;
+      transition: stroke .45s ease;
+    }
+    .is-idle .signal-path { stroke-dasharray: 2 7; opacity: .72; }
+    .is-reset .signal-path { filter: drop-shadow(0 0 8px #67e8f9); }
+    .signal-head {
+      position: absolute;
+      right: 3px;
+      top: 16px;
+      width: 27px;
+      height: 27px;
+      border: 2px solid #0f172a;
+      border-radius: 11px 14px 12px 15px;
+      background: var(--usage);
+      animation: nod-b calc(var(--pace) * 1.7) ease-in-out infinite alternate;
+    }
+    .signal-head::before,
+    .signal-head::after {
+      content: "";
+      position: absolute;
+      top: 8px;
+      width: 3px;
+      height: 4px;
+      border-radius: 50%;
+      background: #0f172a;
+    }
+    .signal-head::before { left: 6px; }
+    .signal-head::after { right: 6px; }
+    .signal-model {
+      position: absolute;
+      right: -5px;
+      bottom: -7px;
+      color: #f8fafc;
+      background: #1e293b;
+      border: 1px solid #94a3b8;
+      border-radius: 5px;
+      padding: 2px 5px;
+      font-size: 9px;
+      font-weight: 800;
+    }
+    .signal-reset {
+      position: absolute;
+      left: 9px;
+      top: 3px;
+      color: #67e8f9;
+      font-size: 18px;
+      opacity: 0;
+      animation: reset-b 1.8s ease-in-out infinite;
+    }
+    .is-reset .signal-reset { opacity: 1; }
+
+    /* C: a portal cut into the corner, with an eye that wakes during inference. */
+    .variant-c {
+      position: absolute;
+      left: -27px;
+      top: -28px;
+      width: 84px;
+      height: 84px;
+      border-radius: 50%;
+      background: var(--popup);
+      filter: drop-shadow(0 10px 11px #0008);
+    }
+    .portal-ring {
+      position: absolute;
+      inset: 5px;
+      border-radius: 50%;
+      background: conic-gradient(var(--usage) calc(var(--allowance) * 1%), #374151 0);
+      animation: turn-c calc(var(--pace) * 5) linear infinite;
+      transition: background .45s ease;
+    }
+    .portal-ring::after {
+      content: "";
+      position: absolute;
+      inset: 8px;
+      border-radius: 50%;
+      background: #111827;
+      box-shadow: inset 0 0 14px #000b;
+    }
+    .portal-eye {
+      position: absolute;
+      left: 24px;
+      top: 29px;
+      z-index: 2;
+      width: 36px;
+      height: 24px;
+      overflow: hidden;
+      background: #e2e8f0;
+      border-radius: 80% 15% 80% 15%;
+      transform: rotate(-8deg) scaleY(.38);
+      transition: transform .45s cubic-bezier(.2,.8,.2,1);
+    }
+    .is-active .portal-eye,
+    .is-reset .portal-eye { transform: rotate(-8deg) scaleY(1); }
+    .pupil {
+      position: absolute;
+      left: 12px;
+      top: 4px;
+      width: 15px;
+      height: 15px;
+      display: grid;
+      place-items: center;
+      color: #f8fafc;
+      background: #0f172a;
+      border-radius: 50%;
+      font-size: 7px;
+      font-weight: 800;
+      animation: look-c calc(var(--pace) * 2.4) ease-in-out infinite alternate;
+    }
+    .portal-glow {
+      position: absolute;
+      inset: -3px;
+      border: 1px solid var(--usage);
+      border-radius: 50%;
+      opacity: 0;
+    }
+    .is-active .portal-glow { animation: pulse-a 1.05s ease-out infinite; }
+    .is-reset .portal-glow { border-color: #67e8f9; animation: pulse-a 1.6s ease-out infinite; }
+
+    /* A: one quiet allowance arc; only its short highlight travels. */
+    .candidate-a {
+      position: absolute;
+      left: -25px;
+      top: -27px;
+      width: 104px;
+      height: 94px;
+      border-radius: 50%;
+      background: var(--popup);
+      filter: drop-shadow(0 10px 12px #0008);
+    }
+    .quiet-svg { position: absolute; left: 5px; top: 5px; width: 84px; height: 84px; overflow: visible; }
+    .quiet-track, .quiet-value, .quiet-glint {
+      fill: none;
+      stroke-linecap: round;
+      transform-origin: 42px 42px;
+      transform: rotate(118deg);
+    }
+    .quiet-track { stroke: #374151; stroke-width: 6; stroke-dasharray: 176 44; }
+    .quiet-value {
+      stroke: var(--usage);
+      stroke-width: 7;
+      stroke-dasharray: calc(var(--allowance) * 1.76) 220;
+      transition: stroke .45s ease, stroke-dasharray .45s ease;
+    }
+    .quiet-glint {
+      stroke: #f8fafc;
+      stroke-width: 2;
+      stroke-dasharray: 7 213;
+      animation: arc-travel calc(var(--pace) * 1.9) linear infinite;
+      opacity: .8;
+    }
+    .friend-face {
+      position: absolute;
+      left: 25px;
+      top: 25px;
+    }
+    .full-model {
+      position: absolute;
+      z-index: 3;
+      right: -3px;
+      bottom: 2px;
+      min-width: 38px;
+      padding: 3px 7px 4px;
+      color: #f8fafc;
+      background: #1e293bf5;
+      border: 1px solid #94a3b8;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .is-active .candidate-a .quiet-value { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--usage) 70%, transparent)); }
+    .is-active .friend-face { animation: face-awake calc(var(--pace) * .82) ease-in-out infinite alternate; }
+
+    /* B: the favored open gauge, now breathing and carrying a moving highlight. */
+    .candidate-b {
+      position: absolute;
+      left: -19px;
+      top: -23px;
+      width: 122px;
+      height: 82px;
+      background: var(--popup);
+    }
+    .gauge-svg {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 82px;
+      height: 82px;
+      overflow: visible;
+      animation: gauge-breathe calc(var(--pace) * 2.2) ease-in-out infinite alternate;
+    }
+    .gauge-track, .gauge-value, .gauge-sweep {
+      fill: none;
+      stroke-width: 7;
+      stroke-linecap: round;
+      transform-origin: 41px 41px;
+      transform: rotate(130deg);
+    }
+    .gauge-track { stroke: #374151; stroke-dasharray: 170 40; }
+    .gauge-value {
+      stroke: var(--usage);
+      stroke-dasharray: calc(var(--allowance) * 1.7) 210;
+      transition: stroke .45s ease, stroke-dasharray .45s ease;
+    }
+    .gauge-sweep {
+      stroke: #e2e8f0;
+      stroke-width: 2;
+      stroke-dasharray: 2 208;
+      animation: arc-travel var(--pace) linear infinite;
+    }
+    .gauge-face {
+      position: absolute;
+      left: 20px;
+      top: 21px;
+    }
+    .gauge-model {
+      position: absolute;
+      left: 69px;
+      top: 31px;
+      min-width: 48px;
+      padding: 5px 9px;
+      color: #e2e8f0;
+      background: #202938;
+      border: 1px solid #475569;
+      border-radius: 0 9px 9px 0;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .gauge-model::before {
+      content: "";
+      position: absolute;
+      left: -5px;
+      top: 9px;
+      width: 8px;
+      height: 8px;
+      background: #202938;
+      border-left: 1px solid #475569;
+      border-bottom: 1px solid #475569;
+      transform: rotate(45deg);
+    }
+    .is-active .gauge-face { animation: face-awake calc(var(--pace) * .72) ease-in-out infinite alternate; }
+
+    /* C: a segmented countdown crown that closes in as reset approaches. */
+    .candidate-c {
+      position: absolute;
+      left: -24px;
+      top: -29px;
+      width: 118px;
+      height: 91px;
+      background: var(--popup);
+      filter: drop-shadow(0 10px 12px #0008);
+    }
+    .crown-svg { position: absolute; left: 1px; top: 0; width: 88px; height: 74px; overflow: visible; }
+    .crown-track, .crown-value, .crown-sweep {
+      fill: none;
+      stroke-linecap: round;
+    }
+    .crown-track { stroke: #374151; stroke-width: 7; }
+    .crown-value {
+      stroke: var(--usage);
+      stroke-width: 7;
+      stroke-dasharray: var(--allowance) 100;
+      transition: stroke .45s ease, stroke-dasharray .45s ease;
+    }
+    .crown-sweep {
+      stroke: #f8fafc;
+      stroke-width: 2;
+      stroke-dasharray: 6 94;
+      animation: crown-travel var(--pace) linear infinite;
+    }
+    .crown-group { transform-origin: 44px 45px; animation: crown-float calc(var(--pace) * 2.4) ease-in-out infinite alternate; }
+    .liquid-face {
+      position: absolute;
+      left: 23px;
+      top: 24px;
+    }
+    .liquid-model {
+      position: absolute;
+      left: 68px;
+      top: 52px;
+      z-index: 3;
+      min-width: 42px;
+      padding: 3px 8px;
+      color: #f1f5f9;
+      background: #1e293b;
+      border: 1px solid #64748b;
+      border-radius: 999px;
+      text-align: center;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .is-active .liquid-face { animation: face-awake calc(var(--pace) * .78) ease-in-out infinite alternate; }
+
+    /* Detailed model personas are shared by all three silhouettes. */
+    .persona {
+      width: 44px;
+      height: 44px;
+      border: 2px solid #0f172acc;
+      border-radius: 47% 53% 50% 50%;
+      background:
+        radial-gradient(circle at 31% 20%, #fff8 0 7%, transparent 8%),
+        linear-gradient(145deg, var(--face-hi), var(--face));
+      box-shadow: inset 0 -5px 8px #0f172a24, 0 2px 5px #0006;
+      transition: background .35s ease, border-radius .35s ease;
+    }
+    .persona .eye, .persona .brow, .persona .mouth, .persona .mark { position: absolute; display: block; }
+    .persona .eye {
+      top: 17px;
+      width: 5px;
+      height: 6px;
+      border-radius: 50%;
+      background: #101827;
+      box-shadow: inset 1px 1px #fff6;
+    }
+    .persona .eye-left { left: 10px; }
+    .persona .eye-right { right: 10px; }
+    .persona .brow {
+      top: 11px;
+      width: 9px;
+      height: 3px;
+      border-top: 2px solid #101827;
+      border-radius: 50%;
+    }
+    .persona .brow-left { left: 7px; transform: rotate(-8deg); }
+    .persona .brow-right { right: 7px; transform: rotate(8deg); }
+    .persona .mouth {
+      left: 14px;
+      top: 28px;
+      width: 12px;
+      height: 6px;
+      border-bottom: 2px solid #101827;
+      border-radius: 0 0 12px 12px;
+    }
+    .persona .mark { pointer-events: none; }
+
+    .model-luna { --face: #8b7fd7; --face-hi: #c4b5fd; }
+    .model-luna .persona { border-radius: 51% 49% 56% 44%; }
+    .model-luna .persona .eye { top: 18px; height: 2px; border-radius: 0; box-shadow: none; }
+    .model-luna .persona .brow { opacity: .7; }
+    .model-luna .persona .mouth { left: 16px; width: 8px; height: 3px; }
+    .model-luna .persona .mark {
+      right: 4px; top: 3px; width: 9px; height: 9px; border-radius: 50%;
+      box-shadow: -3px 1px 0 0 #f5e9ff;
+    }
+
+    .model-terra { --face: #6da975; --face-hi: #a7d59f; }
+    .model-terra .persona { border-radius: 45% 55% 48% 52% / 52% 48% 56% 44%; }
+    .model-terra .persona .brow-left { transform: rotate(8deg); }
+    .model-terra .persona .brow-right { transform: rotate(-8deg); }
+    .model-terra .persona .mouth { left: 15px; width: 11px; transform: rotate(-7deg); }
+    .model-terra .persona .mark {
+      left: 5px; top: 25px; width: 2px; height: 2px; border-radius: 50%;
+      background: #315b39; box-shadow: 4px 2px #315b39, 27px -1px #315b39, 23px 2px #315b39;
+    }
+
+    .model-sol { --face: #e8a32a; --face-hi: #fde68a; }
+    .model-sol .persona { border-radius: 50% 47% 52% 48%; }
+    .model-sol .persona .eye { height: 7px; }
+    .model-sol .persona .brow { top: 10px; border-width: 2px; }
+    .model-sol .persona .mouth {
+      left: 13px; top: 27px; width: 14px; height: 9px;
+      background: #111827; border: 0; border-radius: 2px 2px 10px 10px;
+      box-shadow: inset 0 -3px #fb7185;
+    }
+    .model-sol .persona .mark {
+      right: 3px; top: 4px; width: 5px; height: 5px; border-radius: 50%;
+      background: #fff4b8; box-shadow: 0 0 5px #fff2;
+    }
+
+    .model-astra { --face: #5b9de5; --face-hi: #a5d8ff; }
+    .model-astra .persona { border-radius: 53% 47% 45% 55% / 48% 55% 45% 52%; }
+    .model-astra .persona .eye { width: 6px; height: 6px; border-radius: 1px; transform: rotate(45deg); }
+    .model-astra .persona .brow { opacity: 0; }
+    .model-astra .persona .mouth { left: 16px; width: 10px; transform: rotate(4deg); }
+    .model-astra .persona .mark {
+      left: 17px; top: -8px; width: 7px; height: 7px; transform: rotate(45deg);
+      background: #dbeafe; border: 2px solid #172033; box-shadow: 0 0 0 1px #93c5fd;
+    }
+
+    .model-unknown { --face: #94a3b8; --face-hi: #d1d5db; }
+    .model-unknown .persona .mouth { width: 9px; left: 16px; border-radius: 0; }
+
+    .is-idle .persona .eye { height: 2px; top: 19px; border-radius: 0; box-shadow: none; }
+    .is-idle .persona .mouth { height: 2px; width: 8px; left: 16px; border-radius: 0; background: transparent; box-shadow: none; }
+    .is-idle .quiet-glint,
+    .is-idle .gauge-sweep,
+    .is-idle .crown-sweep,
+    .is-idle .gauge-svg,
+    .is-idle .crown-group { animation-play-state: paused; opacity: .7; }
+
+    /* Reset timing becomes a shared rhythm: slow pulse, urgent double beat, then cyan release. */
+    .indicator::after {
+      content: "";
+      position: absolute;
+      left: 8px;
+      top: 8px;
+      width: 66px;
+      height: 66px;
+      border: 2px solid #67e8f9;
+      border-radius: 50%;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .reset-soon .indicator::after { animation: reset-pulse 2.1s ease-out infinite; }
+    .reset-imminent .indicator::after { border-color: #fbbf24; animation: reset-double 1.05s ease-out infinite; }
+    .reset-recent .indicator::after { border-color: #67e8f9; animation: reset-release 1.7s ease-out infinite; }
+    .reset-imminent .quiet-value,
+    .reset-imminent .gauge-value,
+    .reset-imminent .crown-value { filter: drop-shadow(0 0 6px #fbbf24aa); }
+    .reset-recent .quiet-glint,
+    .reset-recent .gauge-sweep,
+    .reset-recent .crown-sweep { stroke: #67e8f9; stroke-width: 4; }
+
+    @keyframes arc-travel { to { stroke-dashoffset: -220; } }
+    @keyframes crown-travel { to { stroke-dashoffset: -100; } }
+    @keyframes face-awake { to { transform: translateY(-2.5px) scale(1.025,.975) rotate(1.5deg); } }
+    @keyframes gauge-breathe { to { transform: translateY(-1px) rotate(2.2deg) scale(1.018); } }
+    @keyframes crown-float { to { transform: translateY(-2px) scaleX(1.035); } }
+    @keyframes reset-pulse { 0% { transform: scale(.76); opacity: .5; } 65%,100% { transform: scale(1.14); opacity: 0; } }
+    @keyframes reset-double {
+      0% { transform: scale(.8); opacity: .72; } 28% { transform: scale(1.02); opacity: 0; }
+      42% { transform: scale(.82); opacity: .62; } 72%,100% { transform: scale(1.16); opacity: 0; }
+    }
+    @keyframes reset-release { 0% { transform: scale(.78); opacity: .7; } 100% { transform: scale(1.24); opacity: 0; } }
+
+    /* Pixel-art pass: 24px sprites, stationary usage values, restrained orbital carriers. */
+    .indicator::after { display: none; }
+    .candidate-a, .candidate-b, .candidate-c {
+      border-radius: 0;
+      filter: drop-shadow(0 9px 10px #0008);
+    }
+    .candidate-a { left: -25px; top: -27px; width: 111px; height: 94px; }
+    .candidate-b { left: -20px; top: -25px; width: 137px; height: 87px; }
+    .candidate-c { left: -23px; top: -26px; width: 126px; height: 92px; }
+
+    .pixel-sprite {
+      position: absolute;
+      z-index: 2;
+      width: 52px;
+      height: 52px;
+      overflow: visible;
+      image-rendering: pixelated;
+      filter: drop-shadow(2px 3px 0 #070b12aa);
+    }
+    .candidate-a .pixel-sprite { left: 20px; top: 19px; }
+    .candidate-b .pixel-sprite { left: 17px; top: 17px; }
+    .candidate-c .pixel-sprite { left: 20px; top: 18px; }
+
+    .coin-svg, .gauge-svg, .checkpoint-svg {
+      position: absolute;
+      left: 1px;
+      top: 1px;
+      width: 90px;
+      height: 90px;
+      overflow: visible;
+    }
+    .coin-track, .coin-value, .coin-carrier, .coin-reset,
+    .gauge-track, .gauge-value, .gauge-orbit, .gauge-reset,
+    .checkpoint-track, .checkpoint-value, .checkpoint-orbit, .checkpoint-reset {
+      fill: none;
+      stroke-linecap: butt;
+      transform-origin: 45px 45px;
+    }
+    .coin-track, .gauge-track, .checkpoint-track { stroke: #374151; stroke-width: 6; }
+    .coin-value, .gauge-value, .checkpoint-value {
+      stroke: var(--usage);
+      stroke-width: 7;
+      transition: stroke .35s ease, stroke-dasharray .35s ease;
+    }
+    .coin-track { stroke-dasharray: 195 5; }
+    .coin-value { stroke-dasharray: calc(var(--allowance) * 2) 200; }
+    .gauge-track { stroke-dasharray: 161 39; transform: rotate(125deg); }
+    .gauge-value { stroke-dasharray: calc(var(--allowance) * 1.61) 200; transform: rotate(125deg); }
+    .checkpoint-track { stroke-width: 6; stroke-dasharray: 5 2.15; }
+    .checkpoint-value { stroke-width: 5; stroke-dasharray: calc(var(--allowance) * 1) 100; }
+
+    .coin-carrier, .gauge-orbit, .checkpoint-orbit {
+      stroke: #dff7ff;
+      stroke-width: 7;
+      stroke-linecap: round;
+      opacity: .2;
+      mix-blend-mode: soft-light;
+      animation: pixel-orbit var(--orbit) linear infinite, carrier-pulse 2.1s ease-in-out infinite;
+    }
+    .coin-carrier { stroke-dasharray: 10 190; }
+    .gauge-orbit { stroke-dasharray: 10 190; transform: rotate(125deg); }
+    .checkpoint-orbit {
+      stroke-width: 3;
+      stroke-dasharray: 9 91;
+      animation: checkpoint-orbit var(--orbit) linear infinite, carrier-pulse 1.9s ease-in-out infinite;
+    }
+    .is-idle .coin-carrier, .is-idle .gauge-orbit, .is-idle .checkpoint-orbit {
+      animation-play-state: paused;
+      opacity: .12;
+    }
+    .activity-ring { transform-origin: 45px 45px; }
+    .is-active .activity-ring { animation: ring-rotate var(--ring-turn) linear infinite; }
+    .gauge-svg { animation: gauge-rock 8s ease-in-out infinite alternate; }
+    .checkpoint-svg { animation: checkpoint-rock 9s steps(2, jump-none) infinite alternate; }
+
+    .coin-reset, .gauge-reset, .checkpoint-reset {
+      stroke: #67e8f9;
+      stroke-width: 7;
+      opacity: 0;
+    }
+    .gauge-reset { stroke-dasharray: 161 39; transform: rotate(125deg); }
+    .checkpoint-reset { stroke-dasharray: 5 2.15; }
+    .reset-soon .coin-reset, .reset-soon .gauge-reset, .reset-soon .checkpoint-reset {
+      animation: ring-breathe 2.6s ease-in-out infinite;
+    }
+    .reset-imminent .coin-reset, .reset-imminent .gauge-reset, .reset-imminent .checkpoint-reset {
+      stroke: #fbbf24;
+      animation: ring-double 1.8s ease-in-out infinite;
+    }
+    .reset-recent .coin-reset, .reset-recent .gauge-reset, .reset-recent .checkpoint-reset {
+      animation: ring-release 3.2s ease-in-out infinite;
+    }
+
+    .pixel-name {
+      position: absolute;
+      z-index: 4;
+      min-width: 46px;
+      padding: 3px 7px 4px;
+      color: #f8fafc;
+      background: #1b2432;
+      border: 1px solid #526176;
+      border-radius: 2px;
+      text-align: center;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .02em;
+      box-shadow: 2px 2px 0 #090d14;
+    }
+    .candidate-a .pixel-name { left: 58px; top: 61px; }
+    .candidate-b .pixel-name { left: 70px; top: 29px; }
+    .candidate-c .pixel-name { left: 66px; top: 61px; }
+
+    .sprite-eyes, .sprite-mouth, .sprite-hair { transform-box: fill-box; transform-origin: center; }
+    .sprite-eyes { animation: pixel-eye-life 6.4s steps(1, end) infinite; }
+    .sprite-mouth { animation: pixel-grin 7.2s steps(1, end) infinite; }
+    .sprite-hair { animation: pixel-hair calc(var(--pace) * 2.8) steps(2, jump-none) infinite alternate; }
+    .model-luna.is-active .pixel-sprite { animation: luna-drift calc(var(--pace) * 2.4) steps(2, jump-none) infinite alternate; }
+    .model-terra.is-active .pixel-sprite { animation: terra-ready calc(var(--pace) * 3) steps(2, jump-none) infinite alternate; }
+    .model-sol.is-active .pixel-sprite { animation: sol-hop calc(var(--pace) * 1.8) steps(2, jump-none) infinite alternate; }
+    .model-astra.is-active .pixel-sprite { animation: astra-scan calc(var(--pace) * 2.2) steps(2, jump-none) infinite alternate; }
+    .is-idle .pixel-sprite { animation: head-idle 6.5s steps(2, jump-none) infinite; }
+
+    @keyframes pixel-orbit { to { stroke-dashoffset: -200; } }
+    @keyframes checkpoint-orbit { to { stroke-dashoffset: -100; } }
+    @keyframes carrier-pulse {
+      0%,100% { stroke-width: 7; opacity: .16; }
+      50% { stroke-width: 8.5; opacity: .46; }
+    }
+    @keyframes ring-rotate { to { transform: rotate(360deg); } }
+    @keyframes gauge-rock { to { transform: rotate(1.5deg); } }
+    @keyframes checkpoint-rock { to { transform: rotate(-1.5deg); } }
+    @keyframes ring-breathe {
+      0%,100% { opacity: .08; stroke-width: 6; }
+      50% { opacity: .4; stroke-width: 9; }
+    }
+    @keyframes ring-double {
+      0%,100% { opacity: .08; stroke-width: 6; }
+      18% { opacity: .52; stroke-width: 9; }
+      35% { opacity: .1; stroke-width: 6; }
+      52% { opacity: .44; stroke-width: 8; }
+      72% { opacity: .08; stroke-width: 6; }
+    }
+    @keyframes ring-release {
+      0% { opacity: .62; stroke-width: 9; }
+      35%,100% { opacity: .1; stroke-width: 6; }
+    }
+    @keyframes pixel-eye-life {
+      0%,34%,100% { transform: translateX(0) scaleY(1); }
+      35%,55% { transform: translateX(1px) scaleY(1); }
+      56%,89% { transform: translateX(-1px) scaleY(1); }
+      92%,95% { transform: translateX(0) scaleY(.18); }
+      96% { transform: translateX(0) scaleY(1); }
+    }
+    @keyframes pixel-grin {
+      0%,68%,100% { transform: translateY(0) scale(1); }
+      70%,82% { transform: translateY(-1px) scale(1.35,1.7); }
+      84%,90% { transform: translateY(0) scale(1.15,1.25); }
+    }
+    @keyframes pixel-hair { to { transform: translate(1px,-1px); } }
+    @keyframes head-idle {
+      0%,70%,100% { transform: translate(0,0); }
+      76%,88% { transform: translate(1px,-1px); }
+    }
+    @keyframes luna-drift { to { transform: translate(1px,-2px) rotate(-1deg); } }
+    @keyframes terra-ready { to { transform: translateX(1px) rotate(1deg); } }
+    @keyframes sol-hop { to { transform: translateY(-2px) rotate(-1deg); } }
+    @keyframes astra-scan { to { transform: translateX(2px) rotate(1deg); } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .coin-carrier, .gauge-orbit, .checkpoint-orbit, .activity-ring, .pixel-sprite, .sprite-eyes, .sprite-mouth, .sprite-hair, .gauge-svg, .checkpoint-svg { animation: none !important; }
+      .reset-soon .coin-reset, .reset-soon .gauge-reset, .reset-soon .checkpoint-reset,
+      .reset-imminent .coin-reset, .reset-imminent .gauge-reset, .reset-imminent .checkpoint-reset,
+      .reset-recent .coin-reset, .reset-recent .gauge-reset, .reset-recent .checkpoint-reset { animation: none !important; opacity: .35; }
+    }
+
+    /* Face comparison pass: Candidate A's halo is fixed; only the 32px character family changes. */
+    body[data-variant="A"] .title, body[data-variant="A"] .account,
+    body[data-variant="B"] .title, body[data-variant="B"] .account,
+    body[data-variant="C"] .title, body[data-variant="C"] .account { left: 96px; }
+    .candidate-a, .candidate-b, .candidate-c {
+      left: -29px;
+      top: -31px;
+      width: 112px;
+      height: 108px;
+    }
+    .coin-svg {
+      left: 0;
+      top: 0;
+      width: 104px;
+      height: 104px;
+    }
+    .activity-ring { transform-origin: 52px 52px; }
+    .candidate-a .pixel-sprite, .candidate-b .pixel-sprite, .candidate-c .pixel-sprite {
+      left: 20px;
+      top: 20px;
+      width: 64px;
+      height: 64px;
+    }
+    .candidate-a .pixel-name, .candidate-b .pixel-name, .candidate-c .pixel-name {
+      left: 82px;
+      top: 70px;
+    }
+    .is-active .candidate-a .pixel-sprite { animation: guild-bob calc(var(--pace) * 2.7) steps(3, jump-none) infinite; }
+    .is-active .candidate-b .pixel-sprite { animation: critter-squish calc(var(--pace) * 2.1) steps(3, jump-none) infinite; }
+    .is-active .candidate-c .pixel-sprite { animation: pilot-hover calc(var(--pace) * 3.1) steps(3, jump-none) infinite; }
+
+    g[id^="sprite-a-"] .sprite-eyes { animation: guild-eyes 7.8s steps(1, end) infinite; }
+    g[id^="sprite-a-"] .sprite-mouth { animation: guild-smile 8.4s steps(1, end) infinite; }
+    g[id^="sprite-a-"] .sprite-hair { animation: guild-hair calc(var(--pace) * 3.4) steps(2, jump-none) infinite alternate; }
+    g[id^="sprite-b-"] .sprite-eyes { animation: critter-eyes 5.1s steps(1, end) infinite; }
+    g[id^="sprite-b-"] .sprite-mouth { animation: critter-laugh 5.8s steps(1, end) infinite; }
+    g[id^="sprite-b-"] .sprite-hair { animation: critter-ears calc(var(--pace) * 2.3) steps(2, jump-none) infinite alternate; }
+    g[id^="sprite-c-"] .sprite-eyes { animation: pilot-eyes 6.2s steps(1, end) infinite; }
+    g[id^="sprite-c-"] .sprite-mouth { animation: pilot-smirk 7.2s steps(1, end) infinite; }
+    g[id^="sprite-c-"] .sprite-hair { animation: pilot-hair calc(var(--pace) * 4) steps(2, jump-none) infinite alternate; }
+
+    @keyframes guild-bob { 0%,72%,100% { transform: translateY(0); } 80%,90% { transform: translateY(-2px); } }
+    @keyframes critter-squish { 0%,64%,100% { transform: scale(1); } 70%,82% { transform: translateY(1px) scale(1.04,.96); } }
+    @keyframes pilot-hover { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+    @keyframes guild-eyes {
+      0%,34%,100% { transform: translateX(0) scaleY(1); }
+      36%,55% { transform: translateX(1px) scaleY(1); }
+      90%,94% { transform: translateX(0) scaleY(.18); }
+    }
+    @keyframes guild-smile { 0%,72%,100% { transform: scale(1); } 75%,88% { transform: translateY(-1px) scale(1.25,1.5); } }
+    @keyframes guild-hair { to { transform: translate(1px,-1px); } }
+    @keyframes critter-eyes {
+      0%,26%,100% { transform: translateX(0) scaleY(1); }
+      28%,48% { transform: translateX(-1px) scaleY(1); }
+      53%,70% { transform: translateX(1px) scaleY(1); }
+      82%,86% { transform: scaleY(.15); }
+    }
+    @keyframes critter-laugh { 0%,55%,100% { transform: scale(1); } 58%,76% { transform: translateY(-1px) scale(1.55,1.85); } 80%,87% { transform: scale(1.2,.65); } }
+    @keyframes critter-ears { to { transform: translateY(-2px) scaleX(1.04); } }
+    @keyframes pilot-eyes {
+      0%,22%,100% { transform: translateX(-1px) scaleY(1); }
+      25%,58% { transform: translateX(1px) scaleY(1); }
+      62%,88% { transform: translateX(0) scaleY(1); }
+      91%,95% { transform: scaleY(.2); }
+    }
+    @keyframes pilot-smirk { 0%,64%,100% { transform: translateX(0) scale(1); } 67%,83% { transform: translateX(1px) scaleX(1.35); } }
+    @keyframes pilot-hair { to { transform: translateX(1px); } }
+
+    .state-card {
+      align-self: center;
+      width: 280px;
+      padding: 20px;
+      background: #171b23e8;
+      border: 1px solid #343b49;
+      border-radius: 14px;
+      box-shadow: 0 18px 45px #0007;
+    }
+    .state-card h2 { margin: 0 0 4px; font-size: 16px; }
+    .state-card p { margin: 0 0 18px; color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .field { margin-top: 15px; }
+    .field label { display: block; margin-bottom: 7px; color: #cbd5e1; font-size: 12px; }
+    .segments { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 5px; }
+    button, select {
+      color: #cbd5e1;
+      background: #232936;
+      border: 1px solid #3b4454;
+      border-radius: 7px;
+      font: inherit;
+    }
+    .segments button { min-width: 0; padding: 7px 4px; font-size: 11px; cursor: pointer; }
+    .segments button.selected { color: #fff; border-color: #60a5fa; background: #243652; }
+    select { width: 100%; padding: 8px; }
+    .toggle-row { display: flex; gap: 7px; }
+    .toggle-row button { flex: 1; padding: 8px; cursor: pointer; }
+    .toggle-row button.on { color: #ecfeff; border-color: #22d3ee; background: #164e63; }
+    .state-readout {
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px solid #303744;
+      color: #94a3b8;
+      font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    .switcher {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px;
+      transform: translateX(-50%);
+      background: #f8fafc;
+      color: #111827;
+      border-radius: 999px;
+      box-shadow: 0 10px 35px #0009;
+    }
+    .switcher button {
+      width: 34px;
+      height: 30px;
+      color: #111827;
+      background: #e2e8f0;
+      border: 0;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 17px;
+    }
+    .variant-label { min-width: 190px; text-align: center; font-size: 13px; font-weight: 700; }
+
+    @keyframes breathe-a { to { transform: translateY(-2px) scale(1.035); } }
+    @keyframes hop-a { 45% { transform: translateY(-6px) scale(1.04,.96); } }
+    @keyframes orbit-a { to { transform: rotate(360deg); } }
+    @keyframes pulse-a { from { transform: scale(.72); opacity: .75; } to { transform: scale(1.25); opacity: 0; } }
+    @keyframes sparkle-a { 0%,100% { transform: rotate(0) scale(.3); opacity: .2; } 50% { transform: rotate(135deg) scale(1); opacity: 1; } }
+    @keyframes flow-b { to { stroke-dashoffset: -30; } }
+    @keyframes nod-b { to { transform: translateY(-3px) rotate(3deg); } }
+    @keyframes reset-b { 50% { transform: rotate(180deg) scale(1.18); } }
+    @keyframes turn-c { to { transform: rotate(360deg); } }
+    @keyframes look-c { to { transform: translateX(5px); } }
+
+    @media (max-width: 900px) {
+      .stage { grid-template-columns: 1fr; gap: 28px; padding-inline: 28px; }
+      .state-card { width: 428px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; }
+    }
+  </style>
+</head>
+<body data-variant="B" data-activity="active">
+  <main class="stage">
+    <section class="mock-wrap">
+      <p class="prototype-note">Throwaway visual prototype</p>
+      <div class="popup is-active" id="popup">
+        <svg width="0" height="0" class="arcade-defs" aria-hidden="true">
+          <defs>
+            <g id="sprite-luna">
+              <path fill="#201b3b" d="M5 4h2V2h8v1h3v2h2v4h-2v10h-2v2h-3v-2h-2v2H8v-2H5v-2H3V7h2z"/>
+              <path fill="#554181" d="M7 4h8v1h3v4h-2v8h-2v2h-2v-2H8v2H6v-3H5V8h2z"/>
+              <path class="sprite-hair" fill="#9673cf" d="M7 4h7v2h2v2H9v2H7v6H5V8h2zM16 6h2v3h-2zM6 17h3v2H7v-1H6z"/>
+              <path fill="#e4daff" d="M9 8h6v1h2v6h-2v2H9v-2H7v-5h2z"/>
+              <rect fill="#f7efd5" x="9" y="8" width="5" height="1"/>
+              <g class="sprite-eyes" fill="#201b3b"><rect x="9" y="11" width="2" height="1"/><rect x="14" y="11" width="2" height="1"/></g>
+              <path class="sprite-mouth" fill="#201b3b" d="M11 14h1v1h2v-1h1v2h-4z"/>
+              <rect fill="#f28cac" x="8" y="13" width="1" height="1"/>
+              <path fill="#f7efd5" d="M16 3h2v1h1v2h-2V5h-1z"/>
+            </g>
+            <g id="sprite-terra">
+              <path fill="#1c292b" d="M9 2h3v2h2V3h3v2h3v3h2v10h-3v3H5v-3H2V8h3V5h4z"/>
+              <path fill="#536a60" d="M6 6h12v2h2v9h-3v2H7v-2H4V9h2z"/>
+              <path fill="#93a98c" d="M6 6h7v2h5v2h2v4h-2v3h-4v2H7v-2H4V9h2z"/>
+              <path class="sprite-hair" fill="#6fbc79" d="M10 4H8V2h3v2h2V2h4v2h-2v2h-5z"/>
+              <path fill="#263638" d="M6 9h12v6H6z"/>
+              <g class="sprite-eyes" fill="#f4e8bd"><rect x="8" y="11" width="2" height="2"/><rect x="14" y="10" width="2" height="2"/></g>
+              <path fill="#93a98c" d="M8 8h4v1H8zM14 8h3v2h-1V9h-2z"/>
+              <path class="sprite-mouth" fill="#f4e8bd" d="M10 14h4v1h-4z"/>
+              <rect fill="#6fbc79" x="5" y="6" width="3" height="2"/><rect fill="#40534b" x="16" y="16" width="2" height="2"/>
+            </g>
+            <g id="sprite-sol">
+              <path fill="#492330" d="M10 1h4v4h2V2h3v7h2v2h2v8h-3v3H5v-2H2v-9h3V7h2V3h3z"/>
+              <path class="sprite-hair" fill="#d85b32" d="M10 3h3v5h2V5h2v6h3v7h-2v2H6v-2H4v-6h3V8h2v4h2z"/>
+              <path fill="#f5a83b" d="M9 8h7v2h3v7h-2v2H7v-2H5v-5h3V9h1z"/>
+              <path fill="#ffe294" d="M9 9h5v1h3v2H8v4H6v-4h2v-2h1z"/>
+              <g class="sprite-eyes" fill="#632635"><rect x="8" y="12" width="2" height="3"/><rect x="15" y="12" width="2" height="3"/></g>
+              <g fill="#fff3c0"><rect x="8" y="12" width="1" height="1"/><rect x="15" y="12" width="1" height="1"/></g>
+              <path class="sprite-mouth" fill="#632635" d="M10 16h5v3h-1v1h-3v-1h-1z"/>
+              <rect fill="#fff3c0" x="11" y="16" width="2" height="1"/>
+              <rect fill="#f5a83b" x="2" y="8" width="2" height="2"/><rect fill="#ffe294" x="21" y="7" width="2" height="2"/>
+            </g>
+            <g id="sprite-astra">
+              <path fill="#18243f" d="M10 1h4v3h3V2h2v5h3v10h-2v3h-4v2h-3v-2h-2v2H8v-2H4v-3H2V7h3V3h2v2h3z"/>
+              <path fill="#36598d" d="M10 4h4v2h5v2h2v8h-3v3h-4v1h-3v-1H6v-3H4V8h3V6h3z"/>
+              <path fill="#70b9e6" d="M9 5h6v2h4v2h2v5h-3v3h-3v2H9v-2H6v-3H4V9h3V7h2z"/>
+              <path class="sprite-hair" fill="#effaff" d="M11 3h2v2h2v2h-2v2h-2V7H9V5h2z"/>
+              <path fill="#25344f" d="M6 10h13v6h-2v2H8v-2H6z"/>
+              <g class="sprite-eyes" fill="#b9f6ee"><rect x="8" y="12" width="3" height="2"/><rect x="15" y="11" width="2" height="2"/></g>
+              <path class="sprite-mouth" fill="#18243f" d="M12 16h4v1h-1v1h-3z"/>
+              <rect fill="#effaff" x="6" y="8" width="2" height="1"/><rect fill="#91dcff" x="18" y="7" width="2" height="2"/>
+            </g>
+            <g id="sprite-unknown">
+              <path fill="#202938" d="M6 3h12v2h3v14h-3v2H6v-2H3V5h3z"/>
+              <path fill="#94a3b8" d="M6 6h12v11H6z"/>
+              <g class="sprite-eyes" fill="#202938"><rect x="8" y="10" width="2" height="2"/><rect x="14" y="10" width="2" height="2"/></g>
+              <path class="sprite-mouth" fill="#202938" d="M11 13h3v2h-1v2h-2z"/><rect fill="#dbeafe" x="11" y="18" width="2" height="1"/>
+            </g>
+
+            <!-- Set A: a detailed fantasy guild. -->
+            <g id="sprite-a-luna">
+              <path fill="#17152e" d="M7 5h3V2h10v2h4v3h3v5h-2v15h-3v3H9v-2H5v-4H3V10h2V7h2z"/>
+              <path class="sprite-hair" fill="#6c4ca1" d="M9 4h10v2h5v4h-3v2H8v3H5v-5h3V7h1zM22 10h4v3h-2v4h-3z"/>
+              <path fill="#b28ae2" d="M9 5h8v2h5v2H8v3H6v-2h2V7h1z"/>
+              <path fill="#eadfff" d="M10 11h11v2h2v10h-2v3h-4v2h-5v-2H9v-3H7V14h3z"/>
+              <path fill="#cbb9eb" d="M8 18h3v6h3v3h-3v-2H9v-3H8z"/>
+              <path class="sprite-hair" fill="#d8caf4" d="M8 12h4v3H9v7H7v-8h1zM19 12h4v10h-2v-7h-2z"/>
+              <g class="sprite-eyes" fill="#332557"><rect x="11" y="17" width="3" height="2"/><rect x="18" y="17" width="3" height="2"/><rect fill="#fff" x="12" y="17" width="1" height="1"/><rect fill="#fff" x="19" y="17" width="1" height="1"/></g>
+              <path class="sprite-mouth" fill="#5c315f" d="M14 22h5v1h-1v2h-3v-1h-1z"/>
+              <rect fill="#ef8ca8" x="10" y="21" width="2" height="1"/><rect fill="#ef8ca8" x="20" y="21" width="2" height="1"/>
+              <path fill="#fff2b8" d="M23 4h2v2h2v2h-2v2h-2V8h-2V6h2z"/>
+            </g>
+            <g id="sprite-a-terra">
+              <path fill="#162523" d="M9 3h5V1h4v3h6v3h4v5h2v12h-3v4h-5v3H9v-2H5v-4H2V11h3V7h4z"/>
+              <path fill="#50665a" d="M8 7h16v3h3v14h-4v3H9v-2H6V10h2z"/>
+              <path fill="#90aa8a" d="M8 8h9v3h7v3h3v8h-4v3h-7v3H9v-3H6V12h2z"/>
+              <path class="sprite-hair" fill="#60b96d" d="M12 6H8V3h5v2h2V1h3v5h2V3h5v3h-3v3H12z"/>
+              <path fill="#263a35" d="M8 13h17v8H8z"/>
+              <path fill="#3f554c" d="M9 14h6v2H9zM19 13h5v3h-2v-1h-3z"/>
+              <g class="sprite-eyes" fill="#f3e8b5"><rect x="11" y="16" width="3" height="3"/><rect x="20" y="15" width="3" height="3"/><rect fill="#25332f" x="12" y="17" width="1" height="1"/><rect fill="#25332f" x="21" y="16" width="1" height="1"/></g>
+              <path class="sprite-mouth" fill="#f3e8b5" d="M14 21h7v2h-2v1h-4v-1h-1z"/>
+              <rect fill="#607d6c" x="5" y="18" width="3" height="4"/><rect fill="#6fb47b" x="22" y="8" width="3" height="3"/>
+            </g>
+            <g id="sprite-a-sol">
+              <path fill="#3c1d2b" d="M12 1h5v5h3V2h4v8h3v3h3v11h-3v4h-5v3H9v-2H5v-3H2V13h3V8h3V4h4z"/>
+              <path class="sprite-hair" fill="#d44b2d" d="M12 3h4v8h3V6h3v8h4v10h-3v3H8v-2H5V14h4V8h3z"/>
+              <path fill="#f39c32" d="M10 10h11v2h4v11h-3v4H9v-2H7V15h3z"/>
+              <path fill="#ffe291" d="M10 11h8v2h4v3H9v7H7v-8h3z"/>
+              <path fill="#bd482f" d="M7 17h3v8H8v-2H7zM22 15h3v9h-3z"/>
+              <g class="sprite-eyes" fill="#542135"><rect x="11" y="17" width="3" height="4"/><rect x="20" y="17" width="3" height="4"/><rect fill="#fff5c8" x="11" y="17" width="1" height="1"/><rect fill="#fff5c8" x="20" y="17" width="1" height="1"/></g>
+              <path class="sprite-mouth" fill="#592136" d="M13 22h8v5h-2v2h-4v-2h-2z"/>
+              <rect fill="#fff5c8" x="15" y="22" width="3" height="1"/><rect fill="#ef7184" x="16" y="27" width="3" height="1"/>
+              <rect fill="#ffe291" x="2" y="9" width="3" height="3"/><rect fill="#f39c32" x="28" y="8" width="3" height="3"/>
+            </g>
+            <g id="sprite-a-astra">
+              <path fill="#13213c" d="M12 1h7v4h4V2h3v7h4v14h-3v5h-5v3H9v-2H5v-4H2V9h4V4h3v3h3z"/>
+              <path fill="#315889" d="M11 5h9v3h6v3h2v11h-4v5h-6v2h-7v-2H7v-4H4V11h4V8h3z"/>
+              <path fill="#68b8e9" d="M11 7h9v2h5v3h3v8h-4v4h-5v3h-8v-2H8v-4H5v-9h4V9h2z"/>
+              <path class="sprite-hair" fill="#ecfbff" d="M14 3h4v3h3v3h-3v3h-4V9h-3V6h3z"/>
+              <path fill="#1d3152" d="M7 13h19v9h-3v3H10v-2H7z"/>
+              <path fill="#38577e" d="M8 14h7v2H8zM19 14h6v2h-3v1h-3z"/>
+              <g class="sprite-eyes" fill="#aef8ee"><rect x="10" y="17" width="4" height="3"/><rect x="20" y="16" width="3" height="3"/><rect fill="#fff" x="11" y="17" width="1" height="1"/><rect fill="#fff" x="21" y="16" width="1" height="1"/></g>
+              <path class="sprite-mouth" fill="#91ddec" d="M14 22h7v2h-2v1h-4v-1h-1z"/>
+              <rect fill="#effaff" x="7" y="10" width="3" height="2"/><rect fill="#91dcff" x="24" y="9" width="3" height="3"/>
+            </g>
+
+            <!-- Set B: odd little arcade creatures. -->
+            <g id="sprite-b-luna">
+              <path fill="#17152e" d="M5 4h5v4h12V4h5v6h3v15h-4v4H7v-3H3V10h2z"/>
+              <path class="sprite-hair" fill="#7657ae" d="M6 5h3v7H6zM23 5h3v7h-3zM8 9h16v3h3v12h-4v3H9v-2H6V12h2z"/>
+              <path fill="#c8b1ef" d="M9 12h14v3h3v8h-4v3H10v-2H7v-9h2z"/>
+              <path fill="#ebe2ff" d="M10 13h8v2h5v2H9v6H7v-8h3z"/>
+              <g class="sprite-eyes" fill="#2e2448"><rect x="11" y="18" width="4" height="3"/><rect x="20" y="18" width="4" height="3"/><rect fill="#fff" x="12" y="18" width="1" height="1"/><rect fill="#fff" x="21" y="18" width="1" height="1"/></g>
+              <path class="sprite-mouth" fill="#4c2852" d="M15 22h5v3h-1v2h-3v-2h-1z"/>
+              <path fill="#9b72cc" d="M3 17H1v5h3v2h3v-3H5zM28 17h3v6h-3v2h-3v-4h2v-2h1z"/>
+            </g>
+            <g id="sprite-b-terra">
+              <path fill="#17302b" d="M8 4h5v3h7V4h5v5h4v5h2v10h-4v5H6v-3H2V14h3V9h3z"/>
+              <path class="sprite-hair" fill="#54a967" d="M9 5h3v5H9zM21 5h3v5h-3zM7 10h19v3h3v11h-4v3H7v-2H4V14h3z"/>
+              <path fill="#95cc85" d="M8 12h17v3h3v8h-4v3H9v-2H6v-9h2z"/>
+              <path fill="#c8eca6" d="M9 13h10v2h6v2H8v5H6v-7h3z"/>
+              <g class="sprite-eyes" fill="#1e3c34"><rect x="10" y="16" width="5" height="5"/><rect x="21" y="16" width="5" height="5"/><rect fill="#f5f0b7" x="11" y="17" width="2" height="2"/><rect fill="#f5f0b7" x="22" y="17" width="2" height="2"/></g>
+              <path class="sprite-mouth" fill="#31534a" d="M14 22h8v2h-2v2h-4v-1h-2z"/>
+              <rect fill="#75b96c" x="3" y="19" width="3" height="5"/><rect fill="#75b96c" x="27" y="19" width="3" height="5"/>
+            </g>
+            <g id="sprite-b-sol">
+              <path fill="#3d202d" d="M6 5h5V2h4v4h8V3h4v6h3v15h-4v5H7v-3H3V10h3z"/>
+              <path class="sprite-hair" fill="#d95b2e" d="M8 5h4v5h3V7h9V5h2v7h2v12h-4v3H8v-2H5V11h3z"/>
+              <path fill="#f4a13a" d="M9 11h15v2h3v10h-4v3H10v-2H7V14h2z"/>
+              <path fill="#ffe59a" d="M10 12h8v2h6v2H9v7H7v-9h3z"/>
+              <g class="sprite-eyes" fill="#592238"><rect x="11" y="17" width="3" height="3"/><rect x="20" y="16" width="4" height="3"/><rect fill="#fff6cc" x="11" y="17" width="1" height="1"/><rect fill="#fff6cc" x="20" y="16" width="1" height="1"/></g>
+              <path class="sprite-mouth" fill="#64243b" d="M13 21h9v5h-2v2h-5v-2h-2z"/>
+              <path fill="#fff3c0" d="M14 21h2v2h-2zM20 21h2v2h-2z"/><rect fill="#f07283" x="16" y="26" width="4" height="1"/>
+              <path fill="#f4a13a" d="M4 14H1v7h3v3h3v-4H5zM29 12h3v8h-3v3h-3v-4h2v-4h1z"/>
+            </g>
+            <g id="sprite-b-astra">
+              <path fill="#13213b" d="M10 2h12v3h5v4h3v15h-4v5H7v-3H3V9h3V5h4z"/>
+              <path class="sprite-hair" fill="#4d83bd" d="M11 4h10v3h5v4h2v12h-4v4H8v-3H5V10h3V7h3z"/>
+              <path fill="#78c7eb" d="M9 9h15v3h3v10h-4v3H10v-2H7V12h2z"/>
+              <path fill="#233653" d="M8 13h18v9H8z"/>
+              <g class="sprite-eyes" fill="#b8fff1"><rect x="11" y="16" width="4" height="3"/><rect x="20" y="16" width="4" height="3"/><rect fill="#fff" x="12" y="16" width="1" height="1"/><rect fill="#fff" x="21" y="16" width="1" height="1"/></g>
+              <path class="sprite-mouth" fill="#70c9db" d="M15 21h6v2h-1v2h-4v-1h-1z"/>
+              <path fill="#effaff" d="M14 2h4v2h2v3h-2v2h-4V7h-2V4h2z"/>
+              <rect fill="#5de5d0" x="3" y="13" width="3" height="7"/><rect fill="#5de5d0" x="27" y="13" width="3" height="7"/>
+            </g>
+
+            <!-- Set C: close-up neon pilots. -->
+            <g id="sprite-c-luna">
+              <path fill="#171529" d="M8 3h16v3h4v6h3v17H3V12h2V6h3z"/>
+              <path class="sprite-hair" fill="#62508f" d="M9 5h14v3h4v6h2v14H5V13h2V8h2z"/>
+              <path fill="#dfd2f1" d="M9 11h15v3h3v12h-4v3H10v-2H7V14h2z"/>
+              <path class="sprite-hair" fill="#c1acd9" d="M8 9h9v3h7v3h3v3h-5v-3h-5v2h-4v-2H9v7H7V13h1z"/>
+              <path fill="#342948" d="M9 16h16v6H9z"/>
+              <g class="sprite-eyes" fill="#dfc8ff"><rect x="11" y="18" width="4" height="2"/><rect x="20" y="18" width="3" height="2"/><rect fill="#fff" x="12" y="18" width="1" height="1"/><rect fill="#fff" x="21" y="18" width="1" height="1"/></g>
+              <path class="sprite-mouth" fill="#6d3a66" d="M14 24h7v2h-2v2h-3v-1h-2z"/>
+              <rect fill="#f18cae" x="10" y="23" width="2" height="1"/><rect fill="#f18cae" x="22" y="23" width="2" height="1"/>
+            </g>
+            <g id="sprite-c-terra">
+              <path fill="#182623" d="M7 4h18v3h4v6h2v16H2V13h2V7h3z"/>
+              <path class="sprite-hair" fill="#4c6b57" d="M8 5h16v3h4v8H4V9h4z"/>
+              <path fill="#d4b891" d="M8 12h17v3h3v11h-4v3H9v-2H6V15h2z"/>
+              <path class="sprite-hair" fill="#6c8a6f" d="M7 8h19v3h3v5H5v-5h2z"/>
+              <path fill="#293c35" d="M8 16h18v6H8z"/>
+              <path fill="#8fd096" d="M9 17h7v4H9zM19 17h6v4h-6z"/>
+              <g class="sprite-eyes" fill="#f8f0c9"><rect x="11" y="18" width="3" height="2"/><rect x="21" y="18" width="2" height="2"/></g>
+              <path fill="#75563e" d="M10 22h14v3h-2v4H12v-3h-2z"/>
+              <path class="sprite-mouth" fill="#f2d7b1" d="M14 24h7v2h-2v1h-4v-1h-1z"/>
+            </g>
+            <g id="sprite-c-sol">
+              <path fill="#38202c" d="M6 4h5V1h5v3h5V2h4v5h4v6h2v16H2V12h2V7h2z"/>
+              <path class="sprite-hair" fill="#dd6234" d="M7 5h5V3h4v4h4V4h4v5h4v6H4V9h3z"/>
+              <path fill="#f2bf83" d="M8 12h17v3h3v11h-4v3H9v-2H6V15h2z"/>
+              <path fill="#ffdba6" d="M9 13h10v2h6v3H8v7H6V15h3z"/>
+              <path fill="#4b2a35" d="M8 16h18v6H8z"/>
+              <g class="sprite-eyes" fill="#ffc95a"><rect x="11" y="18" width="4" height="2"/><rect x="20" y="18" width="4" height="2"/><rect fill="#fff" x="12" y="18" width="1" height="1"/><rect fill="#fff" x="21" y="18" width="1" height="1"/></g>
+              <path class="sprite-mouth" fill="#8b3c48" d="M14 24h8v3h-2v2h-4v-2h-2z"/>
+              <rect fill="#fff1cf" x="16" y="24" width="3" height="1"/>
+            </g>
+            <g id="sprite-c-astra">
+              <path fill="#101e37" d="M7 3h18v3h4v6h2v17H2V12h2V6h3z"/>
+              <path class="sprite-hair" fill="#396da3" d="M8 5h16v3h4v6H4V8h4z"/>
+              <path fill="#bcd9e8" d="M8 11h17v3h3v12h-4v3H9v-2H6V14h2z"/>
+              <path class="sprite-hair" fill="#72c5ea" d="M8 8h17v3h3v5H6v-5h2z"/>
+              <path fill="#203453" d="M8 15h18v8H8z"/>
+              <path fill="#366188" d="M9 16h7v2H9zM20 16h5v2h-3v1h-2z"/>
+              <g class="sprite-eyes" fill="#b8fff1"><rect x="11" y="18" width="4" height="2"/><rect x="21" y="18" width="3" height="2"/><rect fill="#fff" x="12" y="18" width="1" height="1"/></g>
+              <path class="sprite-mouth" fill="#6ee3d1" d="M15 23h7v2h-2v2h-4v-1h-1z"/>
+              <path fill="#effaff" d="M15 3h4v2h2v3h-2v2h-4V8h-2V5h2z"/>
+              <rect fill="#5de5d0" x="3" y="14" width="3" height="8"/><rect fill="#5de5d0" x="28" y="14" width="3" height="8"/>
+            </g>
+            <g id="sprite-unknown-32">
+              <path fill="#202938" d="M7 4h18v3h4v21h-4v3H7v-3H3V7h4z"/>
+              <path fill="#94a3b8" d="M7 8h18v17H7z"/>
+              <g class="sprite-eyes" fill="#202938"><rect x="10" y="14" width="4" height="3"/><rect x="20" y="14" width="4" height="3"/></g>
+              <path class="sprite-mouth" fill="#202938" d="M14 19h6v3h-2v4h-3v-5h-1z"/><rect fill="#dbeafe" x="15" y="27" width="3" height="2"/>
+            </g>
+          </defs>
+        </svg>
+
+        <div class="indicator variant candidate-a" aria-label="Guild party faces">
+          <svg class="coin-svg" viewBox="0 0 104 104" aria-hidden="true">
+            <g class="activity-ring">
+              <circle class="coin-track" cx="52" cy="52" r="39" pathLength="200"></circle>
+              <circle class="coin-value" cx="52" cy="52" r="39" pathLength="200"></circle>
+              <circle class="coin-carrier" cx="52" cy="52" r="39" pathLength="200"></circle>
+              <circle class="coin-reset" cx="52" cy="52" r="39" pathLength="200"></circle>
+            </g>
+          </svg>
+          <svg class="pixel-sprite" viewBox="0 0 32 32" shape-rendering="crispEdges" aria-hidden="true"><use class="sprite-use" data-face-set="a" href="#sprite-a-sol"></use></svg>
+        </div>
+
+        <div class="indicator variant candidate-b" aria-label="Oddball creature faces">
+          <svg class="coin-svg" viewBox="0 0 104 104" aria-hidden="true">
+            <g class="activity-ring">
+              <circle class="coin-track" cx="52" cy="52" r="39" pathLength="200"></circle>
+              <circle class="coin-value" cx="52" cy="52" r="39" pathLength="200"></circle>
+              <circle class="coin-carrier" cx="52" cy="52" r="39" pathLength="200"></circle>
+              <circle class="coin-reset" cx="52" cy="52" r="39" pathLength="200"></circle>
+            </g>
+          </svg>
+          <svg class="pixel-sprite" viewBox="0 0 32 32" shape-rendering="crispEdges" aria-hidden="true"><use class="sprite-use" data-face-set="b" href="#sprite-b-sol"></use></svg>
+        </div>
+
+        <div class="indicator variant candidate-c" aria-label="Neon pilot faces">
+          <svg class="coin-svg" viewBox="0 0 104 104" aria-hidden="true">
+            <g class="activity-ring">
+              <circle class="coin-track" cx="52" cy="52" r="39" pathLength="200"></circle>
+              <circle class="coin-value" cx="52" cy="52" r="39" pathLength="200"></circle>
+              <circle class="coin-carrier" cx="52" cy="52" r="39" pathLength="200"></circle>
+              <circle class="coin-reset" cx="52" cy="52" r="39" pathLength="200"></circle>
+            </g>
+          </svg>
+          <svg class="pixel-sprite" viewBox="0 0 32 32" shape-rendering="crispEdges" aria-hidden="true"><use class="sprite-use" data-face-set="c" href="#sprite-c-sol"></use></svg>
+        </div>
+
+        <header class="header">
+          <div class="title">Codex Usage</div>
+          <div class="account">Plus · Codex</div>
+          <div class="actions">
+            <div class="icon-button">↗</div>
+            <div class="icon-button">▤</div>
+            <div class="icon-button">⌖</div>
+          </div>
+        </header>
+
+        <section class="limit">
+          <div class="limit-head"><span class="limit-name">5-hour limit</span><span class="limit-value remaining-text">50% left</span></div>
+          <div class="reset reset-main">Resets in 2h 28m · 16/09/2026 04:25</div>
+          <div class="bar"><span></span></div>
+        </section>
+        <section class="limit">
+          <div class="limit-head"><span class="limit-name">Weekly limit</span><span class="limit-value">42% left</span></div>
+          <div class="reset">Resets in 3d 8h · 19/09/2026 10:00</div>
+          <div class="bar" style="--remaining:42%"><span></span></div>
+        </section>
+        <div class="divider"></div>
+        <div class="metric"><span>Inference today</span><strong>784.2K tokens</strong></div>
+        <div class="metric"><span>Inference total</span><strong>123.46M tokens</strong></div>
+        <div class="divider" style="margin-top:13px"></div>
+        <div class="footer"><span class="updated">Updated 01:57</span><span class="refresh">↻</span></div>
+      </div>
+    </section>
+
+    <aside class="state-card">
+      <h2>Animation state</h2>
+      <p>The coin halo is shared across the face families. Oddball creatures is the selected direction.</p>
+      <div class="field">
+        <label>Activity and pace</label>
+        <div class="segments" id="motionButtons">
+          <button data-mode="Idle">Idle</button><button data-mode="Low">Low</button>
+          <button class="selected" data-mode="Average">Average</button><button data-mode="High">High</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Reset phase</label>
+        <div class="segments" id="resetButtons">
+          <button class="selected" data-reset="Normal">Normal</button><button data-reset="Soon">&lt; 5m</button>
+          <button data-reset="Imminent">&lt; 1m</button><button data-reset="Recent">Recent</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Allowance remaining</label>
+        <div class="segments" id="allowanceButtons">
+          <button data-value="100">100</button><button class="selected" data-value="50">50</button>
+          <button data-value="25">25</button><button data-value="10">10</button><button data-value="0">0</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="model">Model</label>
+        <select id="model"><option>Luna</option><option>Terra</option><option selected>Sol</option><option>Astra</option><option>Unknown</option></select>
+      </div>
+      <div class="state-readout" id="readout"></div>
+    </aside>
+  </main>
+
+  <nav class="switcher" aria-label="Prototype variants">
+    <button id="previous" aria-label="Previous variant">←</button>
+    <span class="variant-label" id="variantLabel"></span>
+    <button id="next" aria-label="Next variant">→</button>
+  </nav>
+
+  <script>
+    const variants = [
+      { key: "A", name: "Guild party" },
+      { key: "B", name: "Oddball creatures" },
+      { key: "C", name: "Neon pilots" }
+    ];
+    const state = { mode: "Average", resetPhase: "Normal", allowance: 50, model: "Sol" };
+    const popup = document.querySelector("#popup");
+    const label = document.querySelector("#variantLabel");
+    const readout = document.querySelector("#readout");
+
+    function variantIndex() {
+      const value = new URLSearchParams(location.search).get("variant") || "B";
+      const index = variants.findIndex(item => item.key === value.toUpperCase());
+      return index < 0 ? 0 : index;
+    }
+
+    function setVariant(index) {
+      const variant = variants[(index + variants.length) % variants.length];
+      const url = new URL(location.href);
+      url.searchParams.set("variant", variant.key);
+      history.replaceState({}, "", url);
+      document.body.dataset.variant = variant.key;
+      label.textContent = `${variant.key} · ${variant.name}`;
+    }
+
+    function usageColor(value) {
+      const stops = [[0,[239,68,68]],[10,[239,68,68]],[25,[245,158,11]],[50,[234,179,8]],[100,[16,185,129]]];
+      for (let i = 1; i < stops.length; i++) {
+        if (value <= stops[i][0]) {
+          const [a, ca] = stops[i - 1], [b, cb] = stops[i];
+          const amount = (value - a) / (b - a || 1);
+          const rgb = ca.map((channel, j) => Math.round(channel + (cb[j] - channel) * amount));
+          return `rgb(${rgb.join(",")})`;
+        }
+      }
+      return "rgb(16,185,129)";
+    }
+
+    function render() {
+      const active = state.mode !== "Idle";
+      const paceSeconds = { Low: 2.3, Average: 1.3, High: .62, Idle: 8 }[state.mode];
+      const orbitSeconds = { Low: 14, Average: 10, High: 7, Idle: 18 }[state.mode];
+      const ringSeconds = { Low: 30, Average: 23, High: 16, Idle: 0 }[state.mode];
+      popup.classList.toggle("is-active", active);
+      popup.classList.toggle("is-idle", !active);
+      popup.classList.toggle("reset-soon", state.resetPhase === "Soon");
+      popup.classList.toggle("reset-imminent", state.resetPhase === "Imminent");
+      popup.classList.toggle("reset-recent", state.resetPhase === "Recent");
+      [...popup.classList].filter(name => name.startsWith("model-")).forEach(name => popup.classList.remove(name));
+      popup.classList.add(`model-${state.model.toLowerCase()}`);
+      popup.style.setProperty("--usage", usageColor(state.allowance));
+      popup.style.setProperty("--allowance", state.allowance);
+      popup.style.setProperty("--remaining", `${state.allowance}%`);
+      popup.style.setProperty("--pace", paceSeconds + "s");
+      popup.style.setProperty("--orbit", orbitSeconds + "s");
+      popup.style.setProperty("--ring-turn", ringSeconds + "s");
+      document.querySelectorAll(".model-name").forEach(node => node.textContent = state.model);
+      document.querySelectorAll(".sprite-use").forEach(node => {
+        const model = state.model.toLowerCase();
+        node.setAttribute("href", model === "unknown" ? "#sprite-unknown-32" : `#sprite-${node.dataset.faceSet}-${model}`);
+      });
+      document.querySelector(".remaining-text").textContent = `${state.allowance}% left`;
+      document.querySelectorAll("#motionButtons button").forEach(button =>
+        button.classList.toggle("selected", button.dataset.mode === state.mode));
+      document.querySelectorAll("#resetButtons button").forEach(button =>
+        button.classList.toggle("selected", button.dataset.reset === state.resetPhase));
+      const resetCopy = {
+        Normal: "reset = 2h 28m remaining",
+        Soon: "reset = 4m 12s remaining · ring breathes",
+        Imminent: "reset = 38s remaining · ring double-pulse",
+        Recent: "reset = 2 minutes ago · cyan ring pulse"
+      }[state.resetPhase];
+      document.querySelector(".reset-main").textContent = {
+        Normal: "Resets in 2h 28m · 16/09/2026 04:25",
+        Soon: "Resets in 4m 12s · pulse is gathering",
+        Imminent: "Resets in 38s · almost there",
+        Recent: "Reset 2m ago · fresh window"
+      }[state.resetPhase];
+      readout.innerHTML = [
+        `motion = ${active ? `active · ${state.mode.toLowerCase()} pace · ${ringSeconds}s ring` : "idle · ring parked"}`,
+        `highlight = ${active ? `short local-tone pulse · ${orbitSeconds}s lap` : "dim marker"}`,
+        resetCopy,
+        `allowance = ${state.allowance}% remaining`,
+        `model = ${state.model}`
+      ].join("<br>");
+    }
+
+    document.querySelector("#previous").onclick = () => setVariant(variantIndex() - 1);
+    document.querySelector("#next").onclick = () => setVariant(variantIndex() + 1);
+    document.addEventListener("keydown", event => {
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName) || event.target.isContentEditable) return;
+      if (event.key === "ArrowLeft") setVariant(variantIndex() - 1);
+      if (event.key === "ArrowRight") setVariant(variantIndex() + 1);
+    });
+    document.querySelector("#motionButtons").onclick = event => {
+      if (!event.target.dataset.mode) return;
+      state.mode = event.target.dataset.mode;
+      render();
+    };
+    document.querySelector("#resetButtons").onclick = event => {
+      if (!event.target.dataset.reset) return;
+      state.resetPhase = event.target.dataset.reset;
+      render();
+    };
+    document.querySelector("#allowanceButtons").onclick = event => {
+      if (!event.target.dataset.value) return;
+      state.allowance = Number(event.target.dataset.value);
+      document.querySelectorAll("#allowanceButtons button").forEach(button => button.classList.toggle("selected", button === event.target));
+      render();
+    };
+    document.querySelector("#model").onchange = event => { state.model = event.target.value; render(); };
+
+    setVariant(variantIndex());
+    render();
+  </script>
+</body>
+</html>

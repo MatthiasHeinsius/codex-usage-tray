@@ -9,24 +9,32 @@ internal enum UsagePace
     High
 }
 
-internal enum ResetPhase
+internal enum AllowanceFlashPhase
 {
     Normal,
-    Soon,
-    Imminent,
-    Recent
+    BeforeReset,
+    AfterReset,
+    UsedUp
 }
 
 internal sealed class UsageActivityIndicator : Control
 {
     private const float RingDegreesPerSecondAtPace = 6;
     private static readonly Color TrackColor = Color.FromArgb(55, 65, 81);
+    private static readonly (float Point, float Opacity, float Width)[] BeforeResetPulse =
+        [(0, .08f, 6), (.18f, .52f, 9), (.35f, .1f, 6),
+            (.52f, .44f, 8), (.72f, .08f, 6), (1, .08f, 6)];
+    private static readonly (float Point, float Opacity, float Width)[] AfterResetPulse =
+        [(0, .62f, 9), (.35f, .1f, 6), (1, .1f, 6)];
+    private static readonly (float Point, float Opacity, float Width)[] UsedUpPulse =
+        [(0, .16f, 6), (.25f, .8f, 10), (.7f, .16f, 6), (1, .16f, 6)];
     private static readonly TimeSpan RecentActivityWindow = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan IndicatorFadeWindow = TimeSpan.FromSeconds(15);
     private UsagePresentation.ActivityIndicatorPresentation allowance =
         UsagePresentation.ActivityIndicatorPresentation.Unavailable;
     private CodexSessionActivity session = CodexSessionActivity.Empty;
-    private DateTimeOffset? recentResetAt;
+    private DateTimeOffset? awaitingActivationResetAt;
+    private DateTimeOffset? activatedResetAt;
     private DateTimeOffset? lastFrameAt;
     private bool activityLatched;
     private float ringAngle;
@@ -118,21 +126,30 @@ internal sealed class UsageActivityIndicator : Control
         return (100 - Math.Clamp(remaining, 0, 100)) / 100d / elapsedFraction;
     }
 
-    internal ResetPhase Reset(DateTimeOffset now)
+    internal AllowanceFlashPhase Flash(DateTimeOffset now)
     {
-        if (recentResetAt is { } resetAt)
+        if (allowance.ResetsAt is { } nextReset)
         {
-            var observedElapsed = now - resetAt;
-            if (observedElapsed >= TimeSpan.Zero
-                && observedElapsed <= TimeSpan.FromMinutes(5))
+            var untilReset = nextReset - now;
+            if (untilReset > TimeSpan.Zero && untilReset <= TimeSpan.FromMinutes(15))
             {
-                return ResetPhase.Recent;
+                return AllowanceFlashPhase.BeforeReset;
             }
+        }
+
+        if (allowance.RemainingPercent == 0)
+        {
+            return AllowanceFlashPhase.UsedUp;
         }
 
         if (allowance.ResetsAt is not { } resetsAt)
         {
-            return ResetPhase.Normal;
+            return AllowanceFlashPhase.Normal;
+        }
+
+        if (awaitingActivationResetAt == resetsAt)
+        {
+            return AllowanceFlashPhase.AfterReset;
         }
 
         if (allowance.WindowDuration is { } duration
@@ -142,29 +159,47 @@ internal sealed class UsageActivityIndicator : Control
             if (windowElapsed >= TimeSpan.Zero
                 && windowElapsed <= TimeSpan.FromMinutes(5))
             {
-                return ResetPhase.Recent;
+                return AllowanceFlashPhase.AfterReset;
             }
         }
 
-        var remaining = resetsAt - now;
-        if (remaining > TimeSpan.Zero && remaining <= TimeSpan.FromMinutes(1))
-        {
-            return ResetPhase.Imminent;
-        }
-
-        return remaining > TimeSpan.Zero && remaining <= TimeSpan.FromMinutes(5)
-            ? ResetPhase.Soon
-            : ResetPhase.Normal;
+        return AllowanceFlashPhase.Normal;
     }
 
     internal void ShowAllowance(UsagePresentation.ActivityIndicatorPresentation presentation)
     {
-        allowance = presentation;
-        if (presentation.ResetObservedAt is { } resetAt)
+        if (presentation.ActivatedResetAt == presentation.ResetsAt
+            && presentation.ResetsAt is not null)
         {
-            recentResetAt = resetAt;
+            activatedResetAt = presentation.ResetsAt;
+            awaitingActivationResetAt = null;
         }
-
+        else if (presentation.ResetObservedAt is not null)
+        {
+            activatedResetAt = null;
+            awaitingActivationResetAt = presentation.ResetsAt;
+        }
+        else if (allowance.ResetsAt is { } previousReset
+            && presentation.ResetsAt is { } currentReset
+            && currentReset != previousReset)
+        {
+            var resetShift = currentReset - previousReset;
+            if (awaitingActivationResetAt == previousReset
+                || (allowance.RemainingPercent == 100
+                    && allowance.WindowDuration is { } duration
+                    && resetShift > TimeSpan.Zero
+                    && resetShift < duration / 2))
+            {
+                activatedResetAt = currentReset;
+                awaitingActivationResetAt = null;
+            }
+            else if (presentation.RemainingPercent == 100)
+            {
+                activatedResetAt = null;
+                awaitingActivationResetAt = currentReset;
+            }
+        }
+        allowance = presentation;
         Invalidate();
     }
 
@@ -224,7 +259,7 @@ internal sealed class UsageActivityIndicator : Control
             graphics.DrawArc(value, bounds, start, RingSweep);
         }
 
-        DrawResetPulse(graphics, bounds, now);
+        DrawAllowanceFlash(graphics, bounds, now, usageColor);
 
         var strength = IndicatorStrength(now);
         if (strength <= 0)
@@ -253,35 +288,53 @@ internal sealed class UsageActivityIndicator : Control
         graphics.DrawArc(highlight, bounds, -90 + highlightAngle, 18);
     }
 
-    private void DrawResetPulse(Graphics graphics, RectangleF bounds, DateTimeOffset now)
+    private void DrawAllowanceFlash(Graphics graphics, RectangleF bounds, DateTimeOffset now, Color usageColor)
     {
-        var phase = Reset(now);
-        if (phase == ResetPhase.Normal)
+        var phase = Flash(now);
+        if (phase == AllowanceFlashPhase.Normal)
         {
             return;
         }
 
         var seconds = now.ToUnixTimeMilliseconds() / 1000d;
-        float strength;
-        Color color;
-        switch (phase)
+        var (duration, frames) = phase switch
         {
-            case ResetPhase.Soon:
-                strength = SmoothPulse(seconds / 2.6);
-                color = Color.FromArgb(103, 232, 249);
-                break;
-            case ResetPhase.Imminent:
-                strength = Math.Max(SmoothPulse(seconds / 1.8), SmoothPulse((seconds / 1.8) + .28) * .8f);
-                color = Color.FromArgb(251, 191, 36);
-                break;
-            default:
-                strength = MathF.Pow(1 - (float)(seconds % 3.2 / 3.2), 2);
-                color = Color.FromArgb(103, 232, 249);
-                break;
+            AllowanceFlashPhase.BeforeReset => (1.8, BeforeResetPulse),
+            AllowanceFlashPhase.UsedUp => (2.1, UsedUpPulse),
+            _ => (3.2, AfterResetPulse)
+        };
+        var (opacity, width) = PulseFrame(frames, (float)(seconds % duration / duration));
+        var color = phase switch
+        {
+            AllowanceFlashPhase.BeforeReset => UsageStatusColor.ForRemainingPercent(100),
+            AllowanceFlashPhase.UsedUp => usageColor,
+            _ => Color.FromArgb(103, 232, 249)
+        };
+        using var pulse = new Pen(Color.FromArgb((int)(255 * opacity), color), width);
+        graphics.DrawEllipse(pulse, bounds);
+    }
+
+    private static (float Opacity, float Width) PulseFrame(
+        (float Point, float Opacity, float Width)[] frames,
+        float progress)
+    {
+        for (var index = 1; index < frames.Length; index++)
+        {
+            if (progress > frames[index].Point)
+            {
+                continue;
+            }
+
+            var previous = frames[index - 1];
+            var next = frames[index];
+            var amount = (progress - previous.Point) / (next.Point - previous.Point);
+            amount = amount * amount * (3 - (2 * amount));
+            return (
+                previous.Opacity + ((next.Opacity - previous.Opacity) * amount),
+                previous.Width + ((next.Width - previous.Width) * amount));
         }
 
-        using var pulse = new Pen(Color.FromArgb(18 + (int)(100 * strength), color), 6 + (3 * strength));
-        graphics.DrawEllipse(pulse, bounds);
+        return (frames[^1].Opacity, frames[^1].Width);
     }
 
     private void DrawCreature(Graphics graphics, DateTimeOffset now)
@@ -460,11 +513,13 @@ internal sealed class UsageActivityIndicator : Control
     private string Describe(DateTimeOffset now)
     {
         var activity = IsActive ? $"active at {Pace(now).ToString().ToLowerInvariant()} pace" : "idle";
-        var reset = Reset(now) switch
+        var reset = Flash(now) switch
         {
-            ResetPhase.Soon => ", reset in under five minutes",
-            ResetPhase.Imminent => ", reset in under one minute",
-            ResetPhase.Recent => ", recently reset",
+            AllowanceFlashPhase.BeforeReset => ", reset in under fifteen minutes",
+            AllowanceFlashPhase.AfterReset => awaitingActivationResetAt == allowance.ResetsAt
+                ? ", allowance reset and ready to activate"
+                : ", recently reset",
+            AllowanceFlashPhase.UsedUp => ", allowance used up",
             _ => string.Empty
         };
         return $"Codex is {activity}, {session.ModelDisplayName}{reset}.";
@@ -476,12 +531,6 @@ internal sealed class UsageActivityIndicator : Control
         UsagePace.High => 1.45f,
         _ => 1
     };
-
-    private static float SmoothPulse(double cycles)
-    {
-        var value = .5f - (.5f * MathF.Cos((float)(cycles * Math.PI * 2)));
-        return value * value * (3 - (2 * value));
-    }
 
     private static float Normalize(float angle)
     {
