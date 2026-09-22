@@ -698,7 +698,7 @@ internal sealed class UsagePopupForm : Form
         public ActivityOverlayForm(UsageActivityIndicator indicator)
         {
             AutoScaleMode = AutoScaleMode.None;
-            BackColor = Color.FromArgb(23, 26, 33);
+            BackColor = Color.FromArgb(25, 26, 34);
             ClientSize = indicator.Size + new Size(1, 1);
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
