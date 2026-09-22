@@ -53,36 +53,57 @@ public sealed class UsageActivityIndicatorTests
         });
 
     [Fact]
-    public Task EasesRingMovementInAndOutAroundRecentActivity() =>
+    public Task RingRotationFollowsAllowanceUseEvenWhenIdle() =>
         StaTest.RunAsync(() =>
         {
             var now = DateTimeOffset.Now;
             using var indicator = new UsageActivityIndicator();
+            var resetsAt = now.AddHours(2.5);
+            void ShowRemaining(int remaining) => indicator.ShowAllowance(new(
+                remaining, resetsAt, TimeSpan.FromHours(5), null));
+
+            ShowRemaining(100);
+            Assert.Equal(0, indicator.RingDegreesPerSecond(now));
+            indicator.Advance(now);
+            indicator.Advance(now.AddMilliseconds(50));
+            Assert.Equal(0, indicator.RingAngle);
+
+            ShowRemaining(75);
+            Assert.InRange(indicator.RingDegreesPerSecond(now), 2.99f, 3.01f);
+            ShowRemaining(50);
+            Assert.InRange(indicator.RingDegreesPerSecond(now), 5.99f, 6.01f);
+            ShowRemaining(25);
+            Assert.InRange(indicator.RingDegreesPerSecond(now), 8.99f, 9.01f);
+            indicator.Advance(now.AddMilliseconds(100));
+            Assert.InRange(indicator.RingAngle, .44f, .46f);
+            Assert.Equal(0, indicator.IndicatorStrength(now));
+        });
+
+    [Fact]
+    public Task IndicatorSlowsAndFadesOverFifteenSeconds() =>
+        StaTest.RunAsync(() =>
+        {
+            var now = DateTimeOffset.Now;
+            using var indicator = new UsageActivityIndicator();
+            indicator.ShowAllowance(new(50, now.AddHours(2.5), TimeSpan.FromHours(5), null));
             indicator.ShowSession(new CodexSessionActivity(now, CodexModel.Terra));
 
-            Assert.True(indicator.IsActive);
             indicator.Advance(now);
-            Assert.Equal(0, indicator.ActivityMotion);
+            indicator.Advance(now.AddMilliseconds(50));
+            Assert.InRange(indicator.RingAngle, .29f, .31f);
+            Assert.InRange(indicator.IndicatorAngle, 1.79f, 1.81f);
+            Assert.InRange(indicator.IndicatorStrength(now.AddSeconds(7.5)), .49f, .51f);
 
-            indicator.Advance(now.AddMilliseconds(125));
-            Assert.InRange(indicator.ActivityMotion, .49f, .51f);
-
-            indicator.Advance(now.AddMilliseconds(250));
-            Assert.Equal(1, indicator.ActivityMotion);
-
-            indicator.Advance(now.AddSeconds(4));
-            Assert.True(indicator.IsActive);
-
-            indicator.Advance(now.AddSeconds(4).AddMilliseconds(1));
+            indicator.Advance(now.AddSeconds(7.5));
+            var fadedAngle = indicator.IndicatorAngle;
+            var fadedRingAngle = indicator.RingAngle;
             Assert.False(indicator.IsActive);
-            Assert.InRange(indicator.ActivityMotion, .99f, 1);
+            Assert.InRange(fadedAngle, 6.29f, 6.31f);
 
-            indicator.Advance(now.AddSeconds(4).AddMilliseconds(251));
-            Assert.InRange(indicator.ActivityMotion, .43f, .45f);
-
-            indicator.Advance(now.AddSeconds(4).AddMilliseconds(501));
-            Assert.False(indicator.IsActive);
-            Assert.Equal(0, indicator.ActivityMotion);
+            indicator.Advance(now.AddSeconds(15));
+            Assert.Equal(0, indicator.IndicatorStrength(now.AddSeconds(15)));
+            Assert.Equal(fadedAngle, indicator.IndicatorAngle);
+            Assert.True(indicator.RingAngle > fadedRingAngle);
         });
 
     [Fact]
