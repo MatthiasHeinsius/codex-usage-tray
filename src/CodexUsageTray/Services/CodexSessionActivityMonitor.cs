@@ -220,7 +220,7 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
             }
 
             var tokenAt = IsTokenUsageRecord(root) ? observedAt : (DateTimeOffset?)null;
-            var hasModel = TryModel(root, out var model, out var modelVersion);
+            var hasModel = TryModel(root, out var model, out var modelVersion, out var excludeSession);
             var changed = false;
             lock (gate)
             {
@@ -228,8 +228,9 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
                     && (!modelsByPath.TryGetValue(path, out var previousModel)
                         || observedAt >= previousModel.ObservedAt))
                 {
-                    modelsByPath[path] = new ObservedModel(observedAt, model, modelVersion);
-                    if (string.Equals(activePath, path, StringComparison.OrdinalIgnoreCase)
+                    modelsByPath[path] = new ObservedModel(observedAt, model, modelVersion, excludeSession);
+                    if (!excludeSession
+                        && string.Equals(activePath, path, StringComparison.OrdinalIgnoreCase)
                         && (current.Model != model || current.ModelVersion != modelVersion))
                     {
                         current = current with { Model = model, ModelVersion = modelVersion };
@@ -238,13 +239,15 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
                 }
 
                 if (tokenAt is { } timestamp
-                    && (current.LastTokenAt is null || timestamp > current.LastTokenAt))
+                    && (current.LastTokenAt is null || timestamp > current.LastTokenAt)
+                    && modelsByPath.GetValueOrDefault(path)?.ExcludeSession != true)
                 {
+                    var observedModel = modelsByPath.GetValueOrDefault(path);
                     activePath = path;
                     current = new CodexSessionActivity(
                         timestamp,
-                        modelsByPath.GetValueOrDefault(path)?.Model ?? CodexModel.Unknown,
-                        modelsByPath.GetValueOrDefault(path)?.Version);
+                        observedModel?.Model ?? CodexModel.Unknown,
+                        observedModel?.Version);
                     changed = true;
                 }
             }
@@ -293,16 +296,21 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
             && payloadType.GetString() == "token_count";
     }
 
-    private static bool TryModel(JsonElement root, out CodexModel model, out string? version)
+    private static bool TryModel(
+        JsonElement root,
+        out CodexModel model,
+        out string? version,
+        out bool excludeSession)
     {
         model = CodexModel.Unknown;
         version = null;
+        excludeSession = false;
         if (!root.TryGetProperty("payload", out var payload) || payload.ValueKind != JsonValueKind.Object)
         {
             return false;
         }
 
-        if (TryModelName(payload, "model", out model, out version))
+        if (TryModelName(payload, "model", out model, out version, out excludeSession))
         {
             return true;
         }
@@ -311,7 +319,7 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
         {
             if (payload.TryGetProperty(containerName, out var container)
                 && container.ValueKind == JsonValueKind.Object
-                && TryModelName(container, "model", out model, out version))
+                && TryModelName(container, "model", out model, out version, out excludeSession))
             {
                 return true;
             }
@@ -320,10 +328,16 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
         return false;
     }
 
-    private static bool TryModelName(JsonElement element, string propertyName, out CodexModel model, out string? version)
+    private static bool TryModelName(
+        JsonElement element,
+        string propertyName,
+        out CodexModel model,
+        out string? version,
+        out bool excludeSession)
     {
         model = CodexModel.Unknown;
         version = null;
+        excludeSession = false;
         if (!element.TryGetProperty(propertyName, out var property)
             || property.ValueKind != JsonValueKind.String)
         {
@@ -336,6 +350,7 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
             return false;
         }
 
+        excludeSession = value.Equals("codex-auto-review", StringComparison.OrdinalIgnoreCase);
         model = value.ToLowerInvariant() switch
         {
             var name when name.Contains("luna", StringComparison.Ordinal) => CodexModel.Luna,
@@ -361,5 +376,9 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
         return true;
     }
 
-    private sealed record ObservedModel(DateTimeOffset ObservedAt, CodexModel Model, string? Version);
+    private sealed record ObservedModel(
+        DateTimeOffset ObservedAt,
+        CodexModel Model,
+        string? Version,
+        bool ExcludeSession);
 }

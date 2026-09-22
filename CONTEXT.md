@@ -13,7 +13,7 @@ A source-specific reading of usage facts before they are reconciled into a Usage
 _Avoid_: Usage Snapshot, raw response
 
 **Session Activity**:
-The most recent token activity and model identified from local Codex session logs. It drives the popup activity indicator and does not alter a Usage Snapshot.
+The most recent token activity and model identified from local Codex session logs, excluding internal review sessions. It drives the popup activity indicator and does not alter a Usage Snapshot.
 _Avoid_: Usage Observation, inference total
 
 **Usage Update**:

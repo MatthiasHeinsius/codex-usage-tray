@@ -113,6 +113,29 @@ public sealed class CodexSessionActivityMonitorTests
     }
 
     [Fact]
+    public void IgnoresAutoReviewSessions()
+    {
+        using var directory = new TemporaryDirectory("session-activity-auto-review");
+        var now = DateTimeOffset.Now;
+        var userSession = SessionPath(directory, "user.jsonl");
+        var reviewSession = SessionPath(directory, "review.jsonl");
+        var userTokenAt = now.AddSeconds(-3);
+        File.WriteAllText(
+            userSession,
+            ModelLine(now.AddSeconds(-4), "gpt-6-astra") + "\n" + TokenLine(userTokenAt) + "\n",
+            Utf8);
+        File.WriteAllText(
+            reviewSession,
+            ModelLine(now.AddSeconds(-2), "codex-auto-review") + "\n" + TokenLine(now.AddSeconds(-1)) + "\n",
+            Utf8);
+
+        using var monitor = new CodexSessionActivityMonitor(directory.RootPath);
+
+        Assert.Equal(CodexModel.Astra, monitor.Current.Model);
+        Assert.Equal(userTokenAt, monitor.Current.LastTokenAt);
+    }
+
+    [Fact]
     public void ReplacesAnOlderKnownModelWithAnUnrecognizedCurrentModel()
     {
         using var directory = new TemporaryDirectory("session-activity-unknown-model");
