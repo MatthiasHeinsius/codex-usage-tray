@@ -113,6 +113,33 @@ public sealed class UsagePopupFormTests
     }
 
     [Fact]
+    public Task ActivityIndicatorDoesNotExposeTheBackgroundInsideItsDisk()
+    {
+        return StaTest.RunAsync(() =>
+        {
+            using var popup = ShowExtendedPopup();
+            var overlay = Assert.Single(popup.OwnedForms);
+            var indicator = Assert.Single(overlay.Controls.OfType<UsageActivityIndicator>());
+            using var bitmap = new Bitmap(overlay.Width, overlay.Height);
+            overlay.DrawToBitmap(bitmap, overlay.ClientRectangle);
+            var center = new Point(indicator.Left + (indicator.Width / 2), indicator.Top + (indicator.Height / 2));
+
+            for (var y = center.Y - 46; y <= center.Y + 46; y++)
+            {
+                for (var x = center.X - 46; x <= center.X + 46; x++)
+                {
+                    if (Math.Sqrt(Math.Pow(x - center.X, 2) + Math.Pow(y - center.Y, 2)) < 47)
+                    {
+                        Assert.True(
+                            overlay.TransparencyKey.ToArgb() != bitmap.GetPixel(x, y).ToArgb(),
+                            $"Background exposed at ({x}, {y}) around {center}.");
+                    }
+                }
+            }
+        });
+    }
+
+    [Fact]
     public Task ChangingViewModeKeepsRefreshInsetsAndTopSnap()
     {
         return StaTest.RunAsync(() =>
