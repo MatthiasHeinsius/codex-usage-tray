@@ -14,9 +14,16 @@ internal enum CodexModel
 
 internal sealed record CodexSessionActivity(
     DateTimeOffset? LastTokenAt,
-    CodexModel Model)
+    CodexModel Model,
+    string? ModelVersion = null)
 {
     public static CodexSessionActivity Empty { get; } = new(null, CodexModel.Unknown);
+
+    public string ModelDisplayName => Model == CodexModel.Unknown
+        ? "unknown model"
+        : ModelVersion is { } version
+            ? $"GPT-{version} {Model}"
+            : Model.ToString();
 }
 
 internal sealed class CodexSessionActivityMonitor : IDisposable
@@ -213,7 +220,7 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
             }
 
             var tokenAt = IsTokenUsageRecord(root) ? observedAt : (DateTimeOffset?)null;
-            var hasModel = TryModel(root, out var model);
+            var hasModel = TryModel(root, out var model, out var modelVersion);
             var changed = false;
             lock (gate)
             {
@@ -221,11 +228,11 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
                     && (!modelsByPath.TryGetValue(path, out var previousModel)
                         || observedAt >= previousModel.ObservedAt))
                 {
-                    modelsByPath[path] = new ObservedModel(observedAt, model);
+                    modelsByPath[path] = new ObservedModel(observedAt, model, modelVersion);
                     if (string.Equals(activePath, path, StringComparison.OrdinalIgnoreCase)
-                        && current.Model != model)
+                        && (current.Model != model || current.ModelVersion != modelVersion))
                     {
-                        current = current with { Model = model };
+                        current = current with { Model = model, ModelVersion = modelVersion };
                         changed = true;
                     }
                 }
@@ -236,7 +243,8 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
                     activePath = path;
                     current = new CodexSessionActivity(
                         timestamp,
-                        modelsByPath.GetValueOrDefault(path)?.Model ?? CodexModel.Unknown);
+                        modelsByPath.GetValueOrDefault(path)?.Model ?? CodexModel.Unknown,
+                        modelsByPath.GetValueOrDefault(path)?.Version);
                     changed = true;
                 }
             }
@@ -285,15 +293,16 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
             && payloadType.GetString() == "token_count";
     }
 
-    private static bool TryModel(JsonElement root, out CodexModel model)
+    private static bool TryModel(JsonElement root, out CodexModel model, out string? version)
     {
         model = CodexModel.Unknown;
+        version = null;
         if (!root.TryGetProperty("payload", out var payload) || payload.ValueKind != JsonValueKind.Object)
         {
             return false;
         }
 
-        if (TryModelName(payload, "model", out model))
+        if (TryModelName(payload, "model", out model, out version))
         {
             return true;
         }
@@ -302,7 +311,7 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
         {
             if (payload.TryGetProperty(containerName, out var container)
                 && container.ValueKind == JsonValueKind.Object
-                && TryModelName(container, "model", out model))
+                && TryModelName(container, "model", out model, out version))
             {
                 return true;
             }
@@ -311,9 +320,10 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
         return false;
     }
 
-    private static bool TryModelName(JsonElement element, string propertyName, out CodexModel model)
+    private static bool TryModelName(JsonElement element, string propertyName, out CodexModel model, out string? version)
     {
         model = CodexModel.Unknown;
+        version = null;
         if (!element.TryGetProperty(propertyName, out var property)
             || property.ValueKind != JsonValueKind.String)
         {
@@ -334,8 +344,22 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
             var name when name.Contains("sol", StringComparison.Ordinal) => CodexModel.Sol,
             _ => CodexModel.Unknown
         };
+        if (model != CodexModel.Unknown && value.StartsWith("gpt-", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = value.Split('-');
+            if (parts.Length > 2)
+            {
+                var candidate = parts[1].Length > 0 && char.IsAsciiDigit(parts[1][0])
+                    ? parts[1] : parts[2];
+                if (candidate.Length > 0
+                    && candidate.AsSpan().IndexOfAnyExcept("0123456789.".AsSpan()) < 0)
+                {
+                    version = candidate;
+                }
+            }
+        }
         return true;
     }
 
-    private sealed record ObservedModel(DateTimeOffset ObservedAt, CodexModel Model);
+    private sealed record ObservedModel(DateTimeOffset ObservedAt, CodexModel Model, string? Version);
 }

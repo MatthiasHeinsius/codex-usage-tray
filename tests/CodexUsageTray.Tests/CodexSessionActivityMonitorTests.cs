@@ -20,7 +20,27 @@ public sealed class CodexSessionActivityMonitorTests
         using var monitor = new CodexSessionActivityMonitor(directory.RootPath);
 
         Assert.Equal(CodexModel.Astra, monitor.Current.Model);
+        Assert.Equal("6", monitor.Current.ModelVersion);
         Assert.Equal(tokenAt, monitor.Current.LastTokenAt);
+    }
+
+    [Theory]
+    [InlineData("GPT-Sol-6", "Sol")]
+    [InlineData("GPT-Luna-6", "Luna")]
+    public void ReadsVersionWhenTheModelFamilyPrecedesIt(string modelName, string expectedModel)
+    {
+        using var directory = new TemporaryDirectory("session-activity-reversed-model");
+        var session = SessionPath(directory);
+        var tokenAt = DateTimeOffset.Now.AddSeconds(-2);
+        File.WriteAllText(
+            session,
+            ModelLine(tokenAt.AddSeconds(-1), modelName) + "\n" + TokenLine(tokenAt) + "\n",
+            Utf8);
+
+        using var monitor = new CodexSessionActivityMonitor(directory.RootPath);
+
+        Assert.Equal(expectedModel, monitor.Current.Model.ToString());
+        Assert.Equal("6", monitor.Current.ModelVersion);
     }
 
     [Fact]
@@ -52,6 +72,7 @@ public sealed class CodexSessionActivityMonitorTests
             TimeSpan.FromSeconds(5),
             TestContext.Current.CancellationToken);
         Assert.Equal(CodexModel.Luna, activity.Model);
+        Assert.Equal("5.6", activity.ModelVersion);
         Assert.Equal(tokenAt, activity.LastTokenAt);
     }
 
@@ -88,6 +109,7 @@ public sealed class CodexSessionActivityMonitorTests
             TimeSpan.FromSeconds(5),
             TestContext.Current.CancellationToken);
         Assert.Equal(now, latest.LastTokenAt);
+        Assert.Equal("5.6", latest.ModelVersion);
     }
 
     [Fact]
@@ -106,6 +128,7 @@ public sealed class CodexSessionActivityMonitorTests
         using var monitor = new CodexSessionActivityMonitor(directory.RootPath);
 
         Assert.Equal(CodexModel.Unknown, monitor.Current.Model);
+        Assert.Null(monitor.Current.ModelVersion);
     }
 
     private static string SessionPath(TemporaryDirectory directory, string fileName = "session.jsonl")
