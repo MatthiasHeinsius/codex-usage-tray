@@ -19,17 +19,16 @@ internal enum ResetPhase
 
 internal sealed class UsageActivityIndicator : Control
 {
-    private const float StartTransitionSeconds = .25f;
-    private const float StopTransitionSeconds = .45f;
+    private const float RingDegreesPerSecondAtPace = 6;
     private static readonly Color TrackColor = Color.FromArgb(55, 65, 81);
     private static readonly TimeSpan RecentActivityWindow = TimeSpan.FromSeconds(4);
+    private static readonly TimeSpan IndicatorFadeWindow = TimeSpan.FromSeconds(15);
     private UsagePresentation.ActivityIndicatorPresentation allowance =
         UsagePresentation.ActivityIndicatorPresentation.Unavailable;
     private CodexSessionActivity session = CodexSessionActivity.Empty;
     private DateTimeOffset? recentResetAt;
     private DateTimeOffset? lastFrameAt;
     private bool activityLatched;
-    private float activityMotion;
     private float ringAngle;
     private float highlightAngle;
 
@@ -49,7 +48,8 @@ internal sealed class UsageActivityIndicator : Control
     }
 
     internal bool IsActive => activityLatched;
-    internal float ActivityMotion => activityMotion;
+    internal float RingAngle => ringAngle;
+    internal float IndicatorAngle => highlightAngle;
     internal float RingSweep => Math.Max(
         4,
         Math.Clamp(allowance.RemainingPercent ?? 100, 0, 100) * 3.6f);
@@ -75,15 +75,47 @@ internal sealed class UsageActivityIndicator : Control
             return UsagePace.Low;
         }
 
-        var elapsedFraction = Math.Clamp(elapsed.TotalSeconds / duration.TotalSeconds, .01, 1);
-        var usedFraction = (100 - remaining) / 100d;
-        var ratio = usedFraction / elapsedFraction;
+        var ratio = PaceRatio(now);
         return ratio switch
         {
             < .75 => UsagePace.Low,
             > 1.25 => UsagePace.High,
             _ => UsagePace.Average
         };
+    }
+
+    internal float RingDegreesPerSecond(DateTimeOffset now) =>
+        RingDegreesPerSecondAtPace * (float)Math.Clamp(PaceRatio(now), 0, 4);
+
+    internal float IndicatorStrength(DateTimeOffset now)
+    {
+        if (session.LastTokenAt is not { } lastTokenAt
+            || now - lastTokenAt < TimeSpan.FromSeconds(-2))
+        {
+            return 0;
+        }
+
+        return Math.Clamp(1 - (float)((now - lastTokenAt) / IndicatorFadeWindow), 0, 1);
+    }
+
+    private double PaceRatio(DateTimeOffset now)
+    {
+        if (allowance.RemainingPercent is not { } remaining
+            || allowance.ResetsAt is not { } resetsAt
+            || allowance.WindowDuration is not { } duration
+            || duration <= TimeSpan.Zero)
+        {
+            return 0;
+        }
+
+        var elapsed = duration - (resetsAt - now);
+        if (elapsed <= TimeSpan.Zero)
+        {
+            return 0;
+        }
+
+        var elapsedFraction = Math.Clamp(elapsed.TotalSeconds / duration.TotalSeconds, .01, 1);
+        return (100 - Math.Clamp(remaining, 0, 100)) / 100d / elapsedFraction;
     }
 
     internal ResetPhase Reset(DateTimeOffset now)
@@ -150,20 +182,10 @@ internal sealed class UsageActivityIndicator : Control
             : 0;
         lastFrameAt = now;
         activityLatched = HasRecentToken(now);
-        var transitionSeconds = activityLatched ? StartTransitionSeconds : StopTransitionSeconds;
-        var direction = activityLatched ? 1 : -1;
-        activityMotion = Math.Clamp(
-            activityMotion + (direction * (float)elapsed / transitionSeconds),
-            0,
-            1);
-        var motion = activityMotion * activityMotion * (3 - (2 * activityMotion));
-        if (motion > 0)
-        {
-            var animation = AnimationFor(Pace(now));
-            ringAngle = Normalize(ringAngle + ((float)elapsed * animation.RingDegreesPerSecond * motion));
-            highlightAngle = Normalize(
-                highlightAngle + ((float)elapsed * animation.HighlightDegreesPerSecond * motion));
-        }
+        var ringSpeed = RingDegreesPerSecond(now);
+        ringAngle = Normalize(ringAngle + ((float)elapsed * ringSpeed));
+        highlightAngle = Normalize(highlightAngle
+            + ((float)elapsed * Math.Max(6, ringSpeed + 3) * IndicatorStrength(now)));
 
         AccessibleDescription = Describe(now);
         Invalidate();
@@ -204,18 +226,31 @@ internal sealed class UsageActivityIndicator : Control
 
         DrawResetPulse(graphics, bounds, now);
 
-        var relativeHighlight = Normalize(highlightAngle);
+        var strength = IndicatorStrength(now);
+        if (strength <= 0)
+        {
+            return;
+        }
+
+        var relativeHighlight = Normalize(highlightAngle - ringAngle);
         var midpoint = Normalize(relativeHighlight + 9);
         var baseColor = midpoint <= remaining * 3.6f ? usageColor : TrackColor;
         var pulse = .5f + (.5f * MathF.Sin((float)(now.ToUnixTimeMilliseconds() / 2100d * Math.PI * 2)));
-        var alpha = 24 + (int)((16 + (58 * pulse)) * activityMotion);
-        var shifted = Blend(baseColor, Color.White, .18f);
-        using var highlight = new Pen(Color.FromArgb(alpha, shifted), 7 + (1.5f * pulse))
+        var shifted = Blend(baseColor, Color.White, .7f);
+        using var glow = new Pen(Color.FromArgb((int)((45 + (45 * pulse)) * strength), shifted), 15 + (3 * pulse))
         {
             StartCap = LineCap.Round,
             EndCap = LineCap.Round
         };
-        graphics.DrawArc(highlight, bounds, start + relativeHighlight, 18);
+        graphics.DrawArc(glow, bounds, -90 + highlightAngle, 18);
+
+        var alpha = (int)((145 + (100 * pulse)) * strength);
+        using var highlight = new Pen(Color.FromArgb(alpha, shifted), 8 + (5 * pulse))
+        {
+            StartCap = LineCap.Round,
+            EndCap = LineCap.Round
+        };
+        graphics.DrawArc(highlight, bounds, -90 + highlightAngle, 18);
     }
 
     private void DrawResetPulse(Graphics graphics, RectangleF bounds, DateTimeOffset now)
@@ -253,7 +288,7 @@ internal sealed class UsageActivityIndicator : Control
     {
         var seconds = now.ToUnixTimeMilliseconds() / 1000d;
         var active = IsActive;
-        var animationRate = AnimationFor(Pace(now)).FaceRate;
+        var animationRate = AnimationFor(Pace(now));
         var headStep = active
             ? (int)Math.Round(Math.Sin(seconds * animationRate * 3.1))
             : (seconds % 6.5 is > 4.9 and < 5.8 ? -1 : 0);
@@ -435,12 +470,11 @@ internal sealed class UsageActivityIndicator : Control
         return $"Codex is {activity}, {session.ModelDisplayName}{reset}.";
     }
 
-    private static (float FaceRate, float RingDegreesPerSecond, float HighlightDegreesPerSecond)
-        AnimationFor(UsagePace pace) => pace switch
+    private static float AnimationFor(UsagePace pace) => pace switch
         {
-            UsagePace.Low => (.72f, 12, 25.7f),
-            UsagePace.High => (1.45f, 22.5f, 51.4f),
-            _ => (1, 15.65f, 36)
+            UsagePace.Low => .72f,
+            UsagePace.High => 1.45f,
+            _ => 1
         };
 
     private static float SmoothPulse(double cycles)
