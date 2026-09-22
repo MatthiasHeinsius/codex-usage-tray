@@ -36,7 +36,7 @@ internal static class Program
 
         using var popup = new CodexUsageTray.UsagePopupForm(initialCompactView: false);
         popup.SetActivityForScreenshot(
-            new CodexUsageTray.CodexSessionActivity(DateTimeOffset.Now, CodexUsageTray.CodexModel.Astra));
+            new CodexUsageTray.CodexSessionActivity(DateTimeOffset.Now, CodexUsageTray.CodexModel.Astra, "6"));
         popup.ShowPresentation(presentation);
         popup.Location = new Point(-10_000, -10_000);
         popup.Show();

@@ -16,7 +16,7 @@ This is an unofficial community project. It is not affiliated with OpenAI.
 
 The tray icon uses an outer ring for the 5-hour allowance and an inner ring for the weekly allowance. When the account reports only one allowance, that allowance uses a single outer ring. The popup omits allowances the account does not report and resizes to fit. The rings and extended-view bars change color continuously from green at 100% remaining through yellow near 50%, orange at 25%, and red at 10%. The app refreshes the limits and countdowns once a minute. It refreshes daily and lifetime activity when you open or switch to the extended view.
 
-The popup's pixel-art indicator shows Luna, Terra, Sol, or Astra when it can identify the active model from local Codex session logs. It animates while Codex produces tokens, changes pace based on allowance use, and pulses near or after an allowance reset. The account line shows the subscription with the active model or `Idle` in both views.
+The popup's pixel-art indicator shows Luna, Terra, Sol, or Astra when it can identify the active model from local Codex session logs. Its ring rotates at a speed based on allowance use relative to elapsed time, including while Codex is idle. A separate glow shows recent token activity and fades over 15 seconds. The indicator pulses near or after an allowance reset. The account line shows the subscription with the active model and its version, such as `GPT-6 Astra`, or `idle` in both views.
 
 ## Screenshots
 
@@ -97,7 +97,7 @@ The pin button keeps the popup open and above other windows. While pinned, drag 
 
 The app runs the installed Codex CLI in app-server mode to read account usage. If the sign-in expires, it can ask Codex to refresh the session and, after confirmation, start ChatGPT browser sign-in. It does not directly read, copy, or store credentials from `%USERPROFILE%\.codex\auth.json`.
 
-The activity indicator watches recent files in `%USERPROFILE%\.codex\sessions` and `%USERPROFILE%\.codex\archived_sessions` for token activity and model names. It reads these files locally and does not change them.
+The activity indicator watches recent files in `%USERPROFILE%\.codex\sessions` and `%USERPROFILE%\.codex\archived_sessions` for token activity and model names. It ignores internal `codex-auto-review` sessions when choosing the active model and activity state. This filter does not change inference totals. It reads these files locally and does not change them.
 
 The account service may publish daily token buckets a day late. If today's bucket is missing, the app totals `token_usage_record` entries from the local Codex session history. If the account total ends with yesterday's data, the app adds today's local total to the displayed inference total. Routine allowance refreshes retain same-day activity and its original observation time. On a new local date, today's retained activity clears while the lifetime total remains available with its observation time.
 
