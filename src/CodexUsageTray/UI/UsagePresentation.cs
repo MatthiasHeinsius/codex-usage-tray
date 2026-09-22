@@ -301,10 +301,7 @@ internal abstract record UsagePresentation(
                 return $"{AccountStatus} · idle";
             }
 
-            var model = activity.Model == CodexModel.Unknown
-                ? "unknown model"
-                : activity.Model.ToString();
-            return $"{AccountStatus} · using {model}";
+            return $"{AccountStatus} · using {activity.ModelDisplayName}";
         }
     }
 

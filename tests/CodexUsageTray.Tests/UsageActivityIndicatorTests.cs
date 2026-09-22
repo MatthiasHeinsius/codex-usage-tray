@@ -8,7 +8,9 @@ public sealed class UsageActivityIndicatorTests
         {
             var now = new DateTimeOffset(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
             using var indicator = new UsageActivityIndicator();
-            indicator.ShowSession(new CodexSessionActivity(DateTimeOffset.Now, CodexModel.Sol));
+            indicator.ShowSession(new CodexSessionActivity(DateTimeOffset.Now, CodexModel.Sol, "6"));
+            indicator.Advance(DateTimeOffset.Now);
+            Assert.Contains("GPT-6 Sol", indicator.AccessibleDescription);
             indicator.ShowAllowance(new UsagePresentation.ActivityIndicatorPresentation(
                 RemainingPercent: 20,
                 ResetsAt: now.AddHours(4.5),
