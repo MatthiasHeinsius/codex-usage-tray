@@ -91,18 +91,19 @@ public sealed class UsageActivityIndicatorTests
             indicator.Advance(now);
             indicator.Advance(now.AddMilliseconds(50));
             Assert.InRange(indicator.RingAngle, .29f, .31f);
-            Assert.InRange(indicator.IndicatorAngle, .44f, .46f);
+            Assert.InRange(indicator.IndicatorAngle, 1.79f, 1.81f);
             Assert.InRange(indicator.IndicatorStrength(now.AddSeconds(7.5)), .49f, .51f);
 
             indicator.Advance(now.AddSeconds(7.5));
             var fadedAngle = indicator.IndicatorAngle;
+            var fadedRingAngle = indicator.RingAngle;
             Assert.False(indicator.IsActive);
-            Assert.InRange(fadedAngle, 1.56f, 1.59f);
+            Assert.InRange(fadedAngle, 6.29f, 6.31f);
 
             indicator.Advance(now.AddSeconds(15));
             Assert.Equal(0, indicator.IndicatorStrength(now.AddSeconds(15)));
             Assert.Equal(fadedAngle, indicator.IndicatorAngle);
-            Assert.True(indicator.RingAngle > fadedAngle);
+            Assert.True(indicator.RingAngle > fadedRingAngle);
         });
 
     [Fact]

@@ -185,7 +185,7 @@ internal sealed class UsageActivityIndicator : Control
         var ringSpeed = RingDegreesPerSecond(now);
         ringAngle = Normalize(ringAngle + ((float)elapsed * ringSpeed));
         highlightAngle = Normalize(highlightAngle
-            + ((float)elapsed * Math.Max(6, ringSpeed + 3) * IndicatorStrength(now)));
+            + ((float)elapsed * Math.Max(18, ringSpeed * 6) * IndicatorStrength(now)));
 
         AccessibleDescription = Describe(now);
         Invalidate();
@@ -288,7 +288,7 @@ internal sealed class UsageActivityIndicator : Control
     {
         var seconds = now.ToUnixTimeMilliseconds() / 1000d;
         var active = IsActive;
-        var animationRate = AnimationFor(Pace(now));
+        var animationRate = FaceRateFor(Pace(now));
         var headStep = active
             ? (int)Math.Round(Math.Sin(seconds * animationRate * 3.1))
             : (seconds % 6.5 is > 4.9 and < 5.8 ? -1 : 0);
@@ -470,12 +470,12 @@ internal sealed class UsageActivityIndicator : Control
         return $"Codex is {activity}, {session.ModelDisplayName}{reset}.";
     }
 
-    private static float AnimationFor(UsagePace pace) => pace switch
-        {
-            UsagePace.Low => .72f,
-            UsagePace.High => 1.45f,
-            _ => 1
-        };
+    private static float FaceRateFor(UsagePace pace) => pace switch
+    {
+        UsagePace.Low => .72f,
+        UsagePace.High => 1.45f,
+        _ => 1
+    };
 
     private static float SmoothPulse(double cycles)
     {
