@@ -74,8 +74,8 @@ public sealed class UsagePopupFormTests
             popup.Show();
             Application.DoEvents();
 
-            popup.SetActivityForScreenshot(new CodexSessionActivity(now, CodexModel.Sol));
-            var activeStatus = ControlWithText<Label>(popup, "Plus · using Sol");
+            popup.SetActivityForScreenshot(new CodexSessionActivity(now, CodexModel.Sol, "6"));
+            var activeStatus = ControlWithText<Label>(popup, "Plus · using GPT-6 Sol");
             Assert.True(activeStatus.Visible);
             Assert.True(activeStatus.PreferredWidth <= activeStatus.Width);
 

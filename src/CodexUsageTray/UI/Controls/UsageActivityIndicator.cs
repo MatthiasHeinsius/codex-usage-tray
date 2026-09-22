@@ -425,7 +425,6 @@ internal sealed class UsageActivityIndicator : Control
     private string Describe(DateTimeOffset now)
     {
         var activity = IsActive ? $"active at {Pace(now).ToString().ToLowerInvariant()} pace" : "idle";
-        var model = session.Model == CodexModel.Unknown ? "unknown model" : session.Model.ToString();
         var reset = Reset(now) switch
         {
             ResetPhase.Soon => ", reset in under five minutes",
@@ -433,7 +432,7 @@ internal sealed class UsageActivityIndicator : Control
             ResetPhase.Recent => ", recently reset",
             _ => string.Empty
         };
-        return $"Codex is {activity}, {model}{reset}.";
+        return $"Codex is {activity}, {session.ModelDisplayName}{reset}.";
     }
 
     private static (float FaceRate, float RingDegreesPerSecond, float HighlightDegreesPerSecond)
