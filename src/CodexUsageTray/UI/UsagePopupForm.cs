@@ -36,6 +36,7 @@ internal sealed class UsagePopupForm : Form
     private CodexSessionActivity sessionActivity = CodexSessionActivity.Empty;
     private bool compactView;
     private bool isDragging;
+    private Control? dragSource;
     private Point dragStartCursor;
     private Point dragStartLocation;
 
@@ -81,6 +82,11 @@ internal sealed class UsagePopupForm : Form
         };
         activityIndicator.ShowSession(activityMonitor?.Current ?? CodexSessionActivity.Empty);
         activityOverlay = new ActivityOverlayForm(activityIndicator);
+        activityIndicator.MouseDown += PopupOnMouseDown;
+        activityIndicator.MouseMove += PopupOnMouseMove;
+        activityIndicator.MouseUp += PopupOnMouseUp;
+        activityIndicator.MouseCaptureChanged += PopupOnMouseCaptureChanged;
+        activityIndicator.MouseLeave += (_, _) => activityIndicator.Cursor = Cursors.Default;
 
         title = new Label
         {
@@ -658,22 +664,24 @@ internal sealed class UsagePopupForm : Form
     private void PopupOnMouseDown(object? sender, MouseEventArgs eventArgs)
     {
         if (!pinButton.IsPinned || eventArgs.Button != MouseButtons.Left
-            || !IsInDragBorder(eventArgs.Location, ClientSize))
+            || (sender == this && !IsInDragBorder(eventArgs.Location, ClientSize)))
         {
             return;
         }
 
+        dragSource = (Control)sender!;
         isDragging = true;
         dragStartCursor = Cursor.Position;
         dragStartLocation = Location;
-        Capture = true;
+        dragSource.Capture = true;
     }
 
     private void PopupOnMouseMove(object? sender, MouseEventArgs eventArgs)
     {
         if (!isDragging)
         {
-            Cursor = pinButton.IsPinned && IsInDragBorder(eventArgs.Location, ClientSize)
+            ((Control)sender!).Cursor = pinButton.IsPinned
+                && (sender == activityIndicator || IsInDragBorder(eventArgs.Location, ClientSize))
                 ? Cursors.SizeAll : Cursors.Default;
         }
 
@@ -705,7 +713,7 @@ internal sealed class UsagePopupForm : Form
 
     private void PopupOnMouseCaptureChanged(object? sender, EventArgs eventArgs)
     {
-        if (isDragging && !Capture)
+        if (isDragging && sender is Control source && source == dragSource && !source.Capture)
         {
             StopDragging();
         }
@@ -716,7 +724,8 @@ internal sealed class UsagePopupForm : Form
         if (isDragging)
         {
             isDragging = false;
-            Capture = false;
+            dragSource!.Capture = false;
+            dragSource = null;
         }
     }
 
@@ -769,7 +778,6 @@ internal sealed class UsagePopupForm : Form
 
     private sealed class ActivityOverlayForm : Form
     {
-        private const int WsExTransparent = 0x20;
         private const int WsExToolWindow = 0x80;
         private const int WsExNoActivate = 0x08000000;
         private const float OutlineRadius = 50;
@@ -857,7 +865,8 @@ internal sealed class UsagePopupForm : Form
             get
             {
                 var parameters = base.CreateParams;
-                parameters.ExStyle |= WsExTransparent | WsExToolWindow | WsExNoActivate;
+                // The color key passes transparent pixels through while the circle receives mouse input.
+                parameters.ExStyle |= WsExToolWindow | WsExNoActivate;
                 return parameters;
             }
         }
