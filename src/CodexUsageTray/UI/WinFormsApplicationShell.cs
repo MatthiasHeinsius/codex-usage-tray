@@ -234,8 +234,8 @@ internal sealed class WinFormsApplicationShell :
 
     internal static ContextMenuStrip CreateContextMenuForScreenshot()
     {
-        var startup = new ToolStripMenuItem("Start with Windows") { CheckOnClick = true };
-        var automaticUpdate = new ToolStripMenuItem(AutomaticUpdateMenuText) { CheckOnClick = true };
+        var startup = new ToolStripMenuItem("Start with Windows") { Checked = true, CheckOnClick = true };
+        var automaticUpdate = new ToolStripMenuItem(AutomaticUpdateMenuText) { Checked = true, CheckOnClick = true };
         var allowanceActivation = new ToolStripMenuItem(AllowanceActivationMenuText) { CheckOnClick = true };
         var allowanceNotifications = new ToolStripMenuItem(AllowanceNotificationsMenuText) { CheckOnClick = true };
         var update = new ToolStripMenuItem(CheckForUpdatesMenuText);
