@@ -90,7 +90,7 @@ To require a particular release tag, also pass `--source-ref refs/tags/vX.Y.Z` w
 
 ## Features
 
-Use the view button to switch between compact and extended modes. Compact mode shows each reported allowance and its countdown. Extended mode adds reset times, progress bars, and inference totals.
+Use the view button to switch between compact and extended modes. Compact mode shows each reported allowance's remaining percentage and countdown; hover over a countdown for its reset date and time. Extended mode shows the reset date and time, progress bars, and inference totals.
 
 The pin button keeps the popup open and above other windows. While pinned, drag the popup by its outer border or the circular activity indicator to move it. The popup snaps either flush with the screen and taskbar edges or with an eight-pixel gap. A pinned popup keeps its position when hidden. An unpinned popup opens next to the tray.
 
