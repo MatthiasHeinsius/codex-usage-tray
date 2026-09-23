@@ -95,6 +95,54 @@ public sealed class GitHubApplicationUpdateSourceTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StalledReleaseCheckStopsOnTimeoutOrCancellation(bool cancelCaller)
+    {
+        using var directory = new TemporaryDirectory("stalled-update-check");
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        using var body = new StalledDownloadStream();
+        using var client = CreateHttpClient(new Dictionary<string, HttpResponseMessage>
+        {
+            ["/repos/MatthiasHeinsius/codex-usage-tray/releases/latest"] = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StreamContent(body)
+            }
+        });
+        client.Timeout = cancelCaller ? Timeout.InfiniteTimeSpan : TimeSpan.FromSeconds(1);
+        var source = CreateSource(client, new Version(1, 0, 0), directory.RootPath);
+        var check = source.CheckAsync(cancellation.Token);
+        try
+        {
+            await body.Waiting.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            if (cancelCaller)
+            {
+                cancellation.Cancel();
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                    () => check.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+            }
+            else
+            {
+                var failure = await Assert.ThrowsAsync<TimeoutException>(
+                    () => check.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+                Assert.Equal("The update request timed out. Try again.", failure.Message);
+            }
+        }
+        finally
+        {
+            cancellation.Cancel();
+            body.CancelPendingRead();
+            try
+            {
+                await check;
+            }
+            catch (Exception exception) when (exception is OperationCanceledException or TimeoutException)
+            {
+            }
+        }
+    }
+
+    [Theory]
     [InlineData("release", true, "not a valid version")]
     [InlineData("v1.3.0.1", true, "not a valid version")]
     [InlineData("v01.3.0", true, "not a valid version")]

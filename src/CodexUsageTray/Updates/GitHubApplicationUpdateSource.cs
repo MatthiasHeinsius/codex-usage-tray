@@ -126,35 +126,46 @@ internal sealed class GitHubApplicationUpdateSource : IApplicationUpdateSource
         int maximumBytes,
         CancellationToken cancellationToken)
     {
-        using var response = await httpClient
-            .GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-            .ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        if (response.Content.Headers.ContentLength > maximumBytes)
+        // ResponseHeadersRead ends HttpClient's timeout at the headers; cover the body too.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(httpClient.Timeout);
+        try
         {
-            throw new InvalidDataException("An update response exceeds its size limit.");
-        }
-
-        await using var source = await response.Content.ReadAsStreamAsync(cancellationToken)
-            .ConfigureAwait(false);
-        using var target = new MemoryStream();
-        var buffer = new byte[16 * 1024];
-        while (true)
-        {
-            var count = await source.ReadAsync(
-                buffer.AsMemory(0, Math.Min(buffer.Length, maximumBytes + 1 - (int)target.Length)),
-                cancellationToken).ConfigureAwait(false);
-            if (count == 0)
-            {
-                return target.ToArray();
-            }
-
-            if (target.Length + count > maximumBytes)
+            using var response = await httpClient
+                .GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, deadline.Token)
+                .ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            if (response.Content.Headers.ContentLength > maximumBytes)
             {
                 throw new InvalidDataException("An update response exceeds its size limit.");
             }
 
-            target.Write(buffer, 0, count);
+            await using var source = await response.Content.ReadAsStreamAsync(deadline.Token)
+                .ConfigureAwait(false);
+            using var target = new MemoryStream();
+            var buffer = new byte[16 * 1024];
+            while (true)
+            {
+                var count = await source.ReadAsync(
+                    buffer.AsMemory(0, Math.Min(buffer.Length, maximumBytes + 1 - (int)target.Length)),
+                    deadline.Token).ConfigureAwait(false);
+                if (count == 0)
+                {
+                    return target.ToArray();
+                }
+
+                if (target.Length + count > maximumBytes)
+                {
+                    throw new InvalidDataException("An update response exceeds its size limit.");
+                }
+
+                target.Write(buffer, 0, count);
+            }
+        }
+        catch (OperationCanceledException exception) when (
+            !cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
+        {
+            throw new TimeoutException("The update request timed out. Try again.", exception);
         }
     }
 
