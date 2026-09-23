@@ -206,6 +206,16 @@ public sealed class UsagePopupFormTests
                 popup, "5-hour limit pace: Using allowance slower than the window passes").Visible);
             Assert.True(ControlWithAccessibleName<Control>(
                 popup, "Weekly limit pace: Using allowance faster than the window passes").Visible);
+            Assert.True(ControlWithAccessibleName<Control>(
+                popup, "5-hour limit pace: Using allowance slower than the window passes").Right
+                <= ControlWithText<Label>(popup, "100% left").Left);
+            Assert.True(ControlWithAccessibleName<Control>(
+                popup, "Weekly limit pace: Using allowance faster than the window passes").Right
+                <= ControlWithText<Label>(popup, "42% left").Left);
+            Assert.True(ControlWithText<Label>(popup, "100% left").PreferredWidth
+                <= ControlWithText<Label>(popup, "100% left").Width);
+            Assert.True(ControlWithText<Label>(popup, "42% left").PreferredWidth
+                <= ControlWithText<Label>(popup, "42% left").Width);
             popup.SetViewModeForScreenshot(compact: true);
 
             Assert.True(ControlWithAccessibleName<Control>(
@@ -247,6 +257,9 @@ public sealed class UsagePopupFormTests
             Assert.Equal(popup.Padding.Top, pinButton.Top);
             Assert.Equal(popup.Padding.Bottom, popup.ClientSize.Height - refreshButton.Bottom);
             Assert.True(status.Height - status.PreferredHeight >= 2);
+            Assert.All(
+                popup.Controls.OfType<Label>().Where(label => label.Text == "Unavailable"),
+                label => Assert.True(label.PreferredWidth <= label.Width));
             Assert.All(
                 popup.Controls.OfType<Label>().Where(label => !label.AutoSize),
                 label => Assert.True(
