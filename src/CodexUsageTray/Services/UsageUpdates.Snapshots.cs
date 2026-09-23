@@ -58,18 +58,22 @@ internal sealed partial class UsageUpdates
 
         if (account.Activity is AccountActivityObservation.NotRequested)
         {
-            var retainsToday = previous?.ActivityObservedAt is { } activityObservedAt
+            var sameAccount = !string.IsNullOrWhiteSpace(account.AccountEmail)
+                && string.Equals(account.AccountEmail, previous?.AccountEmail, StringComparison.OrdinalIgnoreCase);
+            var retainsToday = sameAccount
+                && previous?.ActivityObservedAt is { } activityObservedAt
                 && DateOnly.FromDateTime(activityObservedAt.LocalDateTime)
                     == DateOnly.FromDateTime(account.ObservedAt.LocalDateTime);
             return new UsageSnapshot(
                 account.ObservedAt,
-                previous?.ActivityObservedAt,
+                sameAccount ? previous?.ActivityObservedAt : null,
                 fiveHour,
                 weekly,
-                previous?.LifetimeTokens,
+                sameAccount ? previous?.LifetimeTokens : null,
                 retainsToday ? previous?.TodayTokens : null,
                 account.Plan,
-                account.LimitName);
+                account.LimitName,
+                account.AccountEmail);
         }
 
         var activity = (AccountActivityObservation.Observed)account.Activity;
@@ -99,6 +103,7 @@ internal sealed partial class UsageUpdates
             lifetimeTokens,
             todayTokens,
             account.Plan,
-            account.LimitName);
+            account.LimitName,
+            account.AccountEmail);
     }
 }

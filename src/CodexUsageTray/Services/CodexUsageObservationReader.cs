@@ -83,6 +83,10 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
                         lines,
                         new { id = 2, method = "account/rateLimits/read", @params = (object?)null })
                         .ConfigureAwait(false);
+                    await SendAsync(
+                        lines,
+                        new { id = 4, method = "account/read", @params = new { refreshToken = false } })
+                        .ConfigureAwait(false);
                     if (includeActivity)
                     {
                         await SendAsync(
@@ -93,13 +97,26 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
 
                     JsonElement? rateLimits = null;
                     JsonElement? tokenUsage = null;
+                    JsonElement? accountDetails = null;
+                    var accountReadComplete = false;
 
-                    while (rateLimits is null || (includeActivity && tokenUsage is null))
+                    while (rateLimits is null || !accountReadComplete || (includeActivity && tokenUsage is null))
                     {
                         var response = await ReadNextMessageAsync(lines).ConfigureAwait(false);
                         if (!response.TryGetProperty("id", out var idElement)
                             || !idElement.TryGetInt32(out var id))
                         {
+                            continue;
+                        }
+
+                        if (id == 4)
+                        {
+                            accountReadComplete = true;
+                            if (response.TryGetProperty("result", out var accountResult))
+                            {
+                                accountDetails = accountResult.Clone();
+                            }
+
                             continue;
                         }
 
@@ -120,7 +137,10 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
                     }
 
                     var now = timeProvider.GetLocalNow();
-                    var account = ParseAccountObservation(rateLimits.Value, tokenUsage, now);
+                    var account = ParseAccountObservation(rateLimits.Value, tokenUsage, now) with
+                    {
+                        AccountEmail = accountDetails is { } details ? ReadAccountEmail(details) : null
+                    };
                     LocalUsageObservation? local = null;
                     if (account.Activity is AccountActivityObservation.Observed { TodayTokens: null })
                     {
@@ -295,4 +315,10 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
             ? value.GetString()
             : null;
 
+    private static string? ReadAccountEmail(JsonElement result) =>
+        result.ValueKind == JsonValueKind.Object
+        && result.TryGetProperty("account", out var account)
+        && account.ValueKind == JsonValueKind.Object
+            ? GetString(account, "email")
+            : null;
 }
