@@ -6,6 +6,106 @@ namespace CodexUsageTray.Tests;
 public sealed class UsagePopupFormTests
 {
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task SessionActivityIsDispatchedToThePopupUnlessItHasBeenDisposed(bool disposeBeforeDispatch)
+    {
+        return StaTest.RunAsync(() =>
+        {
+            using var directory = new TemporaryDirectory("popup-session-dispatch");
+            var sessionDirectory = directory.FilePath("sessions");
+            Directory.CreateDirectory(sessionDirectory);
+            using var monitor = new CodexSessionActivityMonitor(directory.RootPath);
+            using var popup = new UsagePopupForm(false, null, monitor);
+            var now = DateTimeOffset.Now;
+            popup.ShowPresentation(UsagePresentation.Create(
+                new UsageSnapshot(now, now, null, null, null, null, "plus", "Codex"),
+                now, CultureInfo.InvariantCulture));
+            _ = popup.Handle;
+            var status = ControlWithText<Label>(popup, "Plus · idle");
+            var uiThread = Environment.CurrentManagedThreadId;
+            var renderedOn = new List<int>();
+            status.TextChanged += (_, _) => renderedOn.Add(Environment.CurrentManagedThreadId);
+            var queued = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+            // Subscribe after the popup so its BeginInvoke is queued before this signal.
+            monitor.Changed += (_, _) => queued.TrySetResult(Environment.CurrentManagedThreadId);
+
+            File.WriteAllText(Path.Combine(sessionDirectory, "session.jsonl"),
+                $$$$"""
+                {"timestamp":"{{{{now:O}}}}","type":"turn_context","payload":{"model":"gpt-6-sol"}}
+                {"timestamp":"{{{{now:O}}}}","type":"token_usage_record","payload":{"usage":{"total_tokens":12}}}
+
+                """);
+            // Deliberately hold the UI thread until the monitor has queued the update.
+            var publisherThread = queued.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken)
+                .GetAwaiter().GetResult();
+            Assert.NotEqual(uiThread, publisherThread);
+            Assert.Equal("Plus · idle", status.Text);
+            Assert.Empty(renderedOn);
+
+            if (disposeBeforeDispatch)
+            {
+                popup.Dispose();
+            }
+            Application.DoEvents();
+
+            if (disposeBeforeDispatch)
+            {
+                Assert.True(popup.IsDisposed);
+                Assert.Empty(renderedOn);
+            }
+            else
+            {
+                Assert.Equal("Plus · using GPT-6 Sol", status.Text);
+                Assert.Equal([uiThread], renderedOn);
+            }
+        });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task LosingFocusHidesOnlyAnUnpinnedPopup(bool pinned)
+    {
+        return StaTest.RunAsync(async cancellationToken =>
+        {
+            using var popup = ShowExtendedPopup();
+            var hidden = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            popup.VisibleChanged += (_, _) =>
+            {
+                if (!popup.Visible)
+                {
+                    hidden.TrySetResult();
+                }
+            };
+            if (pinned)
+            {
+                popup.Controls.OfType<PinIconButton>().Single().PerformClick();
+            }
+            // Move focus within this UI thread without showing another application window.
+            using var focusTarget = new Form { Opacity = 0, ShowInTaskbar = false };
+            focusTarget.Show();
+            focusTarget.Activate();
+            Assert.False(popup.ContainsFocus);
+            // Deliver the form event explicitly so the test also works without a foreground desktop.
+            typeof(Form).GetMethod("OnDeactivate", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(popup, [EventArgs.Empty]);
+
+            if (pinned)
+            {
+                var observation = Task.Delay(TimeSpan.FromMilliseconds(300), cancellationToken);
+                Assert.Same(observation, await Task.WhenAny(observation, hidden.Task));
+            }
+            else
+            {
+                await hidden.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+            }
+
+            Assert.Equal(pinned, popup.Visible);
+        });
+    }
+
+    [Theory]
     [InlineData(100, 9, true)]
     [InlineData(9, 100, true)]
     [InlineData(100, 190, true)]

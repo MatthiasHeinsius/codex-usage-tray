@@ -15,14 +15,16 @@ internal sealed class GuidNotifyIcon : IDisposable
     private const int NullMessage = 0x0000;
     private static readonly int TaskbarCreatedMessage = checked((int)NativeMethods.RegisterWindowMessage("TaskbarCreated"));
     private readonly CallbackWindow window;
+    private readonly Guid iconId;
     private Icon? icon;
     private string text = string.Empty;
     private bool visible;
     private bool added;
     private bool disposed;
 
-    public GuidNotifyIcon()
+    public GuidNotifyIcon(Guid? iconId = null)
     {
+        this.iconId = iconId ?? TrayIconId;
         window = new CallbackWindow(this);
     }
 
@@ -78,7 +80,7 @@ internal sealed class GuidNotifyIcon : IDisposable
             return;
         }
 
-        var data = CreateData(window.Handle, icon?.Handle ?? 0, text);
+        var data = CreateData(window.Handle, icon?.Handle ?? 0, text, iconId);
         data.Flags = NotifyIconDataFlags.Info | NotifyIconDataFlags.Guid;
         data.Info = message;
         data.InfoTitle = title;
@@ -100,7 +102,7 @@ internal sealed class GuidNotifyIcon : IDisposable
         disposed = true;
     }
 
-    internal static NotifyIconData CreateData(nint windowHandle, nint iconHandle, string tooltip) =>
+    internal static NotifyIconData CreateData(nint windowHandle, nint iconHandle, string tooltip, Guid? iconId = null) =>
         new()
         {
             Size = checked((uint)Marshal.SizeOf<NotifyIconData>()),
@@ -112,7 +114,7 @@ internal sealed class GuidNotifyIcon : IDisposable
             CallbackMessage = CallbackMessage,
             IconHandle = iconHandle,
             Tooltip = tooltip,
-            Guid = TrayIconId
+            Guid = iconId ?? TrayIconId
         };
 
     private void Update()
@@ -120,7 +122,7 @@ internal sealed class GuidNotifyIcon : IDisposable
         if (visible && icon is not null)
         {
             EnsureWindowHandle();
-            var data = CreateData(window.Handle, icon.Handle, text);
+            var data = CreateData(window.Handle, icon.Handle, text, iconId);
             var message = added ? NotifyIconMessage.Modify : NotifyIconMessage.Add;
             if (NativeMethods.ShellNotifyIcon(message, ref data))
             {
@@ -129,7 +131,7 @@ internal sealed class GuidNotifyIcon : IDisposable
         }
         else if (added)
         {
-            var data = CreateData(window.Handle, 0, string.Empty);
+            var data = CreateData(window.Handle, 0, string.Empty, iconId);
             _ = NativeMethods.ShellNotifyIcon(NotifyIconMessage.Delete, ref data);
             added = false;
         }

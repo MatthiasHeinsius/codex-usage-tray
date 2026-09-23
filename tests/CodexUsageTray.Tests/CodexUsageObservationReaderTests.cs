@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace CodexUsageTray.Tests;
 
-public sealed class CodexUsageObservationReaderTests
+public sealed partial class CodexUsageObservationReaderTests
 {
     private static readonly DateTimeOffset September7 = new(2026, 9, 7, 12, 0, 0, TimeSpan.Zero);
 

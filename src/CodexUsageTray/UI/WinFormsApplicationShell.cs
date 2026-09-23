@@ -38,7 +38,8 @@ internal sealed class WinFormsApplicationShell :
         Commands commands,
         Action<string>? showSettingFailure = null,
         Func<Uri, bool>? confirmAndOpenSignIn = null,
-        UsagePopupForm? popupForm = null)
+        UsagePopupForm? popupForm = null,
+        Guid? trayIconId = null)
     {
         ArgumentNullException.ThrowIfNull(commands);
         this.commands = commands;
@@ -50,7 +51,7 @@ internal sealed class WinFormsApplicationShell :
         popup.CreateControl();
         _ = popup.Handle;
         currentIcon = TrayIconRenderer.Create(100, 100);
-        notifyIcon = new GuidNotifyIcon
+        notifyIcon = new GuidNotifyIcon(trayIconId)
         {
             Icon = currentIcon,
             Text = "Codex usage · connecting"

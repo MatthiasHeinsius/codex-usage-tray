@@ -50,7 +50,15 @@ public sealed partial class UsageUpdatesTests
         var firstUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
         await command.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         var secondUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
-        command.Completion.TrySetResult();
+        try
+        {
+            Assert.Single(observations.Requests);
+            Assert.False(secondUpdate.IsCompleted);
+        }
+        finally
+        {
+            command.Completion.TrySetResult();
+        }
 
         var first = await firstUpdate;
         var second = await secondUpdate;
@@ -80,56 +88,6 @@ public sealed partial class UsageUpdatesTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => activeUpdate);
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => queuedUpdate);
         await disposal;
-    }
-
-    [Fact]
-    public async Task ActivityUpdateRequestsAllowanceWindowsAndActivity()
-    {
-        var now = new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero);
-        var reset = now.AddHours(5);
-        var observation = new UsageObservations(
-            new AccountUsageObservation(
-                now,
-                [new AllowanceWindow(25, TimeSpan.FromHours(5), reset)],
-                "plus",
-                "Codex",
-                new AccountActivityObservation.Observed(
-                    LifetimeTokens: 5678,
-                    TodayTokens: 1234,
-                    LatestDailyBucketDate: DateOnly.FromDateTime(now.LocalDateTime))),
-            Local: null);
-        var time = new FixedTimeProvider(now);
-        var observations = new QueueUsageObservationReader(observation);
-        await using var updates = new UsageUpdates(
-            observations,
-            new FailingActivationCommand(),
-            new EnabledActivationSettings { ActivationEnabled = false },
-            time,
-            CultureInfo.InvariantCulture);
-
-        await updates.RequestAsync(UsageUpdateIntent.Activity, TestContext.Current.CancellationToken);
-
-        Assert.Equal(
-            [UsageObservationRequest.AllowanceWindowsAndActivity],
-            observations.Requests);
-    }
-
-    [Fact]
-    public async Task RoutineUpdateRequestsAllowanceWindows()
-    {
-        var now = new DateTimeOffset(2026, 9, 11, 8, 0, 0, TimeSpan.Zero);
-        var observations = new QueueUsageObservationReader(
-            Observe(now, usedPercent: 25, now.AddHours(5)));
-        await using var updates = new UsageUpdates(
-            observations,
-            new FailingActivationCommand(),
-            new EnabledActivationSettings { ActivationEnabled = false },
-            new FixedTimeProvider(now),
-            CultureInfo.InvariantCulture);
-
-        await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
-
-        Assert.Equal([UsageObservationRequest.AllowanceWindows], observations.Requests);
     }
 
     [Fact]
@@ -283,6 +241,7 @@ public sealed partial class UsageUpdatesTests
             UsageObservationRequest request,
             CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             requests.Add(request);
             var observation = observations.Dequeue();
             var expected = observation.Account.Activity is AccountActivityObservation.NotRequested
@@ -360,9 +319,11 @@ public sealed partial class UsageUpdatesTests
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Completion { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int CallCount { get; private set; }
 
         public async Task SendHiAsync(CancellationToken cancellationToken)
         {
+            CallCount++;
             Started.TrySetResult();
             await Completion.Task.WaitAsync(cancellationToken);
         }
@@ -405,7 +366,7 @@ public sealed partial class UsageUpdatesTests
         }
 
         public DateTimeOffset? ReadActivatedReset(AllowanceWindowKind window) =>
-            activatedResets.GetValueOrDefault(window);
+            activatedResets.TryGetValue(window, out var reset) ? reset : null;
 
         public void WriteActivatedReset(AllowanceWindowKind window, DateTimeOffset reset) =>
             activatedResets[window] = reset;

@@ -38,6 +38,18 @@ The process tests build and copy `CodexUsageTray.ProcessFixture` into their outp
 
 Test output records readiness, I/O, cancellation, cleanup, PID-file state, and the last child stderr line. Tests assert that I/O remains pending before requesting cancellation. The existing readiness, exchange, and child-exit deadlines remain unchanged. To run the initial deadline case locally, use `-Scope Cold -Coverage On -Repetitions 1` with a new results directory.
 
+### Native tray integration tests
+
+`GuidNotifyIconTests` sends Windows messages to callback windows created on its own STA thread. Each test uses a separate tray GUID, so it does not share the running application's tray identity. When Explorer is available, the recovery test also verifies registration through `Shell_NotifyIconGetRect`, removes only its own icon, sends `TaskbarCreated` to its callback window, and checks that registration recovers. It does not restart Explorer. Without a taskbar, the test checks native message handling and window cleanup; its output records which checks ran.
+
+`TrayApplicationContextTests` uses the real shell and update coordinators with isolated registry settings and controlled observation/update sources. These tests cover startup preferences, cleanup after initialization fails, and cancellation before shell disposal during shutdown.
+
+`UsagePopupFormTests` connects a real session-file monitor to the popup on an STA thread. It checks UI dispatch and disposal with an update already queued. Focus-loss tests deliver the form's deactivation event and let its real timer run, so they do not depend on Windows granting foreground activation.
+
+`ProgramTests` starts a helper process that briefly holds the application's single-instance mutex, then launches the built application and checks that it exits without disturbing the helper. It tests duplicate-instance startup without starting a full tray session or changing user settings. Both child processes have bounded waits and cleanup on failure.
+
+`UpdateInstallerTests` simulates partial failure at the file-replacement call. File preparation, backup restoration, cleanup, and restart decisions still run against real temporary files. These cases cover both an absent destination and a destination already replaced when Windows reports failure.
+
 ### Artifact retention
 
 Build runs on pull requests and pushes to `main`. Superseded runs are cancelled. Only `main` builds upload portable executables; test results and these executables expire after seven days. Release staging artifacts expire after one day. The repository default for future artifacts and logs is seven days. GitHub release assets are separate and remain available.

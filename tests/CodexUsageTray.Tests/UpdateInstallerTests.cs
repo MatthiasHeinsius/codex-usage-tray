@@ -213,6 +213,85 @@ public sealed class UpdateInstallerTests
     }
 
     [Fact]
+    public async Task ApplyWaitsForTheRunningApplicationBeforeReplacingItsExecutable()
+    {
+        using var directory = new TemporaryDirectory("installer-running-application");
+        var (stagedPath, targetPath) = CreateInstallerFiles(directory);
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = Path.Combine(AppContext.BaseDirectory, "ProcessFixture", "CodexUsageTray.ProcessFixture.exe"),
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true
+        };
+        startInfo.ArgumentList.Add("hold");
+        startInfo.ArgumentList.Add(directory.FilePath("application.pid"));
+        using var application = Process.Start(startInfo)!;
+        Task<(bool Handled, int ExitCode)>? installation = null;
+        var enteredInstaller = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var exitedBeforeReplacement = false;
+        var restartedContents = new List<string>();
+        var interaction = new RecordingInstallerInteraction(
+            beforeRestart: path => restartedContents.Add(File.ReadAllText(path)));
+        try
+        {
+            Assert.Equal("ready", await application.StandardOutput.ReadLineAsync(TestContext.Current.CancellationToken)
+                .AsTask().WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+            var expectedHash = HashFile(stagedPath);
+            installation = Task.Run(() =>
+            {
+                enteredInstaller.SetResult();
+                var handled = UpdateInstaller.TryHandleCommandLine(
+                    ["--apply-update", application.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        stagedPath, targetPath, expectedHash],
+                    out var exitCode,
+                    interaction,
+                    (prepared, target, backup) =>
+                    {
+                        exitedBeforeReplacement = application.HasExited;
+                        File.Replace(prepared, target, backup);
+                    });
+                return (handled, exitCode);
+            }, TestContext.Current.CancellationToken);
+            await enteredInstaller.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+            var stillRunning = Task.Delay(TimeSpan.FromMilliseconds(250), TestContext.Current.CancellationToken);
+            Assert.Same(stillRunning, await Task.WhenAny(installation, stillRunning));
+            Assert.False(application.HasExited);
+            Assert.Equal("previous executable", File.ReadAllText(targetPath));
+            Assert.True(File.Exists(stagedPath));
+            Assert.Empty(Directory.GetFiles(directory.RootPath, ".CodexUsageTray-*"));
+            Assert.Empty(restartedContents);
+
+            application.Kill(entireProcessTree: true);
+            await application.WaitForExitAsync(TestContext.Current.CancellationToken);
+            var result = await installation.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+            Assert.True(result.Handled);
+            Assert.Equal((int)UpdateInstallerResult.Succeeded, result.ExitCode);
+            Assert.True(exitedBeforeReplacement);
+            Assert.Equal("replacement executable", File.ReadAllText(targetPath));
+            Assert.Equal(["replacement executable"], restartedContents);
+            Assert.False(File.Exists(stagedPath));
+            Assert.Empty(Directory.GetFiles(directory.RootPath, ".CodexUsageTray-*"));
+            Assert.Null(interaction.FailureMessage);
+            Assert.Null(interaction.ElevatedStartInfo);
+        }
+        finally
+        {
+            if (!application.HasExited)
+            {
+                application.Kill(entireProcessTree: true);
+                await application.WaitForExitAsync(CancellationToken.None);
+            }
+            if (installation is not null)
+            {
+                await installation.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken.None);
+            }
+        }
+    }
+
+    [Fact]
     public void ElevatedApplyReplacesTheExecutableAndCleansTheStagedUpdate()
     {
         using var directory = new TemporaryDirectory("installer-apply");
@@ -308,31 +387,9 @@ public sealed class UpdateInstallerTests
     }
 
     [Fact]
-    public void FailedRestartRestoresThePreviousExecutableAndReportsARecoverableFailure()
-    {
-        using var directory = new TemporaryDirectory("installer-rollback");
-        var (stagedPath, targetPath) = CreateInstallerFiles(directory);
-        var interaction = new RecordingInstallerInteraction(
-            new InvalidOperationException("restart failed"));
-
-        var handled = UpdateInstaller.TryHandleCommandLine(
-            ["--apply-update", "2147483647", stagedPath, targetPath, HashFile(stagedPath)],
-            out var exitCode,
-            interaction);
-
-        Assert.True(handled);
-        Assert.Equal(1, exitCode);
-        Assert.Equal("previous executable", File.ReadAllText(targetPath));
-        Assert.False(File.Exists(stagedPath));
-        Assert.Equal(2, interaction.RestartAttempts);
-        Assert.Null(interaction.ElevatedStartInfo);
-        Assert.Contains("restart failed", interaction.FailureMessage, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void InstalledExecutableCannotBeChangedBeforeRestartAndFailedRestartRollsBack()
     {
-        using var directory = new TemporaryDirectory("installer-missing-target-rollback");
+        using var directory = new TemporaryDirectory("installer-protected-target-rollback");
         var (stagedPath, targetPath) = CreateInstallerFiles(directory);
         var replacementBlocked = false;
         var interaction = new RecordingInstallerInteraction(
@@ -357,6 +414,7 @@ public sealed class UpdateInstallerTests
         Assert.Equal("previous executable", File.ReadAllText(targetPath));
         Assert.False(File.Exists(stagedPath));
         Assert.Equal(2, interaction.RestartAttempts);
+        Assert.Null(interaction.ElevatedStartInfo);
         Assert.Contains("restart failed", interaction.FailureMessage, StringComparison.Ordinal);
     }
 
@@ -516,6 +574,51 @@ public sealed class UpdateInstallerTests
         {
             File.SetAttributes(targetPath, FileAttributes.Normal);
         }
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void PartialReplacementFailureRestoresTheBackupWithoutElevation(bool targetMissing, bool accessDenied)
+    {
+        using var directory = new TemporaryDirectory("installer-partial-replacement");
+        var (stagedPath, targetPath) = CreateInstallerFiles(directory);
+        var restartedContents = new List<string>();
+        var interaction = new RecordingInstallerInteraction(
+            beforeRestart: path => restartedContents.Add(File.ReadAllText(path)));
+        var replacementAttempts = 0;
+
+        var handled = UpdateInstaller.TryHandleCommandLine(
+            ["--apply-update", "2147483647", stagedPath, targetPath, HashFile(stagedPath)],
+            out var exitCode,
+            interaction,
+            (prepared, target, backup) =>
+            {
+                replacementAttempts++;
+                // Model ReplaceFileW failing after it has moved the old executable to its backup.
+                File.Move(target, backup!);
+                if (!targetMissing)
+                {
+                    File.Move(prepared, target);
+                }
+
+                if (accessDenied)
+                {
+                    throw new UnauthorizedAccessException("Partial replacement failed.");
+                }
+                throw new IOException("Partial replacement failed.");
+            });
+
+        Assert.True(handled);
+        Assert.Equal((int)UpdateInstallerResult.RecoverableFailure, exitCode);
+        Assert.Equal(1, replacementAttempts);
+        Assert.Equal("previous executable", File.ReadAllText(targetPath));
+        Assert.Equal(["previous executable"], restartedContents);
+        Assert.Null(interaction.ElevatedStartInfo);
+        Assert.Contains("Partial replacement failed.", interaction.FailureMessage, StringComparison.Ordinal);
+        Assert.Equal([targetPath], Directory.GetFiles(directory.RootPath));
     }
 
     private sealed class RecordingInstallerInteraction(

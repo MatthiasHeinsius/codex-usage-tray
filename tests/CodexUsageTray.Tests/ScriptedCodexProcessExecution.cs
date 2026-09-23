@@ -20,6 +20,8 @@ internal sealed class ScriptedCodexProcessExecution : ICodexProcessExecution
 
     public void EnqueueReadFailure(Exception exception) => exchangeResponses.Enqueue(exception);
 
+    public void EnqueueRead(Func<string?> read) => exchangeResponses.Enqueue(read);
+
     public async Task<TResult> ExchangeLinesAsync<TResult>(
         string codexArguments,
         TimeSpan timeout,
@@ -65,7 +67,7 @@ internal sealed class ScriptedCodexProcessExecution : ICodexProcessExecution
 
             return response is Exception failure
                 ? ValueTask.FromException<string?>(failure)
-                : ValueTask.FromResult((string?)response);
+                : ValueTask.FromResult(response is Func<string?> read ? read() : (string?)response);
         }
     }
 }

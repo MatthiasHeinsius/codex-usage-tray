@@ -119,27 +119,15 @@ public sealed class WinFormsApplicationShellTests
         });
 
     [Fact]
-    public Task UsagePresentationUpdatesTheOwnedTrayState() =>
+    public Task UsagePresentationTruncatesTheTrayTooltipToTheWindowsLimit() =>
         StaTest.RunAsync(async cancellationToken =>
         {
             using var shell = CreateShell(new RecordingCommands());
-            var popup = new UsagePresentation.PopupPresentation(
-                "Plus · Codex",
-                UsagePresentation.AllowancePresentation.Show(75, "75% left", "Resets tomorrow", "1d"),
-                UsagePresentation.AllowancePresentation.Show(60, "60% left", "Resets Friday", "4d"),
-                "1.2K tokens",
-                "4.5M tokens",
-                "Updated 12:00",
-                UsagePresentation.ActivityIndicatorPresentation.Unavailable);
             var tooltip = new string('x', 70);
-            var notice = new UsagePresentation.NoticePresentation(
-                "5-hour allowance reset.",
-                UsagePresentation.NoticeSeverity.Information,
-                TimeSpan.FromSeconds(5));
             var presentation = new UsagePresentation.Ready(
-                popup,
+                UsagePresentation.CreateInitial().Popup,
                 new UsagePresentation.TrayPresentation(75, 60, tooltip),
-                [notice]);
+                []);
 
             ((IUsagePresentationSink)shell).Present(presentation);
 
