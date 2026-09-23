@@ -303,6 +303,17 @@ internal sealed class UsagePopupForm : Form
             LabelHeight(statusLabel, 28));
         fiveHourAllowance.SetVisibility(fiveHourVisible, compact);
         weeklyAllowance.SetVisibility(weeklyVisible, compact);
+        var refreshLeft = PopupWidth - ContentInset - refreshButton.Width;
+        var usageRight = PopupWidth - ContentInset;
+        if (fiveHourVisible)
+        {
+            usageRight = Math.Min(usageRight, refreshLeft - 1 + fiveHourAllowance.CompactClearance);
+        }
+
+        if (weeklyVisible)
+        {
+            usageRight = Math.Min(usageRight, refreshLeft - 1 + weeklyAllowance.CompactClearance);
+        }
         limitsDivider.Visible = !compact && visibleAllowanceCount > 0;
         todayTitle.Visible = !compact;
         todayTokens.Visible = !compact;
@@ -315,12 +326,12 @@ internal sealed class UsagePopupForm : Form
             var row = 0;
             if (fiveHourVisible)
             {
-                fiveHourAllowance.LayoutCompact(row++);
+                fiveHourAllowance.LayoutCompact(row++, usageRight);
             }
 
             if (weeklyVisible)
             {
-                weeklyAllowance.LayoutCompact(row++);
+                weeklyAllowance.LayoutCompact(row++, usageRight);
             }
 
             var contentBottom = 0;
@@ -343,12 +354,12 @@ internal sealed class UsagePopupForm : Form
             var section = 0;
             if (fiveHourVisible)
             {
-                fiveHourAllowance.LayoutExtended(section++);
+                fiveHourAllowance.LayoutExtended(section++, usageRight);
             }
 
             if (weeklyVisible)
             {
-                weeklyAllowance.LayoutExtended(section++);
+                weeklyAllowance.LayoutExtended(section++, usageRight);
             }
 
             var allowanceShift = 90 * (2 - visibleAllowanceCount);
@@ -374,7 +385,7 @@ internal sealed class UsagePopupForm : Form
         }
 
         refreshButton.Location = new Point(
-            PopupWidth - ContentInset - refreshButton.Width,
+            refreshLeft,
             targetHeight - ContentInset - refreshButton.Height);
 
         if (preserveBottom && Visible)
@@ -527,6 +538,7 @@ internal sealed class UsagePopupForm : Form
     private sealed class AllowanceControls
     {
         private int fullRemainingWidth;
+        private int compactRemainingWidth;
 
         public AllowanceControls(string title)
         {
@@ -534,6 +546,9 @@ internal sealed class UsagePopupForm : Form
             Value = MakeValueLabel();
             Value.AccessibleName = "Unavailable";
             fullRemainingWidth = Value.PreferredWidth;
+            Value.Text = "—";
+            compactRemainingWidth = Value.PreferredWidth;
+            Value.Text = "Unavailable";
             Indicator = new AllowanceIndicatorIcon();
             ResetIcon = new Label
             {
@@ -555,6 +570,7 @@ internal sealed class UsagePopupForm : Form
         public Label Reset { get; }
         public UsageProgressBar Bar { get; }
         public Control[] All { get; }
+        public int CompactClearance => fullRemainingWidth - compactRemainingWidth;
         public int ContentBottom => Math.Max(Title.Bottom, Math.Max(Value.Bottom, Reset.Bottom));
 
         public void Render(UsagePresentation.AllowancePresentation presentation, bool compact, ToolTip toolTip)
@@ -562,6 +578,8 @@ internal sealed class UsagePopupForm : Form
             Value.Text = presentation.RemainingText;
             fullRemainingWidth = Value.PreferredWidth;
             Value.AccessibleName = presentation.RemainingText;
+            Value.Text = presentation.CompactRemainingText;
+            compactRemainingWidth = Value.PreferredWidth;
             Value.Text = compact ? presentation.CompactRemainingText : presentation.RemainingText;
             Reset.Text = compact ? presentation.CompactResetText : presentation.ResetText;
             Reset.AccessibleDescription = compact ? presentation.ResetTooltipText : null;
@@ -601,13 +619,13 @@ internal sealed class UsagePopupForm : Form
             Bar.Visible = visible && !compact;
         }
 
-        public void LayoutCompact(int row)
+        public void LayoutCompact(int row, int usageRight)
         {
             var top = 86 + (36 * row);
-            LayoutUsage(top);
+            LayoutUsage(top, usageRight);
             Value.TextAlign = ContentAlignment.MiddleLeft;
             Value.Size = new Size(Value.PreferredWidth, Value.Height - 2);
-            Value.Left = PopupWidth - ContentInset - fullRemainingWidth;
+            Value.Left = usageRight - fullRemainingWidth;
             Title.Location = new Point(ContentInset, top);
             Title.Size = new Size(Title.PreferredWidth, Math.Max(Title.PreferredHeight, Value.Height - 4));
             ResetIcon.Location = new Point(Title.Right + 8, top - 3);
@@ -618,10 +636,10 @@ internal sealed class UsagePopupForm : Form
             Reset.Size = new Size(Indicator.Left - Reset.Left - 8, resetHeight);
         }
 
-        public void LayoutExtended(int section)
+        public void LayoutExtended(int section, int usageRight)
         {
             var top = 86 + (90 * section);
-            LayoutUsage(top);
+            LayoutUsage(top, usageRight);
             Value.TextAlign = ContentAlignment.MiddleRight;
             Title.Location = new Point(ContentInset, top);
             Title.Size = new Size(Indicator.Left - ContentInset - 4, Value.Height);
@@ -633,11 +651,11 @@ internal sealed class UsagePopupForm : Form
             Bar.Width = ContentWidth;
         }
 
-        private void LayoutUsage(int top)
+        private void LayoutUsage(int top, int usageRight)
         {
             Indicator.Size = new Size(16, 24);
             Value.Size = new Size(Math.Max(96, fullRemainingWidth), LabelHeight(Value, 24));
-            Value.Location = new Point(PopupWidth - ContentInset - Value.Width, top);
+            Value.Location = new Point(usageRight - Value.Width, top);
             Indicator.Location = new Point(Value.Left - Indicator.Width - 4, top);
         }
     }
