@@ -5,7 +5,66 @@ namespace CodexUsageTray.Tests;
 public sealed partial class UsageUpdatesTests
 {
     [Fact]
-    public async Task UpdateAttemptsActivationForUnusedWindowRegardlessOfResetTime()
+    public async Task CancellationDuringActivationAllowsTheNextUpdateToStartFresh()
+    {
+        var now = new DateTimeOffset(2026, 9, 23, 12, 0, 0, TimeSpan.Zero);
+        var observation = ObserveAllowance(now, 0, now.AddHours(5));
+        var reader = new ActivationObservationReader(observation, observation);
+        var command = new BlockingActivationCommand();
+        var settings = new ActivationSettings();
+        await using var updates = CreateActivationUpdates(reader, command, settings, new ActivationTimeProvider(now));
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+
+        var canceledUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, cancellation.Token);
+        await command.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledUpdate);
+        Assert.Equal(1, reader.CallCount);
+        Assert.Equal(1, command.CallCount);
+        Assert.Null(settings.ReadActivatedReset(AllowanceWindowKind.FiveHour));
+
+        command.Completion.TrySetResult();
+        var next = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, reader.CallCount);
+        Assert.Equal(2, command.CallCount);
+        Assert.Null(next.Popup.ActivityIndicator.ActivatedResetAt);
+    }
+
+    [Fact]
+    public async Task CancellationDuringActivationRecoveryDoesNotImposeFailureBackoff()
+    {
+        var now = new DateTimeOffset(2026, 9, 23, 12, 0, 0, TimeSpan.Zero);
+        var observation = ObserveAllowance(now, 0, now.AddHours(5));
+        var recovery = new BlockingUsageObservationReader();
+        var reader = new ActivationObservationReader(observation);
+        reader.EnqueueRead(token => recovery.ReadAsync(UsageObservationRequest.AllowanceWindows, token));
+        reader.Enqueue(observation);
+        var command = new ActivationRecordingCommand();
+        command.FailNext(new IOException("Activation failed."));
+        var settings = new ActivationSettings();
+        await using var updates = CreateActivationUpdates(reader, command, settings, new ActivationTimeProvider(now));
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+
+        var canceledUpdate = updates.RequestAsync(UsageUpdateIntent.Routine, cancellation.Token);
+        await recovery.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        await cancellation.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => canceledUpdate);
+        Assert.Equal(2, reader.CallCount);
+        Assert.Equal(1, command.CallCount);
+        Assert.Null(settings.ReadActivatedReset(AllowanceWindowKind.FiveHour));
+
+        var next = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, reader.CallCount);
+        Assert.Equal(2, command.CallCount);
+        Assert.Null(next.Popup.ActivityIndicator.ActivatedResetAt);
+    }
+
+    [Fact]
+    public async Task UpdateAttemptsActivationForUnusedWindowBeforeItsResetTime()
     {
         var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
         var command = new ActivationRecordingCommand();
@@ -146,7 +205,7 @@ public sealed partial class UsageUpdatesTests
     {
         var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
         var reset = now.AddHours(5);
-        var command = new ActivationBlockingCommand();
+        var command = new BlockingActivationCommand();
         await using var updates = CreateActivationUpdates(
             new ActivationObservationReader(
                 ObserveAllowance(now, 0, reset),
@@ -248,55 +307,46 @@ public sealed partial class UsageUpdatesTests
         Assert.Equal(2, command.CallCount);
     }
 
-    [Fact]
-    public async Task CommandFailureRetriesAfterFiveMinutesWithoutUsingActivationAttempt()
-    {
-        var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
-        var reset = now.AddHours(5);
-        var command = new ActivationRecordingCommand();
-        command.FailNext(new InvalidOperationException("synthetic command failure"));
-        var time = new ActivationTimeProvider(now);
-        await using var updates = CreateActivationUpdates(
-            new ActivationObservationReader(
-                ObserveAllowance(now, 0, reset),
-                ObserveAllowance(now.AddSeconds(1), 0, reset),
-                ObserveAllowance(now.AddMinutes(4), 0, reset),
-                ObserveAllowance(now.AddMinutes(5), 0, reset)),
-            command,
-            new ActivationSettings(),
-            time);
-
-        await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
-        time.Advance(TimeSpan.FromMinutes(4));
-        await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
-        time.Advance(TimeSpan.FromMinutes(1));
-        await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
-
-        Assert.Equal(2, command.CallCount);
-    }
-
-    [Fact]
-    public async Task FailedRecoveryObservationUsesFiveMinuteBackoff()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CommandFailureBacksOffForFiveMinutesWithoutConsumingTheRetryBudget(bool recoveryFails)
     {
         var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
         var reset = now.AddHours(5);
         var reader = new ActivationObservationReader();
         reader.Enqueue(ObserveAllowance(now, 0, reset));
-        reader.EnqueueFailure(new IOException("synthetic observation failure"));
+        if (recoveryFails)
+        {
+            reader.EnqueueFailure(new IOException("synthetic observation failure"));
+        }
+        else
+        {
+            reader.Enqueue(ObserveAllowance(now.AddSeconds(1), 0, reset));
+        }
         reader.Enqueue(ObserveAllowance(now.AddMinutes(4), 0, reset));
-        reader.Enqueue(ObserveAllowance(now.AddMinutes(5), 0, reset));
+        for (var minute = 5; minute <= 9; minute++)
+        {
+            reader.Enqueue(ObserveAllowance(now.AddMinutes(minute), 0, reset));
+        }
         var command = new ActivationRecordingCommand();
         command.FailNext(new InvalidOperationException("synthetic command failure"));
         var time = new ActivationTimeProvider(now);
         await using var updates = CreateActivationUpdates(reader, command, new ActivationSettings(), time);
 
         await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+        Assert.Equal(1, command.CallCount);
         time.Advance(TimeSpan.FromMinutes(4));
         await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
-        time.Advance(TimeSpan.FromMinutes(1));
-        await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+        Assert.Equal(1, command.CallCount);
 
-        Assert.Equal(2, command.CallCount);
+        // The failed command leaves the initial successful attempt and all three retries available.
+        foreach (var expectedCalls in new[] { 2, 3, 4, 5, 5 })
+        {
+            time.Advance(TimeSpan.FromMinutes(1));
+            await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+            Assert.Equal(expectedCalls, command.CallCount);
+        }
     }
 
     [Fact]
@@ -617,7 +667,7 @@ public sealed partial class UsageUpdatesTests
 
     private sealed class ActivationObservationReader : IUsageObservationReader
     {
-        private readonly Queue<Func<UsageObservations>> reads = [];
+        private readonly Queue<Func<CancellationToken, Task<UsageObservations>>> reads = [];
 
         public ActivationObservationReader(params UsageObservations[] observations)
         {
@@ -629,10 +679,12 @@ public sealed partial class UsageUpdatesTests
 
         public int CallCount { get; private set; }
 
-        public void Enqueue(UsageObservations observation) => reads.Enqueue(() => observation);
+        public void Enqueue(UsageObservations observation) => EnqueueRead(_ => Task.FromResult(observation));
+
+        public void EnqueueRead(Func<CancellationToken, Task<UsageObservations>> read) => reads.Enqueue(read);
 
         public void EnqueueFailure(Exception exception) => reads.Enqueue(
-            () => throw exception);
+            _ => Task.FromException<UsageObservations>(exception));
 
         public Task<UsageObservations> ReadAsync(
             UsageObservationRequest request,
@@ -641,7 +693,7 @@ public sealed partial class UsageUpdatesTests
             cancellationToken.ThrowIfCancellationRequested();
             Assert.Equal(UsageObservationRequest.AllowanceWindows, request);
             CallCount++;
-            return Task.FromResult(reads.Dequeue()());
+            return reads.Dequeue()(cancellationToken);
         }
     }
 
@@ -659,22 +711,6 @@ public sealed partial class UsageUpdatesTests
             return failures.TryDequeue(out var failure)
                 ? Task.FromException(failure)
                 : Task.CompletedTask;
-        }
-    }
-
-    private sealed class ActivationBlockingCommand : IAllowanceWindowActivationCommand
-    {
-        public TaskCompletionSource Started { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public TaskCompletionSource Completion { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public int CallCount { get; private set; }
-
-        public async Task SendHiAsync(CancellationToken cancellationToken)
-        {
-            CallCount++;
-            Started.TrySetResult();
-            await Completion.Task.WaitAsync(cancellationToken);
         }
     }
 

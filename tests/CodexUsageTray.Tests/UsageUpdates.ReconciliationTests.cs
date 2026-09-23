@@ -296,13 +296,13 @@ public sealed partial class UsageUpdatesTests
 
     private static async Task<UsagePresentation> PublishAsync(params UsageObservations[] observations)
     {
-        var reader = new QueueObservationReader(observations);
+        var reader = new QueueUsageObservationReader(observations);
         var settings = new DisabledActivationSettings();
         await using var updates = new UsageUpdates(
             reader,
             new NoOpActivationCommand(),
             settings,
-            new ReconciliationTimeProvider(observations[^1].Account.ObservedAt),
+            new FixedTimeProvider(observations[^1].Account.ObservedAt),
             CultureInfo.InvariantCulture);
 
         UsagePresentation? presentation = null;
@@ -314,29 +314,5 @@ public sealed partial class UsageUpdatesTests
         }
 
         return presentation!;
-    }
-
-    private sealed class QueueObservationReader(IEnumerable<UsageObservations> observations)
-        : IUsageObservationReader
-    {
-        private readonly Queue<UsageObservations> observations = new(observations);
-
-        public Task<UsageObservations> ReadAsync(
-            UsageObservationRequest request,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var observation = observations.Dequeue();
-            var expected = observation.Account.Activity is AccountActivityObservation.NotRequested
-                ? UsageObservationRequest.AllowanceWindows
-                : UsageObservationRequest.AllowanceWindowsAndActivity;
-            Assert.Equal(expected, request);
-            return Task.FromResult(observation);
-        }
-    }
-
-    private sealed class ReconciliationTimeProvider(DateTimeOffset now) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow() => now;
     }
 }

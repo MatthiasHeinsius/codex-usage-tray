@@ -6,6 +6,34 @@ public sealed class CodexSessionActivityMonitorTests
 {
     private static readonly Encoding Utf8 = new UTF8Encoding(false);
 
+    [Fact]
+    public async Task LockedSessionPreservesItsLastActivityAndResumesOnTheNextWrite()
+    {
+        using var directory = new TemporaryDirectory("session-activity-locked");
+        var session = SessionPath(directory);
+        var sentinel = SessionPath(directory, "sentinel.jsonl");
+        var now = DateTimeOffset.Now;
+        var original = new CodexSessionActivity(now.AddSeconds(-2), CodexModel.Astra, "6");
+        File.WriteAllText(session, ModelLine(now.AddSeconds(-3), "gpt-6-astra") + "\n" +
+            TokenLine(original.LastTokenAt!.Value) + "\n", Utf8);
+        using var monitor = new CodexSessionActivityMonitor(directory.RootPath);
+        await ObserveChangeAsync(monitor, expected: original);
+
+        using (var locked = new FileStream(session, FileMode.Append, FileAccess.Write, FileShare.None))
+        {
+            locked.Write(Utf8.GetBytes(ModelLine(now, "gpt-6-luna") + "\n" + TokenLine(now) + "\n"));
+            locked.Flush(flushToDisk: true);
+            // An observable second session lets the watcher process writes while the first is locked.
+            await ObserveChangeAsync(monitor,
+                () => File.WriteAllText(sentinel, TokenLine(now.AddSeconds(-1)) + "\n", Utf8),
+                new CodexSessionActivity(now.AddSeconds(-1), CodexModel.Unknown));
+            await ObserveChangeAsync(monitor, () => File.Delete(sentinel), original);
+        }
+
+        await ObserveChangeAsync(monitor, () => File.AppendAllText(session, "\n", Utf8),
+            new CodexSessionActivity(now, CodexModel.Luna, "6"));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

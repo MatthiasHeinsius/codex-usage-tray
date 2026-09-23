@@ -13,34 +13,45 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private bool exiting;
 
     public TrayApplicationContext()
+        : this(
+            RegistryApplicationSettings.Current.AutomaticUpdateChecksEnabled,
+            UsageUpdates.CreateDefault,
+            ApplicationUpdates.CreateDefault)
     {
-        var automaticUpdateEnabled = RegistryApplicationSettings.Current.AutomaticUpdateChecksEnabled;
-        var createdShell = new WinFormsApplicationShell(
-            StartupRegistration.IsEnabled(),
-            automaticUpdateEnabled,
-            new WinFormsApplicationShell.Commands(
-                RequestUsageUpdate: RequestAsync,
-                RequestApplicationUpdate: RequestApplicationUpdateAsync,
-                SetStartupEnabled: StartupRegistration.SetEnabled,
-                SetAutomaticUpdateEnabled: enabled => RegistryApplicationSettings.Current.AutomaticUpdateChecksEnabled = enabled,
-                SetAllowanceActivationEnabled: SetAllowanceActivationEnabled,
-                SetAllowanceNotificationsEnabled: SetAllowanceNotificationsEnabled,
-                OpenUsagePage: OpenUsagePage,
-                OpenProjectReadme: () => OpenWebPage(ProjectReadmeUrl),
-                OpenLegalNotices: LegalNotices.Open,
-                Exit: ExitThread));
+    }
+
+    internal TrayApplicationContext(
+        bool automaticUpdateEnabled,
+        Func<ICodexAuthenticationInteraction, IUsageUpdates> createUsageUpdates,
+        Func<IApplicationUpdateInteraction, ApplicationUpdates> createApplicationUpdates,
+        Func<WinFormsApplicationShell.Commands, WinFormsApplicationShell>? createShell = null)
+    {
+        var commands = new WinFormsApplicationShell.Commands(
+            RequestUsageUpdate: RequestAsync,
+            RequestApplicationUpdate: RequestApplicationUpdateAsync,
+            SetStartupEnabled: StartupRegistration.SetEnabled,
+            SetAutomaticUpdateEnabled: enabled => RegistryApplicationSettings.Current.AutomaticUpdateChecksEnabled = enabled,
+            SetAllowanceActivationEnabled: SetAllowanceActivationEnabled,
+            SetAllowanceNotificationsEnabled: SetAllowanceNotificationsEnabled,
+            OpenUsagePage: OpenUsagePage,
+            OpenProjectReadme: () => OpenWebPage(ProjectReadmeUrl),
+            OpenLegalNotices: LegalNotices.Open,
+            Exit: ExitThread);
+        var createdShell = createShell is null
+            ? new WinFormsApplicationShell(StartupRegistration.IsEnabled(), automaticUpdateEnabled, commands)
+            : createShell(commands);
         UsagePresentations? createdPresentations = null;
         ApplicationUpdates? createdUpdates = null;
         System.Windows.Forms.Timer? createdTimer = null;
         try
         {
             createdPresentations = new UsagePresentations(
-                UsageUpdates.CreateDefault(createdShell),
+                createUsageUpdates(createdShell),
                 createdShell);
             createdShell.InitializeUsagePreferences(
                 createdPresentations.ActivationEnabled,
                 createdPresentations.NotificationsEnabled);
-            createdUpdates = ApplicationUpdates.CreateDefault(createdShell);
+            createdUpdates = createApplicationUpdates(createdShell);
             createdTimer = new System.Windows.Forms.Timer { Interval = 60 * 1000 };
 
             shell = createdShell;

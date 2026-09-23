@@ -28,7 +28,8 @@ internal static class UpdateInstaller
     internal static bool TryHandleCommandLine(
         string[] args,
         out int exitCode,
-        IUpdateInstallerInteraction interaction)
+        IUpdateInstallerInteraction interaction,
+        Action<string, string, string?>? replaceFile = null)
     {
         ArgumentNullException.ThrowIfNull(interaction);
         if (args is [ApplyArgument or ApplyElevatedArgument, var processIdText, var stagedPath, var targetPath, var expectedHash]
@@ -42,7 +43,8 @@ internal static class UpdateInstaller
                 expectedHash,
                 allowElevation: !elevated,
                 restartApplication: !elevated,
-                interaction);
+                interaction,
+                replaceFile ?? ReplaceFileWhenAvailable);
             return true;
         }
 
@@ -102,7 +104,8 @@ internal static class UpdateInstaller
         string expectedHash,
         bool allowElevation,
         bool restartApplication,
-        IUpdateInstallerInteraction interaction)
+        IUpdateInstallerInteraction interaction,
+        Action<string, string, string?> replaceFile)
     {
         var targetDirectory = Path.GetDirectoryName(Path.GetFullPath(targetPath))
             ?? throw new InvalidOperationException("The application directory is unavailable.");
@@ -135,7 +138,7 @@ internal static class UpdateInstaller
 
                 try
                 {
-                    ReplaceFileWhenAvailable(preparedPath, targetPath, backupPath);
+                    replaceFile(preparedPath, targetPath, backupPath);
                     backupReady = true;
                 }
                 catch

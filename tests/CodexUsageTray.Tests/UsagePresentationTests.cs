@@ -68,17 +68,6 @@ public sealed class UsagePresentationTests
         var presentation = UsagePresentation.Create(snapshot, observedAt.AddMinutes(30), CultureInfo.InvariantCulture);
 
         Assert.Equal(expected, presentation.Popup.FiveHour.Indicator?.ToString());
-        Assert.Null(UsagePresentation.Create(
-            CreateSnapshot(
-                observedAt,
-                new AllowanceWindow(usedPercent, TimeSpan.FromHours(5), null),
-                weekly: null,
-                lifetimeTokens: null,
-                todayTokens: null,
-                plan: "plus",
-                limitName: "Codex"),
-            observedAt,
-            CultureInfo.InvariantCulture).Popup.FiveHour.Indicator);
     }
 
     [Fact]

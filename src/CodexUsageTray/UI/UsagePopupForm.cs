@@ -58,7 +58,7 @@ internal sealed class UsagePopupForm : Form
     {
     }
 
-    private UsagePopupForm(
+    internal UsagePopupForm(
         bool initialCompactView,
         Action<bool>? saveViewMode,
         CodexSessionActivityMonitor? activityMonitor)
