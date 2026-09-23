@@ -27,6 +27,7 @@ internal sealed class WinFormsApplicationShell :
     private readonly ToolStripMenuItem allowanceNotificationsItem;
     private readonly ToolStripMenuItem updateItem;
     private Icon currentIcon;
+    private (int? FiveHour, int? Weekly) currentIconValues = (100, 100);
     private bool popupVisibleWhenTrayMousePressed;
     private bool initializingUsagePreferences;
     private long? lastHandledTrayClickTimestamp;
@@ -335,13 +336,17 @@ internal sealed class WinFormsApplicationShell :
 
     private void UpdateTray(UsagePresentation.TrayPresentation presentation)
     {
-        var replacement = TrayIconRenderer.Create(
-            presentation.FiveHourRemaining,
-            presentation.WeeklyRemaining);
-        notifyIcon.Icon = replacement;
-        var old = currentIcon;
-        currentIcon = replacement;
-        old.Dispose();
+        var values = (presentation.FiveHourRemaining, presentation.WeeklyRemaining);
+        if (currentIconValues != values)
+        {
+            var replacement = TrayIconRenderer.Create(values.Item1, values.Item2);
+            notifyIcon.Icon = replacement;
+            var old = currentIcon;
+            currentIcon = replacement;
+            currentIconValues = values;
+            old.Dispose();
+        }
+
         notifyIcon.Text = TruncateTooltip(presentation.Tooltip);
     }
 

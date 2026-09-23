@@ -48,6 +48,7 @@ public sealed partial class CodexUsageObservationReaderTests
 
         processes.EnqueueLine("""{"id":1,"result":{}}""");
         processes.EnqueueLine("""{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300}}}}""");
+        EnqueueAccountDetails(processes);
 
         var recovered = await reader.ReadAsync(
             UsageObservationRequest.AllowanceWindows, TestContext.Current.CancellationToken);
@@ -106,6 +107,7 @@ public sealed partial class CodexUsageObservationReaderTests
         });
         processes.EnqueueLine("""{"id":1,"result":{}}""");
         processes.EnqueueLine("""{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300}}}}""");
+        EnqueueAccountDetails(processes);
         var interaction = new RecordingAuthenticationInteraction(confirm: true);
         var reader = new CodexUsageObservationReader(processes, interaction);
 
@@ -188,7 +190,7 @@ public sealed partial class CodexUsageObservationReaderTests
         Assert.Equal(CodexAuthenticationRecovery.FailureMessage, failure.Message);
         Assert.Single(interaction.SignInPages);
         Assert.Equal(expectedUsageReads, CountUsageReads(processes));
-        Assert.Single(processes.WrittenLines, line => line.Contains("\"account/read\"", StringComparison.Ordinal));
+        Assert.Single(processes.WrittenLines, line => line.Contains("\"refreshToken\":true", StringComparison.Ordinal));
     }
 
     private static void EnqueueExpiredRead(ScriptedCodexProcessExecution processes)

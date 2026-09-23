@@ -14,6 +14,7 @@ public sealed partial class CodexUsageObservationReaderTests
         processes.EnqueueLine("""
             {"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300}}}}
             """);
+        processes.EnqueueLine("""{"id":4,"result":{"account":{"type":"chatgpt","email":"user@example.com"}}}""");
         var reader = new CodexUsageObservationReader(processes);
 
         var observations = await reader.ReadAsync(
@@ -27,10 +28,47 @@ public sealed partial class CodexUsageObservationReaderTests
             processes.WrittenLines,
             line => Assert.Equal(InitializeRequest(), line),
             line => Assert.Equal(JsonSerializer.Serialize(new { method = "initialized" }), line),
-            line => Assert.Equal(Request(2, "account/rateLimits/read"), line));
+            line => Assert.Equal(Request(2, "account/rateLimits/read"), line),
+            line => Assert.Equal(AccountReadRequest(), line));
         var window = Assert.Single(observations.Account.AllowanceWindows);
         Assert.Equal(25, window.UsedPercent);
+        Assert.Equal("user@example.com", observations.Account.AccountEmail);
         Assert.IsType<AccountActivityObservation.NotRequested>(observations.Account.Activity);
+    }
+
+    [Fact]
+    public async Task ReadTreatsMissingAccountEmailAsUnknown()
+    {
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine("""{"id":2,"result":{"rateLimits":{}}}""");
+        EnqueueAccountDetails(processes, email: null);
+        var reader = new CodexUsageObservationReader(processes);
+
+        var observations = await reader.ReadAsync(
+            UsageObservationRequest.AllowanceWindows,
+            CancellationToken.None);
+
+        Assert.Null(observations.Account.AccountEmail);
+    }
+
+    [Fact]
+    public async Task ReadKeepsAllowanceWindowsWhenAccountIdentityReadFails()
+    {
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine("""
+            {"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300}}}}
+            """);
+        processes.EnqueueLine("""{"id":4,"error":{"message":"account unavailable"}}""");
+        var reader = new CodexUsageObservationReader(processes);
+
+        var observations = await reader.ReadAsync(
+            UsageObservationRequest.AllowanceWindows,
+            CancellationToken.None);
+
+        Assert.Equal(25, Assert.Single(observations.Account.AllowanceWindows).UsedPercent);
+        Assert.Null(observations.Account.AccountEmail);
     }
 
     [Fact]
@@ -64,6 +102,7 @@ public sealed partial class CodexUsageObservationReaderTests
         processes.EnqueueLine("""
             {"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300}}}}
             """);
+        processes.EnqueueLine("""{"id":4,"result":{"account":{"type":"chatgpt","email":"user@example.com"}}}""");
         var reader = new CodexUsageObservationReader(
             processes,
             new StubLocalTokenUsageReader(1_200),
@@ -78,6 +117,7 @@ public sealed partial class CodexUsageObservationReaderTests
             line => Assert.Equal(InitializeRequest(), line),
             line => Assert.Equal(JsonSerializer.Serialize(new { method = "initialized" }), line),
             line => Assert.Equal(Request(2, "account/rateLimits/read"), line),
+            line => Assert.Equal(AccountReadRequest(), line),
             line => Assert.Equal(Request(3, "account/usage/read"), line));
         var activity = Assert.IsType<AccountActivityObservation.Observed>(observations.Account.Activity);
         Assert.Equal(50, activity.LifetimeTokens);
@@ -185,6 +225,7 @@ public sealed partial class CodexUsageObservationReaderTests
         processes.EnqueueLine("""{"id":1,"result":{}}""");
         processes.EnqueueLine(
             """{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300}}}}""");
+        EnqueueAccountDetails(processes);
         var reader = new CodexUsageObservationReader(processes);
 
         var observations = await reader.ReadAsync(
@@ -193,7 +234,7 @@ public sealed partial class CodexUsageObservationReaderTests
 
         Assert.Equal(25, Assert.Single(observations.Account.AllowanceWindows).UsedPercent);
         Assert.Equal(
-            1,
+            3,
             processes.WrittenLines.Count(line => line.Contains(
                 "\"account/read\"",
                 StringComparison.Ordinal)));
@@ -222,6 +263,7 @@ public sealed partial class CodexUsageObservationReaderTests
         processes.EnqueueLine("""{"id":1,"result":{}}""");
         processes.EnqueueLine(
             """{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300}}}}""");
+        EnqueueAccountDetails(processes);
         var interaction = new RecordingAuthenticationInteraction(confirm: true);
         var reader = new CodexUsageObservationReader(processes, interaction);
 
@@ -267,6 +309,7 @@ public sealed partial class CodexUsageObservationReaderTests
         processes.EnqueueLine("""{"id":1,"result":{}}""");
         processes.EnqueueLine(
             """{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300}}}}""");
+        EnqueueAccountDetails(processes);
         EnqueueExpiredReadAndFailedRefresh(processes);
         processes.EnqueueLine("""{"id":1,"result":{}}""");
         processes.EnqueueLine(
@@ -296,6 +339,7 @@ public sealed partial class CodexUsageObservationReaderTests
         processes.EnqueueLine("""
             {"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300}}}}
             """);
+        EnqueueAccountDetails(processes);
         var reader = new CodexUsageObservationReader(processes);
 
         var observations = await reader.ReadAsync(
@@ -480,6 +524,16 @@ public sealed partial class CodexUsageObservationReaderTests
     private static string Request(int id, string method) =>
         JsonSerializer.Serialize(new { id, method, @params = (object?)null });
 
+    private static string AccountReadRequest() =>
+        JsonSerializer.Serialize(new { id = 4, method = "account/read", @params = new { refreshToken = false } });
+
+    private static void EnqueueAccountDetails(ScriptedCodexProcessExecution processes, string? email = "user@example.com") =>
+        processes.EnqueueLine(JsonSerializer.Serialize(new
+        {
+            id = 4,
+            result = new { account = new { type = "chatgpt", email } }
+        }));
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -552,6 +606,7 @@ public sealed partial class CodexUsageObservationReaderTests
         processes.EnqueueLine("""
             {"id":2,"result":{"rateLimits":{"primary":{"usedPercent":25,"windowDurationMins":300}}}}
             """);
+        EnqueueAccountDetails(processes);
         return processes;
     }
 

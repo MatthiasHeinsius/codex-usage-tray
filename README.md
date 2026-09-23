@@ -100,13 +100,15 @@ The pin button keeps the popup open and above other windows. While pinned, drag 
 
 ## Usage data and privacy
 
-The app runs the installed Codex CLI in app-server mode to read account usage. If the sign-in expires, it can ask Codex to refresh the session and, after confirmation, start ChatGPT browser sign-in. It does not directly read, copy, or store credentials from `%USERPROFILE%\.codex\auth.json`.
+The app runs the installed Codex CLI in app-server mode to read account usage and the signed-in account email. If the sign-in expires, it can ask Codex to refresh the session and, after confirmation, start ChatGPT browser sign-in. It does not directly read, copy, or store credentials from `%USERPROFILE%\.codex\auth.json`.
 
 The activity indicator watches recent files in `%USERPROFILE%\.codex\sessions` and `%USERPROFILE%\.codex\archived_sessions` for token activity and model names. Files elsewhere under `.codex` do not supply activity. At startup, it considers files modified within the last two days, reading newest first until it finds 12 sessions with eligible token activity or runs out of candidates. It ignores internal `codex-auto-review` sessions when choosing the active model and activity state; review-only and tokenless files do not count toward the startup limit. This filter does not change inference totals. It reads these files locally and does not change them.
 
 When first observing a session, the indicator reads its complete records from the start in the background so earlier model metadata remains available even in large logs without delaying the popup. Later reads resume after the last complete record, checking that record still matches before reusing the saved position. Each pending batch publishes only the final activity, after model identification and review-session filtering.
 
-The account service may publish daily token buckets a day late. If today's bucket is missing, the app totals `token_usage_record` entries from the local Codex session history. If the account total ends with yesterday's data, the app adds today's local total to the displayed inference total. Routine allowance refreshes retain same-day activity and its original observation time. On a new local date, today's retained activity clears while the lifetime total remains available with its observation time.
+The account service may publish daily token buckets a day late. If today's bucket is missing, the app totals `token_usage_record` entries from the local Codex session history. If the account total ends with yesterday's data, the app adds today's local total to the displayed inference total. Routine allowance refreshes retain activity only while the signed-in account email remains the same. If the email changes or is unavailable, retained token figures clear until the next activity read. On a new local date, today's retained activity clears while the lifetime total remains available with its observation time.
+
+A detected account change also resets pending allowance activation attempts and the allowance transition baseline, so the new account's first refresh does not produce a notification based on the previous account.
 
 The app does not upload the usage data it reads from the account or local history. Update checks contact the GitHub releases API. When you accept an update, the app downloads the executable and obtains its Release attestation from GitHub's API and trust metadata from `tuf-repo.github.com`. The optional auto-activation feature only sends the `Hi` request described above.
 

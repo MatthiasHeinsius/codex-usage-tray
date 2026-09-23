@@ -40,6 +40,7 @@ internal sealed partial class UsageUpdates
 {
     private readonly Dictionary<AllowanceWindowKind, PendingActivation> pendingActivations = [];
     private readonly Dictionary<AllowanceWindowKind, AllowanceWindow?> previousWindows = [];
+    private string? previousAccountEmail;
 
     private async Task<(UsageSnapshot Snapshot, AllowanceWindowActivationResult Events)>
         ObserveAllowanceWindowsAsync(
@@ -48,6 +49,7 @@ internal sealed partial class UsageUpdates
             CancellationToken cancellationToken)
     {
         var finalSnapshot = snapshot;
+        ResetAllowanceStateForAccountChange(snapshot);
         var (reset, usedUp) = DetectAllowanceWindowTransitions(snapshot);
         var confirmed = ConfirmChangedResets(snapshot);
         if (!activationEnabled)
@@ -111,6 +113,12 @@ internal sealed partial class UsageUpdates
                             cancellationToken)
                         .ConfigureAwait(false);
                     finalSnapshot = fresh;
+                    if (ResetAllowanceStateForAccountChange(fresh))
+                    {
+                        DetectAllowanceWindowTransitions(fresh);
+                        return (fresh, AllowanceWindowActivationResult.Empty);
+                    }
+
                     var freshTransitions = DetectAllowanceWindowTransitions(fresh);
                     reset |= freshTransitions.Reset;
                     usedUp |= freshTransitions.UsedUp;
@@ -178,6 +186,21 @@ internal sealed partial class UsageUpdates
                 Reset = reset,
                 UsedUp = usedUp
             });
+    }
+
+    private bool ResetAllowanceStateForAccountChange(UsageSnapshot snapshot)
+    {
+        var email = string.IsNullOrWhiteSpace(snapshot.AccountEmail) ? null : snapshot.AccountEmail;
+        if (email is null
+            || string.Equals(email, previousAccountEmail, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        pendingActivations.Clear();
+        previousWindows.Clear();
+        previousAccountEmail = email;
+        return true;
     }
 
     private (AllowanceWindows Reset, AllowanceWindows UsedUp)

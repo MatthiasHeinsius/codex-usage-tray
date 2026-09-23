@@ -10,7 +10,8 @@ internal sealed record UsageSnapshot
         long? lifetimeTokens,
         long? todayTokens,
         string? plan,
-        string? limitName)
+        string? limitName,
+        string? accountEmail = null)
     {
         AllowanceObservedAt = allowanceObservedAt;
         ActivityObservedAt = activityObservedAt;
@@ -20,6 +21,7 @@ internal sealed record UsageSnapshot
         TodayTokens = todayTokens;
         Plan = plan;
         LimitName = limitName;
+        AccountEmail = accountEmail;
     }
 
     public DateTimeOffset AllowanceObservedAt { get; }
@@ -30,6 +32,7 @@ internal sealed record UsageSnapshot
     public long? TodayTokens { get; }
     public string? Plan { get; }
     public string? LimitName { get; }
+    public string? AccountEmail { get; }
 }
 
 internal sealed record AllowanceWindow
@@ -64,7 +67,8 @@ internal sealed record AccountUsageObservation(
     IReadOnlyList<AllowanceWindow> AllowanceWindows,
     string? Plan,
     string? LimitName,
-    AccountActivityObservation Activity);
+    AccountActivityObservation Activity,
+    string? AccountEmail = null);
 
 internal abstract record AccountActivityObservation
 {
