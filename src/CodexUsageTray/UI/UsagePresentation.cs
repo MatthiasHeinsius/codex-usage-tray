@@ -132,8 +132,10 @@ internal abstract record UsagePresentation(
     private static AllowancePresentation UnavailableAllowance() => AllowancePresentation.Show(
         progressValue: 0,
         remainingText: "Unavailable",
+        compactRemainingText: "—",
         resetText: "Reset time unavailable",
-        compactResetText: "Reset unknown");
+        compactResetText: "Reset unknown",
+        resetTooltipText: "Reset time unavailable");
 
     private static string PresentLatestObservationTime(
         UsageSnapshot snapshot,
@@ -160,8 +162,12 @@ internal abstract record UsagePresentation(
         return AllowancePresentation.Show(
             window.RemainingPercent,
             $"{FormatNumber(window.RemainingPercent, formatProvider)}% left",
+            $"{FormatNumber(window.RemainingPercent, formatProvider)}%",
             ResetText(window.ResetsAt, now, formatProvider),
             CompactResetText(window.ResetsAt, now, formatProvider),
+            window.ResetsAt is { } resetAt
+                ? resetAt.ToLocalTime().ToString("g", formatProvider)
+                : "Reset time unavailable",
             IndicatorFor(window, observedAt, now));
     }
 
@@ -217,7 +223,7 @@ internal abstract record UsagePresentation(
             return $"Reset due {local.ToString("t", formatProvider)}";
         }
 
-        return $"Resets in {Countdown(remaining, formatProvider)} · {local.ToString("g", formatProvider)}";
+        return $"resets in {Countdown(remaining, formatProvider)} · {local.ToString("g", formatProvider)}";
     }
 
     private static string CompactResetText(
@@ -258,8 +264,8 @@ internal abstract record UsagePresentation(
         tokens switch
         {
             < 1_000 => tokens.ToString("N0", formatProvider),
-            < 1_000_000 => $"{(tokens / 1_000d).ToString("0.#", formatProvider)}K",
-            < 1_000_000_000 => $"{(tokens / 1_000_000d).ToString("0.##", formatProvider)}M",
+            < 999_950 => $"{(tokens / 1_000d).ToString("0.#", formatProvider)}K",
+            < 999_995_000 => $"{(tokens / 1_000_000d).ToString("0.##", formatProvider)}M",
             _ => $"{(tokens / 1_000_000_000d).ToString("0.##", formatProvider)}B"
         };
 
@@ -367,8 +373,10 @@ internal abstract record UsagePresentation(
 
         public int ProgressValue => visible?.ProgressValue ?? 0;
         public string RemainingText => visible?.RemainingText ?? "Unavailable";
+        public string CompactRemainingText => visible?.CompactRemainingText ?? "—";
         public string ResetText => visible?.ResetText ?? "Reset time unavailable";
         public string CompactResetText => visible?.CompactResetText ?? "Reset unknown";
+        public string ResetTooltipText => visible?.ResetTooltipText ?? "Reset time unavailable";
         public AllowanceIndicator? Indicator => visible?.Indicator;
         public bool IsVisible => visible is not null;
 
@@ -377,16 +385,20 @@ internal abstract record UsagePresentation(
         public static AllowancePresentation Show(
             int progressValue,
             string remainingText,
+            string compactRemainingText,
             string resetText,
             string compactResetText,
+            string resetTooltipText,
             AllowanceIndicator? indicator = null) =>
-            new(new VisibleContent(progressValue, remainingText, resetText, compactResetText, indicator));
+            new(new VisibleContent(progressValue, remainingText, compactRemainingText, resetText, compactResetText, resetTooltipText, indicator));
 
         private sealed record VisibleContent(
             int ProgressValue,
             string RemainingText,
+            string CompactRemainingText,
             string ResetText,
             string CompactResetText,
+            string ResetTooltipText,
             AllowanceIndicator? Indicator);
     }
 

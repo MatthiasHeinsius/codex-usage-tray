@@ -25,11 +25,14 @@ public sealed class UsagePresentationTests
         Assert.Equal("Plus", presentation.Popup.AccountStatus);
         Assert.Equal(64, presentation.Popup.FiveHour.ProgressValue);
         Assert.Equal("64% left", presentation.Popup.FiveHour.RemainingText);
+        Assert.Equal("64%", presentation.Popup.FiveHour.CompactRemainingText);
         Assert.Equal(UsagePresentation.AllowanceIndicator.OnPace, presentation.Popup.FiveHour.Indicator);
         Assert.Equal("3h 12m", presentation.Popup.FiveHour.CompactResetText);
         Assert.Equal(
-            $"Resets in 3h 12m · {fiveHourReset.ToLocalTime().ToString("g", culture)}",
+            $"resets in 3h 12m · {fiveHourReset.ToLocalTime().ToString("g", culture)}",
             presentation.Popup.FiveHour.ResetText);
+        Assert.Equal(fiveHourReset.ToLocalTime().ToString("g", culture),
+            presentation.Popup.FiveHour.ResetTooltipText);
         Assert.Equal(42, presentation.Popup.Weekly.ProgressValue);
         Assert.Equal(UsagePresentation.AllowanceIndicator.Fast, presentation.Popup.Weekly.Indicator);
         Assert.Equal("3d 8h", presentation.Popup.Weekly.CompactResetText);
@@ -240,8 +243,10 @@ public sealed class UsagePresentationTests
         Assert.Equal("Subscription unavailable", presentation.Popup.AccountStatus);
         Assert.Equal(0, presentation.Popup.FiveHour.ProgressValue);
         Assert.Equal("Unavailable", presentation.Popup.FiveHour.RemainingText);
+        Assert.Equal("—", presentation.Popup.FiveHour.CompactRemainingText);
         Assert.Equal("Reset time unavailable", presentation.Popup.FiveHour.ResetText);
         Assert.Equal("Reset unknown", presentation.Popup.FiveHour.CompactResetText);
+        Assert.Equal("Reset time unavailable", presentation.Popup.FiveHour.ResetTooltipText);
         Assert.Equal("Unavailable", presentation.Popup.TodayTokens);
         Assert.Null(presentation.Tray.FiveHourRemaining);
         Assert.Null(presentation.Tray.WeeklyRemaining);
@@ -308,16 +313,22 @@ public sealed class UsagePresentationTests
 
         Assert.Equal($"Reset due {now.ToLocalTime().ToString("t", culture)}", presentation.Popup.FiveHour.ResetText);
         Assert.Equal("Reset due", presentation.Popup.FiveHour.CompactResetText);
+        Assert.Equal(now.ToLocalTime().ToString("g", culture), presentation.Popup.FiveHour.ResetTooltipText);
         Assert.Equal(UsagePresentation.AllowanceIndicator.ResetDue, presentation.Popup.FiveHour.Indicator);
         Assert.Equal("Reset time unavailable", presentation.Popup.Weekly.ResetText);
         Assert.Equal("Reset unknown", presentation.Popup.Weekly.CompactResetText);
+        Assert.Equal("Reset time unavailable", presentation.Popup.Weekly.ResetTooltipText);
         Assert.Null(presentation.Popup.Weekly.Indicator);
     }
 
     [Theory]
     [InlineData(999L, "999 tokens")]
     [InlineData(1_234L, "1.2K tokens")]
+    [InlineData(999_949L, "999.9K tokens")]
+    [InlineData(999_950L, "1M tokens")]
     [InlineData(1_234_567L, "1.23M tokens")]
+    [InlineData(999_994_999L, "999.99M tokens")]
+    [InlineData(999_995_000L, "1B tokens")]
     [InlineData(1_234_567_890L, "1.23B tokens")]
     public void CreateFormatsEachCompactTokenMagnitude(long tokens, string expected)
     {

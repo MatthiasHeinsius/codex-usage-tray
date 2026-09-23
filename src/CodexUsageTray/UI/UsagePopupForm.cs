@@ -295,11 +295,25 @@ internal sealed class UsagePopupForm : Form
 
         statusLabel.Visible = true;
         statusLabel.Location = new Point(80, 50);
+        var statusRight = compact && visibleAllowanceCount == 0
+            ? PopupWidth - ContentInset - refreshButton.Width - 8
+            : PopupWidth - ContentInset;
         statusLabel.Size = new Size(
-            PopupWidth - ContentInset - statusLabel.Left,
+            statusRight - statusLabel.Left,
             LabelHeight(statusLabel, 28));
         fiveHourAllowance.SetVisibility(fiveHourVisible, compact);
         weeklyAllowance.SetVisibility(weeklyVisible, compact);
+        var refreshLeft = PopupWidth - ContentInset - refreshButton.Width;
+        var usageRight = PopupWidth - ContentInset;
+        if (fiveHourVisible)
+        {
+            usageRight = Math.Min(usageRight, refreshLeft - 1 + fiveHourAllowance.CompactClearance);
+        }
+
+        if (weeklyVisible)
+        {
+            usageRight = Math.Min(usageRight, refreshLeft - 1 + weeklyAllowance.CompactClearance);
+        }
         limitsDivider.Visible = !compact && visibleAllowanceCount > 0;
         todayTitle.Visible = !compact;
         todayTokens.Visible = !compact;
@@ -312,12 +326,12 @@ internal sealed class UsagePopupForm : Form
             var row = 0;
             if (fiveHourVisible)
             {
-                fiveHourAllowance.LayoutCompact(row++, sharesRefreshRow: !weeklyVisible);
+                fiveHourAllowance.LayoutCompact(row++, usageRight);
             }
 
             if (weeklyVisible)
             {
-                weeklyAllowance.LayoutCompact(row++, sharesRefreshRow: true);
+                weeklyAllowance.LayoutCompact(row++, usageRight);
             }
 
             var contentBottom = 0;
@@ -340,12 +354,12 @@ internal sealed class UsagePopupForm : Form
             var section = 0;
             if (fiveHourVisible)
             {
-                fiveHourAllowance.LayoutExtended(section++);
+                fiveHourAllowance.LayoutExtended(section++, usageRight);
             }
 
             if (weeklyVisible)
             {
-                weeklyAllowance.LayoutExtended(section++);
+                weeklyAllowance.LayoutExtended(section++, usageRight);
             }
 
             var allowanceShift = 90 * (2 - visibleAllowanceCount);
@@ -371,7 +385,7 @@ internal sealed class UsagePopupForm : Form
         }
 
         refreshButton.Location = new Point(
-            PopupWidth - ContentInset - refreshButton.Width,
+            refreshLeft,
             targetHeight - ContentInset - refreshButton.Height);
 
         if (preserveBottom && Visible)
@@ -523,28 +537,54 @@ internal sealed class UsagePopupForm : Form
 
     private sealed class AllowanceControls
     {
+        private int fullRemainingWidth;
+        private int compactRemainingWidth;
+
         public AllowanceControls(string title)
         {
             Title = MakeSectionTitle(title);
             Value = MakeValueLabel();
+            Value.AccessibleName = "Unavailable";
+            fullRemainingWidth = Value.PreferredWidth;
+            Value.Text = "—";
+            compactRemainingWidth = Value.PreferredWidth;
+            Value.Text = "Unavailable";
             Indicator = new AllowanceIndicatorIcon();
+            ResetIcon = new Label
+            {
+                Text = "↶",
+                Font = new Font("Segoe UI Symbol", 10f),
+                ForeColor = Color.FromArgb(148, 163, 184),
+                Size = new Size(16, 30),
+                TextAlign = ContentAlignment.MiddleCenter
+            };
             Reset = MakeMutedLabel("Reset time unavailable");
             Bar = new UsageProgressBar { Value = 0 };
-            All = [Title, Value, Indicator, Reset, Bar];
+            All = [Title, Value, Indicator, ResetIcon, Reset, Bar];
         }
 
         public Label Title { get; }
         public Label Value { get; }
         public AllowanceIndicatorIcon Indicator { get; }
+        public Label ResetIcon { get; }
         public Label Reset { get; }
         public UsageProgressBar Bar { get; }
         public Control[] All { get; }
+        public int CompactClearance => fullRemainingWidth - compactRemainingWidth;
         public int ContentBottom => Math.Max(Title.Bottom, Math.Max(Value.Bottom, Reset.Bottom));
 
         public void Render(UsagePresentation.AllowancePresentation presentation, bool compact, ToolTip toolTip)
         {
             Value.Text = presentation.RemainingText;
+            fullRemainingWidth = Value.PreferredWidth;
+            Value.AccessibleName = presentation.RemainingText;
+            Value.Text = presentation.CompactRemainingText;
+            compactRemainingWidth = Value.PreferredWidth;
+            Value.Text = compact ? presentation.CompactRemainingText : presentation.RemainingText;
             Reset.Text = compact ? presentation.CompactResetText : presentation.ResetText;
+            Reset.AccessibleDescription = compact ? presentation.ResetTooltipText : null;
+            toolTip.SetToolTip(Reset, compact ? presentation.ResetTooltipText : null);
+            toolTip.SetToolTip(ResetIcon, compact ? presentation.ResetTooltipText : null);
             Bar.Value = presentation.ProgressValue;
             Indicator.Kind = presentation.Indicator;
             Indicator.ForeColor = presentation.Indicator switch
@@ -574,36 +614,49 @@ internal sealed class UsagePopupForm : Form
             Title.Visible = visible;
             Value.Visible = visible;
             Indicator.Visible = visible && Indicator.Kind is not null;
+            ResetIcon.Visible = visible;
             Reset.Visible = visible;
             Bar.Visible = visible && !compact;
         }
 
-        public void LayoutCompact(int row, bool sharesRefreshRow)
+        public void LayoutCompact(int row, int usageRight)
         {
             var top = 86 + (36 * row);
-            Indicator.Location = new Point(180, top - 2);
-            Indicator.Size = new Size(16, 24);
-            Value.Location = new Point(198, top - 2);
-            Value.Size = new Size(76, LabelHeight(Value, 24));
+            LayoutUsage(top, usageRight);
+            Value.TextAlign = ContentAlignment.MiddleLeft;
+            Value.Size = new Size(Value.PreferredWidth, Value.Height - 2);
+            Value.Left = usageRight - fullRemainingWidth;
             Title.Location = new Point(ContentInset, top);
-            Title.Size = new Size(Indicator.Left - ContentInset - 4, Value.Height - 4);
-            Reset.Location = new Point(282, top);
-            Reset.Size = new Size(sharesRefreshRow ? 82 : 126, LabelHeight(Reset, 24));
+            Title.Size = new Size(Title.PreferredWidth, Math.Max(Title.PreferredHeight, Value.Height - 4));
+            ResetIcon.Location = new Point(Title.Right + 8, top - 3);
+            Reset.Location = new Point(ResetIcon.Right + 4, top);
+            Reset.Padding = Padding.Empty;
+            var resetHeight = LabelHeight(Reset, 24);
+            Reset.Padding = new Padding(0, 4, 0, 0);
+            Reset.Size = new Size(Indicator.Left - Reset.Left - 8, resetHeight);
         }
 
-        public void LayoutExtended(int section)
+        public void LayoutExtended(int section, int usageRight)
         {
             var top = 86 + (90 * section);
-            Indicator.Size = new Size(16, 24);
-            Value.Size = new Size(Math.Max(96, Value.PreferredWidth), LabelHeight(Value, 24));
-            Value.Location = new Point(PopupWidth - ContentInset - Value.Width, top);
-            Indicator.Location = new Point(Value.Left - Indicator.Width - 4, top);
+            LayoutUsage(top, usageRight);
+            Value.TextAlign = ContentAlignment.MiddleRight;
             Title.Location = new Point(ContentInset, top);
             Title.Size = new Size(Indicator.Left - ContentInset - 4, Value.Height);
-            Reset.Location = new Point(ContentInset, top + 31);
-            Reset.Size = new Size(ContentWidth, LabelHeight(Reset, 24));
+            ResetIcon.Location = new Point(ContentInset + 3, top + 28);
+            Reset.Location = new Point(ResetIcon.Right + 4, top + 31);
+            Reset.Padding = Padding.Empty;
+            Reset.Size = new Size(PopupWidth - ContentInset - Reset.Left, LabelHeight(Reset, 24));
             Bar.Location = new Point(ContentInset, top + 59);
             Bar.Width = ContentWidth;
+        }
+
+        private void LayoutUsage(int top, int usageRight)
+        {
+            Indicator.Size = new Size(16, 24);
+            Value.Size = new Size(Math.Max(96, fullRemainingWidth), LabelHeight(Value, 24));
+            Value.Location = new Point(usageRight - Value.Width, top);
+            Indicator.Location = new Point(Value.Left - Indicator.Width - 4, top);
         }
     }
 
