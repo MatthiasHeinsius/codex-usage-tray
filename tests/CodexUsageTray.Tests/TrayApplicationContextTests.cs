@@ -56,6 +56,20 @@ public sealed class TrayApplicationContextTests
         });
 
     [Fact]
+    public Task ScheduledRefreshDoesNotQueueBehindAnActiveRequest() =>
+        StaTest.RunAsync(async cancellationToken =>
+        {
+            using var application = new TestApplication();
+            application.Observations.Block = true;
+            application.Start(automaticUpdates: false);
+            await application.Observations.Started.Task.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+
+            await application.Context!.RequestScheduledAsync();
+
+            Assert.Equal([UsageObservationRequest.AllowanceWindows], application.Observations.Requests);
+        });
+
+    [Fact]
     public Task ExitCancelsActiveUsageAndApplicationUpdatesBeforeDisposingTheShell() =>
         StaTest.RunAsync(async cancellationToken =>
         {
@@ -90,6 +104,7 @@ public sealed class TrayApplicationContextTests
         public UsagePopupForm Popup { get; } = new(initialCompactView: false) { Opacity = 0 };
         public WinFormsApplicationShell? Shell { get; private set; }
         public UsageUpdates? Usage { get; private set; }
+        public TrayApplicationContext? Context => context;
 
         public void Start(
             bool automaticUpdates,

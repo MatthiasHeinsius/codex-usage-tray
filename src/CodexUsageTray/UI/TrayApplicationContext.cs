@@ -10,6 +10,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly UsagePresentations usagePresentations;
     private readonly ApplicationUpdates applicationUpdates;
     private readonly System.Windows.Forms.Timer refreshTimer;
+    private int activeUsageRequests;
     private bool exiting;
 
     public TrayApplicationContext()
@@ -59,7 +60,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             applicationUpdates = createdUpdates;
             refreshTimer = createdTimer;
 
-            refreshTimer.Tick += async (_, _) => await RequestAsync(UsageUpdateIntent.Routine);
+            refreshTimer.Tick += async (_, _) => await RequestScheduledAsync();
             shell.Activate();
             refreshTimer.Start();
         }
@@ -92,6 +93,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private async Task RequestAsync(UsageUpdateIntent intent)
     {
+        Interlocked.Increment(ref activeUsageRequests);
         try
         {
             await usagePresentations.RequestAsync(intent);
@@ -100,7 +102,16 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             // Disposal cancels active and queued Usage Updates.
         }
+        finally
+        {
+            Interlocked.Decrement(ref activeUsageRequests);
+        }
     }
+
+    internal Task RequestScheduledAsync() =>
+        Volatile.Read(ref activeUsageRequests) == 0
+            ? RequestAsync(UsageUpdateIntent.Routine)
+            : Task.CompletedTask;
 
     private async Task RequestApplicationUpdateAsync(ApplicationUpdateIntent intent)
     {
