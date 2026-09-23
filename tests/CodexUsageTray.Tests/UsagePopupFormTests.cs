@@ -56,7 +56,7 @@ public sealed class UsagePopupFormTests
             }
             else
             {
-                Assert.Equal("Plus · using GPT-6 Sol", status.Text);
+                Assert.Equal("Plus · GPT-6 Sol", status.Text);
                 Assert.Equal([uiThread], renderedOn);
             }
         });
@@ -289,12 +289,12 @@ public sealed class UsagePopupFormTests
             Application.DoEvents();
 
             popup.SetActivityForScreenshot(new CodexSessionActivity(now, CodexModel.Sol, "6"));
-            var activeStatus = ControlWithText<Label>(popup, "Plus · using GPT-6 Sol");
+            var activeStatus = ControlWithText<Label>(popup, "Plus · GPT-6 Sol");
             Assert.True(activeStatus.Visible);
             Assert.True(activeStatus.PreferredWidth <= activeStatus.Width);
 
             popup.SetActivityForScreenshot(new CodexSessionActivity(now, CodexModel.Unknown));
-            Assert.NotNull(ControlWithText<Label>(popup, "Plus · using unknown model"));
+            Assert.NotNull(ControlWithText<Label>(popup, "Plus · unknown model"));
 
             popup.SetActivityForScreenshot(new CodexSessionActivity(now.AddMinutes(-1), CodexModel.Sol));
             Assert.NotNull(ControlWithText<Label>(popup, "Plus · idle"));
