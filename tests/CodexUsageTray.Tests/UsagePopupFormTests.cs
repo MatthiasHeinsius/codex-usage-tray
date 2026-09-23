@@ -5,6 +5,76 @@ namespace CodexUsageTray.Tests;
 public sealed class UsagePopupFormTests
 {
     [Fact]
+    public Task ResetDueIconAppearsInBothPopupViews()
+    {
+        return StaTest.RunAsync(() =>
+        {
+            var now = new DateTimeOffset(2026, 9, 14, 12, 0, 0, TimeSpan.Zero);
+            var presentation = UsagePresentation.Create(
+                new UsageSnapshot(
+                    now,
+                    now,
+                    new AllowanceWindow(100, TimeSpan.FromHours(5), now),
+                    weekly: null,
+                    lifetimeTokens: null,
+                    todayTokens: null,
+                    plan: "plus",
+                    limitName: "Codex"),
+                now,
+                CultureInfo.InvariantCulture);
+            using var popup = new UsagePopupForm(initialCompactView: false) { Opacity = 0 };
+            popup.ShowPresentation(presentation);
+            popup.Show();
+            Application.DoEvents();
+
+            Assert.True(ControlWithAccessibleName<Control>(popup, "5-hour limit: Reset due").Visible);
+
+            popup.SetViewModeForScreenshot(compact: true);
+
+            Assert.True(ControlWithAccessibleName<Control>(popup, "5-hour limit: Reset due").Visible);
+        });
+    }
+
+    [Fact]
+    public Task PaceArrowsAppearInBothPopupViews()
+    {
+        return StaTest.RunAsync(() =>
+        {
+            var now = new DateTimeOffset(2026, 9, 14, 12, 0, 0, TimeSpan.Zero);
+            var presentation = UsagePresentation.Create(
+                new UsageSnapshot(
+                    now,
+                    now,
+                    new AllowanceWindow(0, TimeSpan.FromHours(5), now.AddHours(3).AddMinutes(12)),
+                    new AllowanceWindow(58, TimeSpan.FromDays(7), now.AddDays(3).AddHours(8)),
+                    lifetimeTokens: null,
+                    todayTokens: null,
+                    plan: "plus",
+                    limitName: "Codex"),
+                now,
+                CultureInfo.InvariantCulture);
+            using var popup = new UsagePopupForm(initialCompactView: false) { Opacity = 0 };
+            popup.ShowPresentation(presentation);
+            popup.Show();
+            Application.DoEvents();
+
+            Assert.True(ControlWithAccessibleName<Control>(
+                popup, "5-hour limit pace: Using allowance slower than the window passes").Visible);
+            Assert.True(ControlWithAccessibleName<Control>(
+                popup, "Weekly limit pace: Using allowance faster than the window passes").Visible);
+            popup.SetViewModeForScreenshot(compact: true);
+
+            Assert.True(ControlWithAccessibleName<Control>(
+                popup, "5-hour limit pace: Using allowance slower than the window passes").Visible);
+            Assert.True(ControlWithAccessibleName<Control>(
+                popup, "Weekly limit pace: Using allowance faster than the window passes").Visible);
+            Assert.True(ControlWithAccessibleName<Control>(
+                popup, "5-hour limit pace: Using allowance slower than the window passes").Right
+                <= ControlWithText<Label>(popup, "100% left").Left);
+        });
+    }
+
+    [Fact]
     public Task ExtendedLayoutKeepsControlsSeparatedAndLabelsReadable()
     {
         return StaTest.RunAsync(() =>

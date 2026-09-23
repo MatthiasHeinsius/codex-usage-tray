@@ -42,8 +42,8 @@ internal abstract record UsagePresentation(
         IFormatProvider formatProvider,
         DateTimeOffset? activatedResetAt = null)
     {
-        var fiveHour = PresentAllowance(snapshot.FiveHour, now, formatProvider);
-        var weekly = PresentAllowance(snapshot.Weekly, now, formatProvider);
+        var fiveHour = PresentAllowance(snapshot.FiveHour, snapshot.AllowanceObservedAt, now, formatProvider);
+        var weekly = PresentAllowance(snapshot.Weekly, snapshot.AllowanceObservedAt, now, formatProvider);
         var observationText = PresentLatestObservationTime(snapshot, formatProvider);
         var indicatorWindow = snapshot.FiveHour ?? snapshot.Weekly;
         var indicatorSelection = snapshot.FiveHour is not null
@@ -147,6 +147,7 @@ internal abstract record UsagePresentation(
 
     private static AllowancePresentation PresentAllowance(
         AllowanceWindow? window,
+        DateTimeOffset observedAt,
         DateTimeOffset now,
         IFormatProvider formatProvider)
     {
@@ -159,7 +160,43 @@ internal abstract record UsagePresentation(
             window.RemainingPercent,
             $"{FormatNumber(window.RemainingPercent, formatProvider)}% left",
             ResetText(window.ResetsAt, now, formatProvider),
-            CompactResetText(window.ResetsAt, now, formatProvider));
+            CompactResetText(window.ResetsAt, now, formatProvider),
+            IndicatorFor(window, observedAt, now));
+    }
+
+    private static AllowanceIndicator? IndicatorFor(
+        AllowanceWindow window,
+        DateTimeOffset observedAt,
+        DateTimeOffset now)
+    {
+        if (window.ResetsAt is not { } reset)
+        {
+            return null;
+        }
+
+        if (now >= reset)
+        {
+            return AllowanceIndicator.ResetDue;
+        }
+
+        if (window.Duration is not { } duration || duration <= TimeSpan.Zero)
+        {
+            return null;
+        }
+
+        var remaining = reset - observedAt;
+        if (remaining <= TimeSpan.Zero || remaining > duration)
+        {
+            return null;
+        }
+
+        var elapsedPercent = 100 * (duration - remaining).TotalSeconds / duration.TotalSeconds;
+        return (window.UsedPercent - elapsedPercent) switch
+        {
+            > 5 => AllowanceIndicator.Fast,
+            < -5 => AllowanceIndicator.Slow,
+            _ => AllowanceIndicator.OnPace
+        };
     }
 
     private static string ResetText(
@@ -330,6 +367,7 @@ internal abstract record UsagePresentation(
         public string RemainingText => visible?.RemainingText ?? "Unavailable";
         public string ResetText => visible?.ResetText ?? "Reset time unavailable";
         public string CompactResetText => visible?.CompactResetText ?? "Reset unknown";
+        public AllowanceIndicator? Indicator => visible?.Indicator;
         public bool IsVisible => visible is not null;
 
         public static AllowancePresentation Hidden { get; } = new(visible: null);
@@ -338,14 +376,24 @@ internal abstract record UsagePresentation(
             int progressValue,
             string remainingText,
             string resetText,
-            string compactResetText) =>
-            new(new VisibleContent(progressValue, remainingText, resetText, compactResetText));
+            string compactResetText,
+            AllowanceIndicator? indicator = null) =>
+            new(new VisibleContent(progressValue, remainingText, resetText, compactResetText, indicator));
 
         private sealed record VisibleContent(
             int ProgressValue,
             string RemainingText,
             string ResetText,
-            string CompactResetText);
+            string CompactResetText,
+            AllowanceIndicator? Indicator);
+    }
+
+    internal enum AllowanceIndicator
+    {
+        Slow,
+        OnPace,
+        Fast,
+        ResetDue
     }
 
     internal sealed record TrayPresentation(
