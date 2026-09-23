@@ -9,14 +9,20 @@ namespace CodexUsageTray;
 internal sealed class GitHubApplicationUpdateSource : IApplicationUpdateSource
 {
     private const string ExecutableAssetName = "CodexUsageTray.exe";
-    private const string ChecksumAssetName = "SHA256SUMS.txt";
+    private const int MaxReleaseMetadataBytes = 1024 * 1024;
+    private const long MaxExecutableBytes = 250L * 1024 * 1024;
     private static readonly Uri LatestReleaseUri = new(
         "https://api.github.com/repos/MatthiasHeinsius/codex-usage-tray/releases/latest");
     private readonly HttpClient httpClient;
     private readonly Version currentVersion;
     private readonly string updateDirectory;
+    private readonly Func<Version, string, CancellationToken, Task> verifyRelease;
 
-    internal GitHubApplicationUpdateSource(HttpClient httpClient, Version currentVersion, string updateDirectory)
+    internal GitHubApplicationUpdateSource(
+        HttpClient httpClient,
+        Version currentVersion,
+        string updateDirectory,
+        Func<Version, string, CancellationToken, Task>? verifyRelease = null)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(currentVersion);
@@ -24,6 +30,8 @@ internal sealed class GitHubApplicationUpdateSource : IApplicationUpdateSource
         this.httpClient = httpClient;
         this.currentVersion = currentVersion;
         this.updateDirectory = Path.GetFullPath(updateDirectory);
+        this.verifyRelease = verifyRelease
+            ?? new GitHubReleaseAttestationVerifier(httpClient).VerifyAsync;
     }
 
     public Version CurrentVersion => currentVersion;
@@ -46,14 +54,9 @@ internal sealed class GitHubApplicationUpdateSource : IApplicationUpdateSource
 
     public async Task<AvailableApplicationUpdate?> CheckAsync(CancellationToken cancellationToken)
     {
-        using var releaseResponse = await httpClient.GetAsync(LatestReleaseUri, cancellationToken)
-            .ConfigureAwait(false);
-        releaseResponse.EnsureSuccessStatusCode();
-        await using var releaseStream = await releaseResponse.Content.ReadAsStreamAsync(cancellationToken)
-            .ConfigureAwait(false);
-        var release = await JsonSerializer.DeserializeAsync<GitHubRelease>(
-            releaseStream,
-            cancellationToken: cancellationToken).ConfigureAwait(false)
+        var releaseBytes = await DownloadLimitedBytesAsync(
+            httpClient, LatestReleaseUri, MaxReleaseMetadataBytes, cancellationToken).ConfigureAwait(false);
+        var release = JsonSerializer.Deserialize<GitHubRelease>(releaseBytes)
             ?? throw new InvalidOperationException("GitHub returned an empty release response.");
 
         var latestVersion = ParseVersion(release.TagName);
@@ -63,11 +66,9 @@ internal sealed class GitHubApplicationUpdateSource : IApplicationUpdateSource
         }
 
         var executableAsset = FindAsset(release, ExecutableAssetName);
-        var checksumAsset = FindAsset(release, ChecksumAssetName);
         return new AvailableApplicationUpdate(
             latestVersion,
-            executableAsset.DownloadUrl,
-            checksumAsset.DownloadUrl);
+            executableAsset.DownloadUrl);
     }
 
     public async Task<StagedApplicationUpdate> DownloadAsync(
@@ -80,19 +81,12 @@ internal sealed class GitHubApplicationUpdateSource : IApplicationUpdateSource
         var stagedPath = CreateStagedPath(update.Version);
         try
         {
-            var expectedHash = await DownloadExpectedHashAsync(update.ChecksumDownloadUrl, deadline.Token)
-                .ConfigureAwait(false);
             await DownloadFileAsync(update.ExecutableDownloadUrl, stagedPath, deadline.Token)
                 .ConfigureAwait(false);
             var actualHash = await ComputeSha256Async(stagedPath, deadline.Token)
                 .ConfigureAwait(false);
-            if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidDataException(
-                    $"The staged executable failed its SHA-256 check. Expected {expectedHash}, got {actualHash}.");
-            }
-
-            return new StagedApplicationUpdate(update.Version, stagedPath, expectedHash);
+            await verifyRelease(update.Version, actualHash, deadline.Token).ConfigureAwait(false);
+            return new StagedApplicationUpdate(update.Version, stagedPath, actualHash);
         }
         catch (Exception exception)
         {
@@ -110,32 +104,69 @@ internal sealed class GitHubApplicationUpdateSource : IApplicationUpdateSource
 
     private static Version ParseVersion(string tagName)
     {
-        var value = tagName.StartsWith('v') ? tagName[1..] : tagName;
-        return Version.TryParse(value, out var version)
-            ? version
-            : throw new InvalidDataException($"GitHub release tag '{tagName}' is not a valid version.");
+        if (tagName.StartsWith('v')
+            && Version.TryParse(tagName[1..], out var version)
+            && version.Build >= 0
+            && version.Revision < 0
+            && tagName == $"v{version.ToString(3)}")
+        {
+            return version;
+        }
+
+        throw new InvalidDataException($"GitHub release tag '{tagName}' is not a valid version.");
     }
 
     private static GitHubAsset FindAsset(GitHubRelease release, string name) =>
         release.Assets.FirstOrDefault(asset => string.Equals(asset.Name, name, StringComparison.OrdinalIgnoreCase))
         ?? throw new InvalidDataException($"GitHub release {release.TagName} does not contain {name}.");
 
-    private async Task<string> DownloadExpectedHashAsync(Uri uri, CancellationToken cancellationToken)
+    internal static async Task<byte[]> DownloadLimitedBytesAsync(
+        HttpClient httpClient,
+        Uri uri,
+        int maximumBytes,
+        CancellationToken cancellationToken)
     {
-        var contents = await httpClient.GetStringAsync(uri, cancellationToken).ConfigureAwait(false);
-        foreach (var line in contents.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        // ResponseHeadersRead ends HttpClient's timeout at the headers; cover the body too.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(httpClient.Timeout);
+        try
         {
-            var fields = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            if (fields.Length == 2
-                && fields[0].Length == 64
-                && fields[0].All(Uri.IsHexDigit)
-                && string.Equals(fields[1].TrimStart('*'), ExecutableAssetName, StringComparison.OrdinalIgnoreCase))
+            using var response = await httpClient
+                .GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, deadline.Token)
+                .ConfigureAwait(false);
+            response.EnsureSuccessStatusCode();
+            if (response.Content.Headers.ContentLength > maximumBytes)
             {
-                return fields[0].ToLowerInvariant();
+                throw new InvalidDataException("An update response exceeds its size limit.");
+            }
+
+            await using var source = await response.Content.ReadAsStreamAsync(deadline.Token)
+                .ConfigureAwait(false);
+            using var target = new MemoryStream();
+            var buffer = new byte[16 * 1024];
+            while (true)
+            {
+                var count = await source.ReadAsync(
+                    buffer.AsMemory(0, Math.Min(buffer.Length, maximumBytes + 1 - (int)target.Length)),
+                    deadline.Token).ConfigureAwait(false);
+                if (count == 0)
+                {
+                    return target.ToArray();
+                }
+
+                if (target.Length + count > maximumBytes)
+                {
+                    throw new InvalidDataException("An update response exceeds its size limit.");
+                }
+
+                target.Write(buffer, 0, count);
             }
         }
-
-        throw new InvalidDataException($"{ChecksumAssetName} does not contain a hash for {ExecutableAssetName}.");
+        catch (OperationCanceledException exception) when (
+            !cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
+        {
+            throw new TimeoutException("The update request timed out. Try again.", exception);
+        }
     }
 
     private async Task DownloadFileAsync(Uri uri, string destination, CancellationToken cancellationToken)
@@ -144,6 +175,10 @@ internal sealed class GitHubApplicationUpdateSource : IApplicationUpdateSource
             .GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
+        if (response.Content.Headers.ContentLength > MaxExecutableBytes)
+        {
+            throw new InvalidDataException("The update executable exceeds its size limit.");
+        }
         await using var source = await response.Content.ReadAsStreamAsync(cancellationToken)
             .ConfigureAwait(false);
         await using var target = new FileStream(
@@ -153,7 +188,19 @@ internal sealed class GitHubApplicationUpdateSource : IApplicationUpdateSource
             FileShare.None,
             bufferSize: 81_920,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        await source.CopyToAsync(target, cancellationToken).ConfigureAwait(false);
+        var buffer = new byte[81_920];
+        long downloaded = 0;
+        int count;
+        while ((count = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) != 0)
+        {
+            downloaded += count;
+            if (downloaded > MaxExecutableBytes)
+            {
+                throw new InvalidDataException("The update executable exceeds its size limit.");
+            }
+
+            await target.WriteAsync(buffer.AsMemory(0, count), cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static async Task<string> ComputeSha256Async(string path, CancellationToken cancellationToken)

@@ -201,7 +201,10 @@ internal sealed class CodexAuthenticationRecovery
             || string.IsNullOrWhiteSpace(loginIdElement.GetString())
             || !result.TryGetProperty("authUrl", out var authUrlElement)
             || !Uri.TryCreate(authUrlElement.GetString(), UriKind.Absolute, out var parsedPage)
-            || parsedPage.Scheme != Uri.UriSchemeHttps)
+            || parsedPage.Scheme != Uri.UriSchemeHttps
+            || !parsedPage.IsDefaultPort
+            || !string.IsNullOrEmpty(parsedPage.UserInfo)
+            || parsedPage.Host is not ("chatgpt.com" or "auth.openai.com"))
         {
             return false;
         }

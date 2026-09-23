@@ -58,7 +58,7 @@ Right-click the tray icon to open the app menu.
 
 The portable release includes the .NET desktop runtime. It does not require a separate .NET installation or administrator access.
 
-If the cached Codex sign-in expires, the tray first asks Codex to refresh it. If that fails, the tray explains the problem and asks before opening the official ChatGPT sign-in page. If browser sign-in cannot finish, run `codex logout` and then `codex login` in a terminal before refreshing again.
+If the cached Codex sign-in expires, the tray first asks Codex to refresh it. If that fails, the tray asks before opening a sign-in URL on `chatgpt.com` or `auth.openai.com` and shows the full URL in the prompt. If browser sign-in cannot finish, run `codex logout` and then `codex login` in a terminal before refreshing again.
 
 ## Install
 
@@ -68,9 +68,9 @@ Left-click the tray icon to open or close the usage window. A double-click perfo
 
 `Check for updates on startup` is off by default and appears directly below `Start with Windows` in the tray menu. Enable it to check GitHub when the app starts. Use `Check for updates` to run a check manually.
 
-When either check finds a newer release, the app asks before downloading or installing it. If you accept, the app downloads `CodexUsageTray.exe`, verifies it against the release's `SHA256SUMS.txt`, replaces the executable in its current folder, and restarts. Windows asks for administrator access only if the executable is in a protected location. A manual check reports when the installed version is current or the check fails. Startup checks stay silent when no update is available or GitHub cannot be reached.
+When either check finds a newer release, the app asks before downloading or installing it. If you accept, the app downloads `CodexUsageTray.exe`, verifies its SHA-256 hash and the immutable GitHub Release attestation for that exact tag, replaces the executable in its current folder, and restarts. Releases without a valid attestation are rejected. Windows asks for administrator access only if the executable is in a protected location. A manual check reports when the installed version is current or the check fails. Startup checks stay silent when no update is available or GitHub cannot be reached.
 
-The download and checksum verification share a 60-second deadline. If the download stalls or fails, the app removes the partial file and lets you try again. The installer carries the release checksum through the helper and administrator handoff, checks the executable before copying or starting it, and blocks changes to those files while they are in use.
+Each update check has a 60-second deadline, including reading the release metadata. The download and attestation verification share a separate 60-second deadline. Update executables are limited to 250 MiB; release metadata and attestation responses have smaller limits. If the download stalls or fails, the app removes the partial file and lets you try again. The installer carries the verified executable hash through the helper and administrator handoff, checks the executable before copying or starting it, and blocks changes to those files while they are in use.
 
 `Start with Windows`, `Auto-start allowance window`, and `Notify on allowance changes` are off on first launch. `Start with Windows` creates a shortcut that appears in Windows Startup Apps. Keep the executable at the same path after enabling this setting because the shortcut points to that file.
 
@@ -86,7 +86,7 @@ gh attestation verify .\CodexUsageTray.exe `
   --signer-workflow MatthiasHeinsius/codex-usage-tray/.github/workflows/release.yml
 ```
 
-To require a particular release tag, also pass `--source-ref refs/tags/vX.Y.Z` with the version you downloaded. Releases up to and including v1.5.2 predate build attestations. For immutable releases, use `gh release verify-asset vX.Y.Z .\CodexUsageTray.exe --repo MatthiasHeinsius/codex-usage-tray` to verify the file against the published release. Build provenance identifies the source and workflow that produced the executable; it does not provide a Windows code-signing certificate. The application's updater currently verifies SHA-256 checksums, not attestations.
+To require a particular release tag, also pass `--source-ref refs/tags/vX.Y.Z` with the version you downloaded. Releases up to and including v1.5.2 predate build attestations. For immutable releases, use `gh release verify-asset vX.Y.Z .\CodexUsageTray.exe --repo MatthiasHeinsius/codex-usage-tray` to verify the file against the published release. Build provenance identifies the source and workflow that produced the executable; it does not provide a Windows code-signing certificate. The application's updater verifies the GitHub Release attestation, while the command above verifies the same release manually.
 
 ## Features
 
@@ -110,9 +110,9 @@ The account service may publish daily token buckets a day late. If today's bucke
 
 A detected account change also resets pending allowance activation attempts and the allowance transition baseline, so the new account's first refresh does not produce a notification based on the previous account.
 
-The app does not upload the usage data it reads from the account or local history. Update checks contact the GitHub releases API and download release files from GitHub when needed. The optional auto-activation feature only sends the `Hi` request described above.
+The app does not upload the usage data it reads from the account or local history. Update checks contact the GitHub releases API. When you accept an update, the app downloads the executable and obtains its Release attestation from GitHub's API and trust metadata from `tuf-repo.github.com`. The optional auto-activation feature only sends the `Hi` request described above.
 
-Local history reads process complete records in chunks and retain unfinished records for the next refresh. Malformed records and invalid token counts are ignored. If a local total exceeds the supported integer range, account data remains available without that local total. Canceled or interrupted reads can retry without skipping or counting records twice.
+Local history reads process complete records in chunks and retain unfinished records for the next refresh. Records larger than 8 MiB, malformed records, and invalid token counts are ignored. If a local total exceeds the supported integer range, account data remains available without that local total. Canceled or interrupted reads can retry without skipping or counting records twice.
 
 The app stores its view, update, allowance activation, and notification preferences under `HKEY_CURRENT_USER\Software\CodexUsageTray`. The optional Windows startup shortcut is in the current user's Startup folder.
 

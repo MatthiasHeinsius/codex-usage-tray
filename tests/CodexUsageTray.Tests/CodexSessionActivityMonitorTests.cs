@@ -363,6 +363,36 @@ public sealed class CodexSessionActivityMonitorTests
     }
 
     [Fact]
+    public async Task SkipsOversizedSessionRecordAndReadsTheNextRecord()
+    {
+        using var directory = new TemporaryDirectory("session-activity-oversized");
+        var session = SessionPath(directory);
+        var now = DateTimeOffset.Now;
+        File.WriteAllText(session, new string('x', 8 * 1024 * 1024 + 1) + "\n"
+            + ModelLine(now.AddSeconds(-1), "gpt-6-astra") + "\n"
+            + TokenLine(now) + "\n", Utf8);
+        using var monitor = new CodexSessionActivityMonitor(directory.RootPath);
+
+        await ObserveChangeAsync(monitor,
+            expected: new CodexSessionActivity(now, CodexModel.Astra, "6"));
+    }
+
+    [Fact]
+    public async Task SkipsAnUnfinishedOversizedSessionRecordAcrossAppends()
+    {
+        using var directory = new TemporaryDirectory("session-activity-oversized-append");
+        var session = SessionPath(directory);
+        var now = DateTimeOffset.Now;
+        File.WriteAllText(session, new string('x', 8 * 1024 * 1024 + 1), Utf8);
+        using var monitor = new CodexSessionActivityMonitor(directory.RootPath);
+
+        await ObserveChangeAsync(monitor, () => File.AppendAllText(session,
+            "\n" + ModelLine(now.AddSeconds(-1), "gpt-6-astra") + "\n"
+            + TokenLine(now) + "\n", Utf8),
+            expected: new CodexSessionActivity(now, CodexModel.Astra, "6"));
+    }
+
+    [Fact]
     public async Task RetriesAnUnfinishedModelRecordOnTheNextAppend()
     {
         using var directory = new TemporaryDirectory("session-activity-partial-model");

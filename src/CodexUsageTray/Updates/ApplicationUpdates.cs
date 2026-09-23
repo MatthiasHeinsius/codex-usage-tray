@@ -286,8 +286,7 @@ internal sealed record ApplicationUpdateOffer(Version CurrentVersion, Version Av
 
 internal sealed record AvailableApplicationUpdate(
     Version Version,
-    Uri ExecutableDownloadUrl,
-    Uri ChecksumDownloadUrl);
+    Uri ExecutableDownloadUrl);
 
 internal sealed class StagedApplicationUpdate : IDisposable
 {

@@ -243,8 +243,10 @@ public sealed partial class CodexUsageObservationReaderTests
             line => line.Contains("\"refreshToken\":true", StringComparison.Ordinal));
     }
 
-    [Fact]
-    public async Task ReadOffersBrowserSignInWhenTokenRefreshFails()
+    [Theory]
+    [InlineData("https://chatgpt.com/auth")]
+    [InlineData("https://auth.openai.com/oauth/authorize")]
+    public async Task ReadOffersBrowserSignInWhenTokenRefreshFails(string signInUrl)
     {
         var processes = new ScriptedCodexProcessExecution();
         processes.EnqueueLine("""{"id":1,"result":{}}""");
@@ -254,7 +256,8 @@ public sealed partial class CodexUsageObservationReaderTests
         processes.EnqueueLine("""{"id":2,"error":{"message":"refresh failed"}}""");
         processes.EnqueueLine("""{"id":1,"result":{}}""");
         processes.EnqueueLine(
-            """{"id":2,"result":{"type":"chatgpt","loginId":"login-1","authUrl":"https://chatgpt.com/auth"}}""");
+            """{"id":2,"result":{"type":"chatgpt","loginId":"login-1","authUrl":"https://chatgpt.com/auth"}}"""
+                .Replace("https://chatgpt.com/auth", signInUrl, StringComparison.Ordinal));
         processes.EnqueueLine(
             """{"method":"account/login/completed","params":{"loginId":"login-1","success":true,"error":null}}""");
         processes.EnqueueLine("""{"id":1,"result":{}}""");
@@ -269,7 +272,7 @@ public sealed partial class CodexUsageObservationReaderTests
             CancellationToken.None);
 
         Assert.Equal(25, Assert.Single(observations.Account.AllowanceWindows).UsedPercent);
-        Assert.Equal(new Uri("https://chatgpt.com/auth"), Assert.Single(interaction.SignInPages));
+        Assert.Equal(new Uri(signInUrl), Assert.Single(interaction.SignInPages));
         Assert.Contains(
             processes.WrittenLines,
             line => line.Contains("\"account/login/start\"", StringComparison.Ordinal));

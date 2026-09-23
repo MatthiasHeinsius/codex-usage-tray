@@ -9,6 +9,7 @@ internal interface ILocalTokenUsageReader
 
 internal sealed class LocalTokenUsageReader : ILocalTokenUsageReader
 {
+    private const int MaxRecordBytes = 8 * 1024 * 1024;
     private readonly string codexHome;
     private readonly Dictionary<string, FileState> files = new(StringComparer.OrdinalIgnoreCase);
     private DateOnly cachedDate;
@@ -99,6 +100,7 @@ internal sealed class LocalTokenUsageReader : ILocalTokenUsageReader
         var buffer = new byte[16 * 1024];
         var tokens = state.Tokens;
         var foundUsage = state.FoundUsage;
+        var oversizedRecord = state.OversizedRecord;
         // Read only the bytes present at the start, even if Codex keeps appending.
         while (stream.Position < endOffset)
         {
@@ -115,26 +117,39 @@ internal sealed class LocalTokenUsageReader : ILocalTokenUsageReader
                 cancellationToken.ThrowIfCancellationRequested();
                 var newline = remaining.IndexOf((byte)'\n');
                 var length = newline < 0 ? remaining.Length : newline;
-                record.Write(remaining[..length]);
+                if (!oversizedRecord)
+                {
+                    if (record.Length + length > MaxRecordBytes)
+                    {
+                        oversizedRecord = true;
+                        record.SetLength(0);
+                    }
+                    else
+                    {
+                        record.Write(remaining[..length]);
+                    }
+                }
                 if (newline < 0)
                 {
                     break;
                 }
 
-                if (TryReadUsage(record.GetBuffer().AsMemory(0, (int)record.Length), localDate, out var recordTokens))
+                if (!oversizedRecord
+                    && TryReadUsage(record.GetBuffer().AsMemory(0, (int)record.Length), localDate, out var recordTokens))
                 {
                     tokens = checked(tokens + recordTokens);
                     foundUsage = true;
                 }
 
                 record.SetLength(0);
+                oversizedRecord = false;
                 remaining = remaining[(newline + 1)..];
             }
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         // Commit progress and totals together. Canceled or failed reads can safely retry.
-        state = new FileState(endOffset, record.ToArray(), tokens, foundUsage);
+        state = new FileState(endOffset, record.ToArray(), tokens, foundUsage, oversizedRecord);
         files[path] = state;
         return state;
     }
@@ -184,9 +199,9 @@ internal sealed class LocalTokenUsageReader : ILocalTokenUsageReader
         }
     }
 
-    private sealed record FileState(long Offset, byte[] PartialLine, long Tokens, bool FoundUsage)
+    private sealed record FileState(long Offset, byte[] PartialLine, long Tokens, bool FoundUsage, bool OversizedRecord)
     {
-        public FileState() : this(0, [], 0, false)
+        public FileState() : this(0, [], 0, false, false)
         {
         }
     }

@@ -7,7 +7,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>CodexUsageTray</AssemblyName>
     <RootNamespace>CodexUsageTray</RootNamespace>
-    <Version>2.2.3</Version>
+    <Version>2.2.4</Version>
     <AssemblyTitle>Codex Usage Tray</AssemblyTitle>
     <Product>Codex Usage Tray</Product>
     <Authors>Matthias Heinsius</Authors>
@@ -28,6 +28,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Sigstore" />
+    <EmbeddedResource Include="Updates\GitHubTufRoot.json"
+                      LogicalName="CodexUsageTray.GitHubTufRoot.json" />
     <Content Include="..\..\LICENSE"
              Link="LICENSE.txt"
              CopyToPublishDirectory="PreserveNewest" />
