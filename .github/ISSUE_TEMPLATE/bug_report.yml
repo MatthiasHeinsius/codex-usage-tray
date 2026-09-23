@@ -33,7 +33,7 @@ body:
     id: app-version
     attributes:
       label: Codex Usage Tray version
-      placeholder: v2.2.3
+      placeholder: v2.3.0
     validations:
       required: true
 
