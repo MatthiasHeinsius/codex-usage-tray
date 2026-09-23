@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Drawing.Drawing2D;
 
 namespace CodexUsageTray;
@@ -260,8 +261,8 @@ internal sealed class UsagePopupForm : Form
     private void RenderPresentation(UsagePresentation.PopupPresentation presentation)
     {
         RenderAccountStatus();
-        fiveHourAllowance.Render(presentation.FiveHour, compactView);
-        weeklyAllowance.Render(presentation.Weekly, compactView);
+        fiveHourAllowance.Render(presentation.FiveHour, compactView, toolTip);
+        weeklyAllowance.Render(presentation.Weekly, compactView, toolTip);
         todayTokens.Text = presentation.TodayTokens;
         lifetimeTokens.Text = presentation.LifetimeTokens;
         updatedLabel.Text = presentation.UpdatedText;
@@ -515,29 +516,53 @@ internal sealed class UsagePopupForm : Form
         {
             Title = MakeSectionTitle(title);
             Value = MakeValueLabel();
+            Indicator = new AllowanceIndicatorIcon();
             Reset = MakeMutedLabel("Reset time unavailable");
             Bar = new UsageProgressBar { Value = 0 };
-            All = [Title, Value, Reset, Bar];
+            All = [Title, Value, Indicator, Reset, Bar];
         }
 
         public Label Title { get; }
         public Label Value { get; }
+        public AllowanceIndicatorIcon Indicator { get; }
         public Label Reset { get; }
         public UsageProgressBar Bar { get; }
         public Control[] All { get; }
         public int ContentBottom => Math.Max(Title.Bottom, Math.Max(Value.Bottom, Reset.Bottom));
 
-        public void Render(UsagePresentation.AllowancePresentation presentation, bool compact)
+        public void Render(UsagePresentation.AllowancePresentation presentation, bool compact, ToolTip toolTip)
         {
             Value.Text = presentation.RemainingText;
             Reset.Text = compact ? presentation.CompactResetText : presentation.ResetText;
             Bar.Value = presentation.ProgressValue;
+            Indicator.Kind = presentation.Indicator;
+            Indicator.ForeColor = presentation.Indicator switch
+            {
+                UsagePresentation.AllowanceIndicator.Fast => Color.FromArgb(245, 158, 11),
+                UsagePresentation.AllowanceIndicator.Slow => Color.FromArgb(16, 185, 129),
+                _ => Color.FromArgb(148, 163, 184)
+            };
+            var indicatorDescription = presentation.Indicator switch
+            {
+                UsagePresentation.AllowanceIndicator.Fast => "Using allowance faster than the window passes",
+                UsagePresentation.AllowanceIndicator.Slow => "Using allowance slower than the window passes",
+                UsagePresentation.AllowanceIndicator.OnPace => "Allowance use is on pace with the window",
+                UsagePresentation.AllowanceIndicator.ResetDue => "Reset due",
+                _ => ""
+            };
+            Indicator.AccessibleName = presentation.Indicator == UsagePresentation.AllowanceIndicator.ResetDue
+                ? $"{Title.Text}: Reset due"
+                : $"{Title.Text} pace: {indicatorDescription}";
+            toolTip.SetToolTip(Indicator, indicatorDescription);
+            Indicator.Visible = presentation.IsVisible && presentation.Indicator is not null;
+            Indicator.Invalidate();
         }
 
         public void SetVisibility(bool visible, bool compact)
         {
             Title.Visible = visible;
             Value.Visible = visible;
+            Indicator.Visible = visible && Indicator.Kind is not null;
             Reset.Visible = visible;
             Bar.Visible = visible && !compact;
         }
@@ -546,6 +571,8 @@ internal sealed class UsagePopupForm : Form
         {
             var top = 86 + (36 * row);
             Title.Location = new Point(ContentInset, top);
+            Indicator.Location = new Point(180, top - 2);
+            Indicator.Size = new Size(16, 24);
             Value.Location = new Point(198, top - 2);
             Value.Size = new Size(76, LabelHeight(Value, 24));
             Reset.Location = new Point(282, top);
@@ -556,12 +583,67 @@ internal sealed class UsagePopupForm : Form
         {
             var top = 86 + (90 * section);
             Title.Location = new Point(ContentInset, top);
+            Indicator.Location = new Point(294, top);
+            Indicator.Size = new Size(16, 24);
             Value.Location = new Point(258, top);
             Value.Size = new Size(150, LabelHeight(Value, 24));
             Reset.Location = new Point(ContentInset, top + 31);
             Reset.Size = new Size(ContentWidth, LabelHeight(Reset, 24));
             Bar.Location = new Point(ContentInset, top + 59);
             Bar.Width = ContentWidth;
+        }
+    }
+
+    private sealed class AllowanceIndicatorIcon : Control
+    {
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+        public UsagePresentation.AllowanceIndicator? Kind { get; set; }
+
+        public AllowanceIndicatorIcon()
+        {
+            BackColor = PopupBackColor;
+            DoubleBuffered = true;
+        }
+
+        protected override void OnPaint(PaintEventArgs eventArgs)
+        {
+            base.OnPaint(eventArgs);
+            if (Kind is null)
+            {
+                return;
+            }
+
+            eventArgs.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using var pen = new Pen(ForeColor, 2f)
+            {
+                StartCap = LineCap.Round,
+                EndCap = LineCap.Round,
+                LineJoin = LineJoin.Round
+            };
+            var middle = (Height / 2f) + 4;
+            switch (Kind)
+            {
+                case UsagePresentation.AllowanceIndicator.Fast:
+                    eventArgs.Graphics.DrawLine(pen, 2, middle + 6, 14, middle - 6);
+                    eventArgs.Graphics.DrawLines(pen, [
+                        new PointF(8, middle - 6), new PointF(14, middle - 6), new PointF(14, middle)]);
+                    break;
+                case UsagePresentation.AllowanceIndicator.Slow:
+                    eventArgs.Graphics.DrawLine(pen, 2, middle - 6, 14, middle + 6);
+                    eventArgs.Graphics.DrawLines(pen, [
+                        new PointF(14, middle), new PointF(14, middle + 6), new PointF(8, middle + 6)]);
+                    break;
+                case UsagePresentation.AllowanceIndicator.OnPace:
+                    eventArgs.Graphics.DrawLine(pen, 2, middle, 14, middle);
+                    eventArgs.Graphics.DrawLines(pen, [
+                        new PointF(9, middle - 5), new PointF(14, middle), new PointF(9, middle + 5)]);
+                    break;
+                case UsagePresentation.AllowanceIndicator.ResetDue:
+                    eventArgs.Graphics.DrawEllipse(pen, 2, middle - 6, 12, 12);
+                    eventArgs.Graphics.DrawLine(pen, 8, middle - 4, 8, middle);
+                    eventArgs.Graphics.DrawLine(pen, 8, middle, 11, middle + 2);
+                    break;
+            }
         }
     }
 

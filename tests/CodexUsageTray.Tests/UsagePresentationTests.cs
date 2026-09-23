@@ -25,11 +25,13 @@ public sealed class UsagePresentationTests
         Assert.Equal("Plus", presentation.Popup.AccountStatus);
         Assert.Equal(64, presentation.Popup.FiveHour.ProgressValue);
         Assert.Equal("64% left", presentation.Popup.FiveHour.RemainingText);
+        Assert.Equal(UsagePresentation.AllowanceIndicator.OnPace, presentation.Popup.FiveHour.Indicator);
         Assert.Equal("3h 12m", presentation.Popup.FiveHour.CompactResetText);
         Assert.Equal(
             $"Resets in 3h 12m · {fiveHourReset.ToLocalTime().ToString("g", culture)}",
             presentation.Popup.FiveHour.ResetText);
         Assert.Equal(42, presentation.Popup.Weekly.ProgressValue);
+        Assert.Equal(UsagePresentation.AllowanceIndicator.Fast, presentation.Popup.Weekly.Indicator);
         Assert.Equal("3d 8h", presentation.Popup.Weekly.CompactResetText);
         Assert.Equal("784.2K tokens", presentation.Popup.TodayTokens);
         Assert.Equal("123.46M tokens", presentation.Popup.LifetimeTokens);
@@ -42,6 +44,60 @@ public sealed class UsagePresentationTests
         Assert.Equal(42, presentation.Tray.WeeklyRemaining);
         Assert.Equal("Codex · 5h 64% · week 42%", presentation.Tray.Tooltip);
         Assert.Empty(presentation.Notices);
+    }
+
+    [Theory]
+    [InlineData(25, "Slow")]
+    [InlineData(40, "OnPace")]
+    [InlineData(55, "Fast")]
+    public void CreateComparesAllowanceUseWithElapsedWindowTime(
+        int usedPercent,
+        string expected)
+    {
+        var observedAt = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.Zero);
+        var snapshot = CreateSnapshot(
+            observedAt,
+            new AllowanceWindow(usedPercent, TimeSpan.FromHours(5), observedAt.AddHours(3)),
+            weekly: null,
+            lifetimeTokens: null,
+            todayTokens: null,
+            plan: "plus",
+            limitName: "Codex");
+
+        var presentation = UsagePresentation.Create(snapshot, observedAt.AddMinutes(30), CultureInfo.InvariantCulture);
+
+        Assert.Equal(expected, presentation.Popup.FiveHour.Indicator?.ToString());
+        Assert.Null(UsagePresentation.Create(
+            CreateSnapshot(
+                observedAt,
+                new AllowanceWindow(usedPercent, TimeSpan.FromHours(5), null),
+                weekly: null,
+                lifetimeTokens: null,
+                todayTokens: null,
+                plan: "plus",
+                limitName: "Codex"),
+            observedAt,
+            CultureInfo.InvariantCulture).Popup.FiveHour.Indicator);
+    }
+
+    [Fact]
+    public void CreateHandlesLargeDurationsAndShowsResetDueIndicator()
+    {
+        var reset = new DateTimeOffset(100, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var observedAt = reset.AddDays(-1);
+        var snapshot = CreateSnapshot(
+            observedAt,
+            new AllowanceWindow(100, TimeSpan.FromDays(365_000), reset),
+            weekly: null,
+            lifetimeTokens: null,
+            todayTokens: null,
+            plan: "plus",
+            limitName: "Codex");
+
+        Assert.Equal(UsagePresentation.AllowanceIndicator.OnPace,
+            UsagePresentation.Create(snapshot, observedAt, CultureInfo.InvariantCulture).Popup.FiveHour.Indicator);
+        Assert.Equal(UsagePresentation.AllowanceIndicator.ResetDue,
+            UsagePresentation.Create(snapshot, reset, CultureInfo.InvariantCulture).Popup.FiveHour.Indicator);
     }
 
     [Fact]
@@ -248,7 +304,7 @@ public sealed class UsagePresentationTests
         var now = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
         var snapshot = CreateSnapshot(
             now,
-            new AllowanceWindow(10, TimeSpan.FromHours(5), now),
+            new AllowanceWindow(10, null, now),
             new AllowanceWindow(20, TimeSpan.FromDays(7), ResetsAt: null),
             lifetimeTokens: null,
             todayTokens: null,
@@ -260,8 +316,10 @@ public sealed class UsagePresentationTests
 
         Assert.Equal($"Reset due {now.ToLocalTime().ToString("t", culture)}", presentation.Popup.FiveHour.ResetText);
         Assert.Equal("Reset due", presentation.Popup.FiveHour.CompactResetText);
+        Assert.Equal(UsagePresentation.AllowanceIndicator.ResetDue, presentation.Popup.FiveHour.Indicator);
         Assert.Equal("Reset time unavailable", presentation.Popup.Weekly.ResetText);
         Assert.Equal("Reset unknown", presentation.Popup.Weekly.CompactResetText);
+        Assert.Null(presentation.Popup.Weekly.Indicator);
     }
 
     [Theory]
