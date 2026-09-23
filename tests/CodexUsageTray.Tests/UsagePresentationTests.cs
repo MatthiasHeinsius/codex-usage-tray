@@ -36,6 +36,7 @@ public sealed class UsagePresentationTests
         Assert.Equal("784.2K tokens", presentation.Popup.TodayTokens);
         Assert.Equal("123.46M tokens", presentation.Popup.LifetimeTokens);
         Assert.Equal($"Updated {now.LocalDateTime.ToString("t", culture)}", presentation.Popup.UpdatedText);
+        Assert.Equal(AllowanceWindowKind.FiveHour, presentation.Popup.ActivityIndicator.WindowKind);
         Assert.Equal(64, presentation.Popup.ActivityIndicator.RemainingPercent);
         Assert.Equal(fiveHourReset, presentation.Popup.ActivityIndicator.ResetsAt);
         Assert.Equal(TimeSpan.FromHours(5), presentation.Popup.ActivityIndicator.WindowDuration);
@@ -181,6 +182,8 @@ public sealed class UsagePresentationTests
             now,
             CultureInfo.InvariantCulture);
 
+        Assert.Equal(AllowanceWindowKind.FiveHour, primaryFiveHourPresentation.Popup.ActivityIndicator.WindowKind);
+        Assert.Equal(AllowanceWindowKind.Weekly, primaryWeeklyPresentation.Popup.ActivityIndicator.WindowKind);
         Assert.Null(primaryFiveHourPresentation.Popup.ActivityIndicator.ResetObservedAt);
         Assert.Equal(now, primaryWeeklyPresentation.Popup.ActivityIndicator.ResetObservedAt);
     }

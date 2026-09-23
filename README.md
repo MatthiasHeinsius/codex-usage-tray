@@ -21,6 +21,8 @@ The icon beside each allowance compares its used percentage with the percentage 
 
 The popup's pixel-art indicator shows Luna, Terra, Sol, or Astra when it can identify the active model from local Codex session logs. Its ring rotates at a speed based on allowance use relative to elapsed time, including while Codex is idle. A separate glow shows recent token activity and fades over 15 seconds. When the allowance reaches zero, the ring shows a repeating red flash. During the final 15 minutes before reset, a double flash in the green used for a full ring takes priority. After reset, it flashes cyan until the new window is activated and for five minutes afterward. The account line shows the subscription with the active model and its version, such as `GPT-6 Astra`, or `idle` in both views.
 
+The indicator clears its visual reset and activation history when the displayed allowance switches between five-hour and weekly, or disappears. Loading and failed refreshes retain the history of the allowance still on display.
+
 ## Screenshots
 
 ### Extended view

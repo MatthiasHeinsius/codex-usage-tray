@@ -84,25 +84,25 @@ internal static class AllowanceDemo
             var reset = runStart.AddHours(2.5);
             var burn = fastBurn ? 100 : 40;
             var remaining = Math.Max(remainingAtReset, 100 - (int)(seconds * burn / 8));
-            return (new(remaining, reset, WindowDuration, null, reset),
+            return (new(AllowanceWindowKind.FiveHour, remaining, reset, WindowDuration, null, reset),
                 fastBurn ? "Fast burn" : "Slow burn");
         }
 
         if (seconds < 14)
         {
-            return (new(remainingAtReset, runStart.AddHours(2.5), WindowDuration, null),
+            return (new(AllowanceWindowKind.FiveHour, remainingAtReset, runStart.AddHours(2.5), WindowDuration, null),
                 fastBurn ? "Zero allowance" : "Allowance remains");
         }
 
         if (seconds < 19)
         {
-            return (new(remainingAtReset, runStart.AddSeconds(19), WindowDuration, null),
+            return (new(AllowanceWindowKind.FiveHour, remainingAtReset, runStart.AddSeconds(19), WindowDuration, null),
                 "Before reset");
         }
 
         if (seconds < 23)
         {
-            return (new(100, runStart.AddHours(5).AddSeconds(19), WindowDuration,
+            return (new(AllowanceWindowKind.FiveHour, 100, runStart.AddHours(5).AddSeconds(19), WindowDuration,
                 fastBurn ? runStart.AddSeconds(19) : null),
                 fastBurn ? "Reset after zero" : "Reset with 60% left");
         }
@@ -110,12 +110,12 @@ internal static class AllowanceDemo
         if (seconds < 27)
         {
             var reset = runStart.AddHours(5).AddSeconds(23);
-            return (new(seconds < 25 ? 100 : 99, reset, WindowDuration, null, reset),
+            return (new(AllowanceWindowKind.FiveHour, seconds < 25 ? 100 : 99, reset, WindowDuration, null, reset),
                 "Activated");
         }
 
         var activeReset = runStart.AddHours(5).AddSeconds(27).AddMinutes(-6);
-        return (new(99, activeReset, WindowDuration, null, activeReset),
+        return (new(AllowanceWindowKind.FiveHour, 99, activeReset, WindowDuration, null, activeReset),
             "Normal ring");
     }
 }

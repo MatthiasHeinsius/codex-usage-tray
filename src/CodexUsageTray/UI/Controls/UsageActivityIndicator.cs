@@ -34,7 +34,6 @@ internal sealed class UsageActivityIndicator : Control
         UsagePresentation.ActivityIndicatorPresentation.Unavailable;
     private CodexSessionActivity session = CodexSessionActivity.Empty;
     private DateTimeOffset? awaitingActivationResetAt;
-    private DateTimeOffset? activatedResetAt;
     private DateTimeOffset? lastFrameAt;
     private bool activityLatched;
     private float ringAngle;
@@ -168,18 +167,23 @@ internal sealed class UsageActivityIndicator : Control
 
     internal void ShowAllowance(UsagePresentation.ActivityIndicatorPresentation presentation)
     {
+        var sameWindow = allowance.WindowKind == presentation.WindowKind;
+        if (!sameWindow)
+        {
+            awaitingActivationResetAt = null;
+        }
+
         if (presentation.ActivatedResetAt == presentation.ResetsAt
             && presentation.ResetsAt is not null)
         {
-            activatedResetAt = presentation.ResetsAt;
             awaitingActivationResetAt = null;
         }
         else if (presentation.ResetObservedAt is not null)
         {
-            activatedResetAt = null;
             awaitingActivationResetAt = presentation.ResetsAt;
         }
-        else if (allowance.ResetsAt is { } previousReset
+        else if (sameWindow
+            && allowance.ResetsAt is { } previousReset
             && presentation.ResetsAt is { } currentReset
             && currentReset != previousReset)
         {
@@ -190,12 +194,10 @@ internal sealed class UsageActivityIndicator : Control
                     && resetShift > TimeSpan.Zero
                     && resetShift < duration / 2))
             {
-                activatedResetAt = currentReset;
                 awaitingActivationResetAt = null;
             }
             else if (presentation.RemainingPercent == 100)
             {
-                activatedResetAt = null;
                 awaitingActivationResetAt = currentReset;
             }
         }

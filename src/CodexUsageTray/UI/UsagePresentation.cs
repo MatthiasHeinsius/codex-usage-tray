@@ -61,6 +61,7 @@ internal abstract record UsagePresentation(
             indicatorWindow is null
                 ? ActivityIndicatorPresentation.Unavailable
                 : new ActivityIndicatorPresentation(
+                    indicatorSelection == AllowanceWindows.FiveHour ? AllowanceWindowKind.FiveHour : AllowanceWindowKind.Weekly,
                     indicatorWindow.RemainingPercent,
                     indicatorWindow.ResetsAt,
                     indicatorWindow.Duration,
@@ -345,13 +346,14 @@ internal abstract record UsagePresentation(
     }
 
     internal sealed record ActivityIndicatorPresentation(
+        AllowanceWindowKind? WindowKind,
         int? RemainingPercent,
         DateTimeOffset? ResetsAt,
         TimeSpan? WindowDuration,
         DateTimeOffset? ResetObservedAt,
         DateTimeOffset? ActivatedResetAt = null)
     {
-        public static ActivityIndicatorPresentation Unavailable { get; } = new(null, null, null, null);
+        public static ActivityIndicatorPresentation Unavailable { get; } = new(null, null, null, null, null);
     }
 
     internal sealed record AllowancePresentation
