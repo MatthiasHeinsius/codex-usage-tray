@@ -102,6 +102,8 @@ The app runs the installed Codex CLI in app-server mode to read account usage. I
 
 The activity indicator watches recent files in `%USERPROFILE%\.codex\sessions` and `%USERPROFILE%\.codex\archived_sessions` for token activity and model names. It ignores internal `codex-auto-review` sessions when choosing the active model and activity state. This filter does not change inference totals. It reads these files locally and does not change them.
 
+When first observing a session, the indicator reads its complete records from the start in the background so earlier model metadata remains available even in large logs without delaying the popup. Later reads resume after the last complete record, checking that record still matches before reusing the saved position. Each pending batch publishes only the final activity, after model identification and review-session filtering.
+
 The account service may publish daily token buckets a day late. If today's bucket is missing, the app totals `token_usage_record` entries from the local Codex session history. If the account total ends with yesterday's data, the app adds today's local total to the displayed inference total. Routine allowance refreshes retain same-day activity and its original observation time. On a new local date, today's retained activity clears while the lifetime total remains available with its observation time.
 
 The app does not upload the usage data it reads from the account or local history. Update checks contact the GitHub releases API and download release files from GitHub when needed. The optional auto-activation feature only sends the `Hi` request described above.
