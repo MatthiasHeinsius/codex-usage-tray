@@ -39,7 +39,8 @@ public sealed partial class UsageUpdatesTests
         {
             await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
             time.Advance(TimeSpan.FromMinutes(1));
-            await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+            var confirmed = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+            Assert.Equal(activatedReset, confirmed.Popup.ActivityIndicator.ActivatedResetAt);
         }
 
         var afterRestartCommand = new ActivationRecordingCommand();
@@ -463,6 +464,116 @@ public sealed partial class UsageUpdatesTests
         Assert.Equal("5-hour and weekly allowance reset.", Assert.Single(reset.Notices).Message);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PresentationHistoryFollowsTheSelectedAllowanceAcrossUpdates(bool sameResetTime)
+    {
+        var now = new DateTimeOffset(2026, 9, 23, 12, 0, 0, TimeSpan.Zero);
+        var fiveHourReset = now.AddHours(4);
+        var weeklyReset = sameResetTime ? fiveHourReset : now.AddDays(6);
+        var weeklyActivatedReset = weeklyReset.AddMinutes(-1);
+        var settings = new ActivationSettings { ActivationEnabled = false };
+        settings.WriteActivatedReset(AllowanceWindowKind.FiveHour, fiveHourReset);
+        settings.WriteActivatedReset(AllowanceWindowKind.Weekly, weeklyActivatedReset);
+        var both = ObserveAllowance(now, 20, fiveHourReset, 30, weeklyReset);
+        await using var updates = CreateActivationUpdates(
+            new ActivationObservationReader(both, ObserveWeeklyAllowance(now, 30, weeklyReset), both),
+            new ActivationRecordingCommand(), settings, new ActivationTimeProvider(now));
+
+        var fiveHour = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+        var weekly = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+        var returned = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+
+        Assert.Equal(AllowanceWindowKind.FiveHour, fiveHour.Popup.ActivityIndicator.WindowKind);
+        Assert.Equal(fiveHourReset, fiveHour.Popup.ActivityIndicator.ActivatedResetAt);
+        Assert.Equal(AllowanceWindowKind.Weekly, weekly.Popup.ActivityIndicator.WindowKind);
+        Assert.Equal(weeklyActivatedReset, weekly.Popup.ActivityIndicator.ActivatedResetAt);
+        Assert.Equal(fiveHour.Popup.ActivityIndicator, returned.Popup.ActivityIndicator);
+        Assert.Equal([AllowanceWindowKind.FiveHour, AllowanceWindowKind.Weekly, AllowanceWindowKind.FiveHour],
+            settings.HistoryReads);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task PresentationOnlyDependsOnSelectedAllowanceHistory(bool weeklyOnly, bool selectedReadFails)
+    {
+        var now = new DateTimeOffset(2026, 9, 23, 12, 0, 0, TimeSpan.Zero);
+        var selected = weeklyOnly ? AllowanceWindowKind.Weekly : AllowanceWindowKind.FiveHour;
+        var unselected = weeklyOnly ? AllowanceWindowKind.FiveHour : AllowanceWindowKind.Weekly;
+        var settings = new ActivationSettings
+        {
+            ActivationEnabled = false,
+            DeniedHistory = selectedReadFails ? selected : unselected
+        };
+        var observation = weeklyOnly
+            ? ObserveWeeklyAllowance(now, 30, now.AddDays(6))
+            : ObserveAllowance(now, 20, now.AddHours(4), 30, now.AddDays(6));
+        await using var updates = CreateActivationUpdates(
+            new ActivationObservationReader(observation), new ActivationRecordingCommand(),
+            settings, new ActivationTimeProvider(now));
+
+        if (selectedReadFails)
+        {
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+                updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken));
+        }
+        else
+        {
+            var presentation = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+            Assert.Equal(selected, presentation.Popup.ActivityIndicator.WindowKind);
+            Assert.Null(presentation.Popup.ActivityIndicator.ActivatedResetAt);
+        }
+        Assert.Equal(selected, Assert.Single(settings.HistoryReads));
+    }
+
+    [Fact]
+    public async Task MissingAllowancesDoNotReadActivationHistory()
+    {
+        var now = new DateTimeOffset(2026, 9, 23, 12, 0, 0, TimeSpan.Zero);
+        var observation = new UsageObservations(
+            new AccountUsageObservation(now, [], "plus", "Codex", new AccountActivityObservation.NotRequested()), null);
+        var settings = new ActivationSettings
+        {
+            ActivationEnabled = false,
+            DeniedHistory = AllowanceWindowKind.Weekly
+        };
+        await using var updates = CreateActivationUpdates(
+            new ActivationObservationReader(observation), new ActivationRecordingCommand(),
+            settings, new ActivationTimeProvider(now));
+
+        var presentation = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+
+        Assert.Equal(UsagePresentation.ActivityIndicatorPresentation.Unavailable, presentation.Popup.ActivityIndicator);
+        Assert.Empty(settings.HistoryReads);
+    }
+
+    [Fact]
+    public async Task PresentationReadsHistoryForTheAllowanceSelectedAfterActivationRecovery()
+    {
+        var now = new DateTimeOffset(2026, 9, 23, 12, 0, 0, TimeSpan.Zero);
+        var weeklyReset = now.AddDays(6);
+        var settings = new ActivationSettings();
+        settings.WriteActivatedReset(AllowanceWindowKind.Weekly, weeklyReset);
+        var command = new ActivationRecordingCommand();
+        command.FailNext(new InvalidOperationException("Synthetic activation failure."));
+        await using var updates = CreateActivationUpdates(
+            new ActivationObservationReader(
+                ObserveAllowance(now, 0, now.AddHours(5), 30, weeklyReset),
+                ObserveWeeklyAllowance(now, 30, weeklyReset)),
+            command, settings, new ActivationTimeProvider(now));
+
+        var presentation = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, command.CallCount);
+        Assert.Equal(AllowanceWindowKind.Weekly, presentation.Popup.ActivityIndicator.WindowKind);
+        Assert.Equal(weeklyReset, presentation.Popup.ActivityIndicator.ActivatedResetAt);
+        Assert.Equal([AllowanceWindowKind.FiveHour, AllowanceWindowKind.Weekly], settings.HistoryReads);
+    }
+
     private static UsageUpdates CreateActivationUpdates(
         IUsageObservationReader observations,
         IAllowanceWindowActivationCommand command,
@@ -573,9 +684,18 @@ public sealed partial class UsageUpdatesTests
 
         public bool ActivationEnabled { get; set; } = true;
         public bool NotificationsEnabled { get; set; }
+        public AllowanceWindowKind? DeniedHistory { get; init; }
+        public List<AllowanceWindowKind> HistoryReads { get; } = [];
 
-        public DateTimeOffset? ReadActivatedReset(AllowanceWindowKind window) =>
-            activatedResets.GetValueOrDefault(window);
+        public DateTimeOffset? ReadActivatedReset(AllowanceWindowKind window)
+        {
+            HistoryReads.Add(window);
+            if (DeniedHistory == window)
+            {
+                throw new UnauthorizedAccessException("Synthetic activation history read failure.");
+            }
+            return activatedResets.TryGetValue(window, out var reset) ? reset : null;
+        }
 
         public void WriteActivatedReset(AllowanceWindowKind window, DateTimeOffset reset) =>
             activatedResets[window] = reset;

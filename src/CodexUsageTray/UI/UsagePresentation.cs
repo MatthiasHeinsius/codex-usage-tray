@@ -40,17 +40,17 @@ internal abstract record UsagePresentation(
         bool notificationsEnabled,
         DateTimeOffset now,
         IFormatProvider formatProvider,
-        DateTimeOffset? activatedResetAt = null)
+        Func<AllowanceWindowKind, DateTimeOffset?>? readActivatedReset = null)
     {
         var fiveHour = PresentAllowance(snapshot.FiveHour, snapshot.AllowanceObservedAt, now, formatProvider);
         var weekly = PresentAllowance(snapshot.Weekly, snapshot.AllowanceObservedAt, now, formatProvider);
         var observationText = PresentLatestObservationTime(snapshot, formatProvider);
-        var indicatorWindow = snapshot.FiveHour ?? snapshot.Weekly;
-        var indicatorSelection = snapshot.FiveHour is not null
+        var (indicatorKind, indicatorWindow) = snapshot.FiveHour is { } fiveHourWindow
+            ? (AllowanceWindowKind.FiveHour, fiveHourWindow)
+            : (AllowanceWindowKind.Weekly, snapshot.Weekly);
+        var indicatorSelection = indicatorKind == AllowanceWindowKind.FiveHour
             ? AllowanceWindows.FiveHour
-            : snapshot.Weekly is not null
-                ? AllowanceWindows.Weekly
-                : AllowanceWindows.None;
+            : AllowanceWindows.Weekly;
         var popup = new PopupPresentation(
             AccountStatus(snapshot),
             fiveHour,
@@ -61,12 +61,12 @@ internal abstract record UsagePresentation(
             indicatorWindow is null
                 ? ActivityIndicatorPresentation.Unavailable
                 : new ActivityIndicatorPresentation(
-                    indicatorSelection == AllowanceWindows.FiveHour ? AllowanceWindowKind.FiveHour : AllowanceWindowKind.Weekly,
+                    indicatorKind,
                     indicatorWindow.RemainingPercent,
                     indicatorWindow.ResetsAt,
                     indicatorWindow.Duration,
                     (allowanceEvents.Reset & indicatorSelection) == AllowanceWindows.None ? null : now,
-                    activatedResetAt),
+                    readActivatedReset?.Invoke(indicatorKind)),
             ShowsSessionActivity: true);
         var tray = new TrayPresentation(
             snapshot.FiveHour?.RemainingPercent,
