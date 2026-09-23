@@ -12,7 +12,7 @@ Codex CLI is installed separately by the user and is not distributed with this
 application.
 
 The versions below reflect the repository and its resolved dependency graph on
-September 15, 2026. Maintainers should refresh this file when dependencies or
+September 23, 2026. Maintainers should refresh this file when dependencies or
 the .NET release toolchain change.
 
 
@@ -65,7 +65,7 @@ the user's separate Codex CLI installation.
 DEVELOPMENT AND TEST DEPENDENCIES
 ===============================================================================
 
-Microsoft Testing Platform 2.4.0
+Microsoft Testing Platform 2.4.1
   Packages:
     Microsoft.Testing.Platform
     Microsoft.Testing.Platform.MSBuild
@@ -100,8 +100,8 @@ Microsoft Code Coverage's package notice also identifies:
 Other Microsoft test dependencies:
   Microsoft.ApplicationInsights 2.23.0
   Microsoft.Bcl.AsyncInterfaces 6.0.0
-  Microsoft.DiaSymReader 2.2.10
-  Microsoft.Extensions.DependencyModel 10.0.10
+  Microsoft.DiaSymReader 2.2.12
+  Microsoft.Extensions.DependencyModel 10.0.12
   Microsoft.Win32.Registry 5.0.0
   System.Security.AccessControl 6.0.1
   Copyright (c) Microsoft Corporation. All rights reserved.
@@ -156,7 +156,7 @@ GitHub Actions
     actions/setup-dotnet v6.0.0
     actions/upload-artifact v7.0.1
     actions/download-artifact v8.0.1
-    actions/attest v4
+    actions/attest v4.2.2
   Projects:
     https://github.com/actions/checkout
     https://github.com/actions/setup-dotnet

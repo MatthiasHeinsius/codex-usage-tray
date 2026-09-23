@@ -1,6 +1,6 @@
 # Third-party license audit
 
-Audit date: 2026-09-13. CI action inventory updated: 2026-09-15.
+Audit date: 2026-09-13. Dependency inventory updated: 2026-09-23.
 
 This report records the license sources needed to build the repository's third-party notice file. It separates software embedded in the released executable from tools used only to build or test the source. The upstream license and notice files linked below are the text to preserve. This report is not a substitute for those files.
 
@@ -15,7 +15,7 @@ The test project directly references these packages:
 | `Microsoft.Testing.Extensions.CodeCoverage` | 18.11.2 | Test-only coverage extension |
 | `xunit.v3.mtp-v2` | 4.0.1 | Test framework and Microsoft Testing Platform v2 runner |
 
-The restored `tests/CodexUsageTray.Tests/obj/project.assets.json` also contains Microsoft Testing Platform 2.4.0, its MSBuild and telemetry extensions, Microsoft Application Insights 2.23.0, Microsoft Code Coverage dependencies, xUnit.net 4.0.1 runner components, and xUnit analyzers 2.1.0. Use `dotnet list tests/CodexUsageTray.Tests/CodexUsageTray.Tests.csproj package --include-transitive` to reproduce the exact graph.
+The restored `tests/CodexUsageTray.Tests/obj/project.assets.json` also contains Microsoft Testing Platform 2.4.1, its MSBuild and telemetry extensions, Microsoft Application Insights 2.23.0, Microsoft Code Coverage dependencies, xUnit.net 4.0.1 runner components, and xUnit analyzers 2.1.0. The test lock file records `Microsoft.DiaSymReader` 2.2.12 and `Microsoft.Extensions.DependencyModel` 10.0.12. Use `dotnet package list --project tests/CodexUsageTray.Tests/CodexUsageTray.Tests.csproj --include-transitive` to reproduce the exact graph.
 
 The screenshot generator has no external package references. It only references the application project.
 
@@ -45,9 +45,9 @@ The three linked MIT files have the same license text and copyright line. A comp
 
 These packages are present in the source and test dependency graph, but `build-release.ps1` does not publish the test project. They are not part of `CodexUsageTray.exe`. Keep their notices in the repository-wide notice inventory. They do not need to be represented as components of the released application unless the distribution also contains test binaries or test tooling.
 
-### Microsoft Testing Platform 2.4.0
+### Microsoft Testing Platform 2.4.1
 
-`xunit.v3.mtp-v2` brings in `Microsoft.Testing.Platform`, `Microsoft.Testing.Platform.MSBuild`, `Microsoft.Testing.Extensions.Telemetry`, and `Microsoft.Testing.Extensions.TrxReport.Abstractions` 2.4.0. These packages come from [Microsoft TestFX](https://github.com/microsoft/testfx), declare MIT, and identify `Copyright (c) Microsoft Corporation`.
+`xunit.v3.mtp-v2` brings in `Microsoft.Testing.Platform`, `Microsoft.Testing.Platform.MSBuild`, `Microsoft.Testing.Extensions.Telemetry`, and `Microsoft.Testing.Extensions.TrxReport.Abstractions` 2.4.1. These packages come from [Microsoft TestFX](https://github.com/microsoft/testfx), declare MIT, and identify `Copyright (c) Microsoft Corporation`.
 
 The telemetry extension brings in Microsoft Application Insights 2.23.0 and supporting Microsoft libraries. Their package metadata declares MIT. Preserve the common Microsoft MIT attribution already included in the notice file.
 
@@ -67,7 +67,7 @@ The [xunit.v3.mtp-v2 4.0.1 package](https://www.nuget.org/packages/xunit.v3.mtp-
 
 The workflows reference `actions/checkout` v7.0.1, `actions/setup-dotnet` v6.0.0, `actions/upload-artifact` v7.0.1, and `actions/download-artifact` v8.0.1. Each uses the MIT license with `Copyright (c) 2018 GitHub, Inc. and contributors`. Preserve one copy of that common text. The sources at the workflows' pinned commits are the [checkout license](https://github.com/actions/checkout/blob/3d3c42e5aac5ba805825da76410c181273ba90b1/LICENSE), [setup-dotnet license](https://github.com/actions/setup-dotnet/blob/a98b56852c35b8e3190ac28c8c2271da59106c68/LICENSE), [upload-artifact license](https://github.com/actions/upload-artifact/blob/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/LICENSE), and [download-artifact license](https://github.com/actions/download-artifact/blob/3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/LICENSE).
 
-The release workflow also uses `actions/attest` v4, whose [MIT license](https://github.com/actions/attest/blob/1e69f48acb82d1966a394da916b4c1698aa569d6/LICENSE) states `Copyright GitHub`. This attribution accompanies the shared MIT license in the notice inventory. The action runs in CI and is not bundled into the executable.
+The release workflow also uses `actions/attest` v4.2.2, whose [MIT license](https://github.com/actions/attest/blob/1e69f48acb82d1966a394da916b4c1698aa569d6/LICENSE) states `Copyright GitHub`. This attribution accompanies the shared MIT license in the notice inventory. The action runs in CI and is not bundled into the executable.
 
 ## External software that the app invokes
 
