@@ -92,7 +92,7 @@ To require a particular release tag, also pass `--source-ref refs/tags/vX.Y.Z` w
 
 Use the view button to switch between compact and extended modes. Compact mode shows each reported allowance and its countdown. Extended mode adds reset times, progress bars, and inference totals.
 
-The pin button keeps the popup open and above other windows. While pinned, drag the background or text to move it. The popup snaps either flush with the screen and taskbar edges or with an eight-pixel gap. A pinned popup keeps its position when hidden. An unpinned popup opens next to the tray.
+The pin button keeps the popup open and above other windows. While pinned, drag the popup by its outer border to move it. The popup snaps either flush with the screen and taskbar edges or with an eight-pixel gap. A pinned popup keeps its position when hidden. An unpinned popup opens next to the tray.
 
 `Auto-start allowance window` activates a 5-hour or weekly allowance that has 100% remaining by sending an ephemeral `Hi` request with GPT-5.6 Luna. This request consumes Codex inference. The app sends it only when every reported allowance has some capacity left. The app confirms activation when the allowance reset time changes on a later one-minute refresh. It makes one initial request and up to three retries for each activation. A used-up allowance waits for its reset; other command failures retry after five minutes. Retry counts reset when the application restarts.
 

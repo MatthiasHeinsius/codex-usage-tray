@@ -1,9 +1,53 @@
 using System.Globalization;
+using System.Reflection;
 
 namespace CodexUsageTray.Tests;
 
 public sealed class UsagePopupFormTests
 {
+    [Theory]
+    [InlineData(100, 9, true)]
+    [InlineData(9, 100, true)]
+    [InlineData(100, 190, true)]
+    [InlineData(190, 100, true)]
+    [InlineData(10, 10, false)]
+    [InlineData(100, 100, false)]
+    public void OnlyTheOuterInsetIsDraggable(int x, int y, bool expected)
+    {
+        Assert.Equal(expected, UsagePopupForm.IsInDragBorder(new Point(x, y), new Size(200, 200)));
+    }
+
+    [Fact]
+    public Task PinnedPopupStartsDraggingOnlyAtTheBorder()
+    {
+        return StaTest.RunAsync(() =>
+        {
+            using var popup = ShowExtendedPopup();
+            var onMouseDown = typeof(Control).GetMethod("OnMouseDown", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var onMouseUp = typeof(Control).GetMethod("OnMouseUp", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var border = new Point(5, 5);
+            Assert.DoesNotContain(popup.Controls.Cast<Control>(), control => control.Visible &&
+                (control.Left < 10 || control.Top < 10
+                    || control.Right > popup.ClientSize.Width - 10
+                    || control.Bottom > popup.ClientSize.Height - 10));
+
+            Press(border);
+            Assert.False(popup.Capture);
+
+            popup.Controls.OfType<PinIconButton>().Single().PerformClick();
+            Press(new Point(100, 100));
+            Assert.False(popup.Capture);
+            Press(border);
+            Assert.True(popup.Capture);
+            onMouseUp.Invoke(popup, [new MouseEventArgs(MouseButtons.Left, 1, border.X, border.Y, 0)]);
+            Assert.False(popup.Capture);
+
+            void Press(Point point) => onMouseDown.Invoke(
+                popup,
+                [new MouseEventArgs(MouseButtons.Left, 1, point.X, point.Y, 0)]);
+        });
+    }
+
     [Fact]
     public Task ResetDueIconAppearsInBothPopupViews()
     {

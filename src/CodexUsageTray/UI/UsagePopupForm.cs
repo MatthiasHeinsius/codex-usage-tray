@@ -6,6 +6,7 @@ namespace CodexUsageTray;
 internal sealed class UsagePopupForm : Form
 {
     private const int ContentInset = 20;
+    private const int DragBorderWidth = 10;
     private const int PopupWidth = 428;
     private const int ContentWidth = PopupWidth - (2 * ContentInset);
     private static readonly Color PopupBackColor = Color.FromArgb(24, 27, 34);
@@ -34,7 +35,7 @@ internal sealed class UsagePopupForm : Form
     private UsagePresentation.PopupPresentation? displayedPresentation;
     private CodexSessionActivity sessionActivity = CodexSessionActivity.Empty;
     private bool compactView;
-    private Control? dragControl;
+    private bool isDragging;
     private Point dragStartCursor;
     private Point dragStartLocation;
 
@@ -149,7 +150,7 @@ internal sealed class UsagePopupForm : Form
         pinButton.Click += (_, _) =>
         {
             TopMost = pinButton.IsPinned;
-            Cursor = pinButton.IsPinned ? Cursors.SizeAll : Cursors.Default;
+            Cursor = Cursors.Default;
             if (pinButton.IsPinned)
             {
                 deactivateTimer.Stop();
@@ -225,7 +226,11 @@ internal sealed class UsagePopupForm : Form
             activityMonitor.Changed += ActivityMonitorOnChanged;
         }
 
-        AddDragHandlers(this);
+        MouseDown += PopupOnMouseDown;
+        MouseMove += PopupOnMouseMove;
+        MouseUp += PopupOnMouseUp;
+        MouseCaptureChanged += PopupOnMouseCaptureChanged;
+        MouseLeave += (_, _) => Cursor = Cursors.Default;
         LocationChanged += (_, _) => PositionActivityOverlay();
         ApplyViewMode(viewModeButton.IsCompact, preserveBottom: false);
     }
@@ -647,38 +652,33 @@ internal sealed class UsagePopupForm : Form
         }
     }
 
-    private void AddDragHandlers(Control control)
-    {
-        if (control is not ButtonBase)
-        {
-            control.MouseDown += DragControlOnMouseDown;
-            control.MouseMove += DragControlOnMouseMove;
-            control.MouseUp += DragControlOnMouseUp;
-            control.MouseCaptureChanged += DragControlOnMouseCaptureChanged;
-        }
+    internal static bool IsInDragBorder(Point point, Size size) =>
+        point.X < DragBorderWidth || point.Y < DragBorderWidth
+        || point.X >= size.Width - DragBorderWidth || point.Y >= size.Height - DragBorderWidth;
 
-        foreach (Control child in control.Controls)
-        {
-            AddDragHandlers(child);
-        }
-    }
-
-    private void DragControlOnMouseDown(object? sender, MouseEventArgs eventArgs)
+    private void PopupOnMouseDown(object? sender, MouseEventArgs eventArgs)
     {
-        if (!pinButton.IsPinned || eventArgs.Button != MouseButtons.Left || sender is not Control control)
+        if (!pinButton.IsPinned || eventArgs.Button != MouseButtons.Left
+            || !IsInDragBorder(eventArgs.Location, ClientSize))
         {
             return;
         }
 
-        dragControl = control;
+        isDragging = true;
         dragStartCursor = Cursor.Position;
         dragStartLocation = Location;
-        control.Capture = true;
+        Capture = true;
     }
 
-    private void DragControlOnMouseMove(object? sender, MouseEventArgs eventArgs)
+    private void PopupOnMouseMove(object? sender, MouseEventArgs eventArgs)
     {
-        if (dragControl is null || eventArgs.Button != MouseButtons.Left)
+        if (!isDragging)
+        {
+            Cursor = pinButton.IsPinned && IsInDragBorder(eventArgs.Location, ClientSize)
+                ? Cursors.SizeAll : Cursors.Default;
+        }
+
+        if (!isDragging || eventArgs.Button != MouseButtons.Left)
         {
             return;
         }
@@ -696,7 +696,7 @@ internal sealed class UsagePopupForm : Form
             screen.WorkingArea);
     }
 
-    private void DragControlOnMouseUp(object? sender, MouseEventArgs eventArgs)
+    private void PopupOnMouseUp(object? sender, MouseEventArgs eventArgs)
     {
         if (eventArgs.Button == MouseButtons.Left)
         {
@@ -704,9 +704,9 @@ internal sealed class UsagePopupForm : Form
         }
     }
 
-    private void DragControlOnMouseCaptureChanged(object? sender, EventArgs eventArgs)
+    private void PopupOnMouseCaptureChanged(object? sender, EventArgs eventArgs)
     {
-        if (sender == dragControl && dragControl is { Capture: false })
+        if (isDragging && !Capture)
         {
             StopDragging();
         }
@@ -714,11 +714,10 @@ internal sealed class UsagePopupForm : Form
 
     private void StopDragging()
     {
-        var capturedControl = dragControl;
-        dragControl = null;
-        if (capturedControl is not null)
+        if (isDragging)
         {
-            capturedControl.Capture = false;
+            isDragging = false;
+            Capture = false;
         }
     }
 
