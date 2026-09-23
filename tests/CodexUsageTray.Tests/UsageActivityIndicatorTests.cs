@@ -102,7 +102,7 @@ public sealed class UsageActivityIndicatorTests
         var events = new AllowanceWindowActivationResult(
             resetObserved ? fiveHour ? AllowanceWindows.FiveHour : AllowanceWindows.Weekly : AllowanceWindows.None,
             AllowanceWindows.None);
-        return UsagePresentation.Create(snapshot, events, false, now, CultureInfo.InvariantCulture, activatedResetAt);
+        return UsagePresentation.Create(snapshot, events, false, now, CultureInfo.InvariantCulture, _ => activatedResetAt);
     }
 
     [Fact]
