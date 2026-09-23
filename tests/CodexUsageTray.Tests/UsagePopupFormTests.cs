@@ -148,6 +148,30 @@ public sealed class UsagePopupFormTests
         });
     }
 
+    [Theory]
+    [InlineData(52, 52)]
+    [InlineData(52, 14)]
+    public Task PinnedPopupCanBeDraggedFromTheActivityCircle(int x, int y)
+    {
+        return StaTest.RunAsync(() =>
+        {
+            using var popup = ShowExtendedPopup();
+            var indicator = Assert.Single(Assert.Single(popup.OwnedForms).Controls.OfType<UsageActivityIndicator>());
+            var onMouseDown = typeof(Control).GetMethod("OnMouseDown", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var onMouseUp = typeof(Control).GetMethod("OnMouseUp", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var mouseEvent = new MouseEventArgs(MouseButtons.Left, 1, x, y, 0);
+
+            onMouseDown.Invoke(indicator, [mouseEvent]);
+            Assert.False(indicator.Capture);
+
+            popup.Controls.OfType<PinIconButton>().Single().PerformClick();
+            onMouseDown.Invoke(indicator, [mouseEvent]);
+            Assert.True(indicator.Capture);
+            onMouseUp.Invoke(indicator, [mouseEvent]);
+            Assert.False(indicator.Capture);
+        });
+    }
+
     [Fact]
     public Task ResetDueIconAppearsInBothPopupViews()
     {
@@ -336,6 +360,10 @@ public sealed class UsagePopupFormTests
             Assert.NotEqual(popup.BackColor, overlay.TransparencyKey);
             Assert.Equal(indicator.Size + new Size(1, 1), overlay.ClientSize);
             Assert.Equal(FormBorderStyle.None, overlay.FormBorderStyle);
+            var createParams = (CreateParams)overlay.GetType()
+                .GetProperty("CreateParams", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(overlay)!;
+            Assert.Equal(0, createParams.ExStyle & 0x20); // WS_EX_TRANSPARENT would pass clicks through the circle.
         });
     }
 
