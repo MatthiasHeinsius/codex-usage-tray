@@ -39,7 +39,7 @@ When the account does not report a 5-hour allowance, the popup omits that sectio
 
 ![Codex usage popup with only a weekly allowance](docs/images/weekly-only.png)
 
-Pin either view to move it. Drag the popup by its background or text. It can cross the taskbar and snaps flush or with an eight-pixel gap to every screen edge and the top of the taskbar.
+Pin either view to move it. Drag the popup by its outer border or circular activity indicator. It can cross the taskbar and snaps flush or with an eight-pixel gap to every screen edge and the top of the taskbar.
 
 ### Tray icon
 
