@@ -21,6 +21,8 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <EmbeddedResource Include="Fixtures\ReleaseAttestation-v2.2.3.json" />
+    <EmbeddedResource Include="Fixtures\GitHubTrustedRoot.json" />
   </ItemGroup>
 
   <Target Name="CopyProcessFixture" AfterTargets="Build">

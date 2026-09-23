@@ -28,6 +28,7 @@ internal sealed record CodexSessionActivity(
 
 internal sealed class CodexSessionActivityMonitor : IDisposable
 {
+    private const int MaxRecordBytes = 8 * 1024 * 1024;
     private static readonly TimeSpan RecentFileAge = TimeSpan.FromDays(2);
     private readonly object gate = new();
     private readonly object readGate = new();
@@ -246,6 +247,7 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
 
             stream.Position = state.Offset;
             using var record = new MemoryStream();
+            var oversizedRecord = state.OversizedRecord;
             var buffer = new byte[16 * 1024];
             // Read the initial metadata once, then only appended complete records.
             // A fixed end keeps a busy session from extending this batch indefinitely.
@@ -267,14 +269,29 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
                 {
                     var newline = remaining.IndexOf((byte)'\n');
                     var length = newline < 0 ? remaining.Length : newline;
-                    record.Write(remaining[..length]);
+                    if (!oversizedRecord)
+                    {
+                        if (record.Length + length > MaxRecordBytes)
+                        {
+                            oversizedRecord = true;
+                            record.SetLength(0);
+                        }
+                        else
+                        {
+                            record.Write(remaining[..length]);
+                        }
+                    }
                     if (newline < 0)
                     {
                         break;
                     }
 
-                    state = ReadRecord(state, record.GetBuffer().AsMemory(0, (int)record.Length));
+                    if (!oversizedRecord)
+                    {
+                        state = ReadRecord(state, record.GetBuffer().AsMemory(0, (int)record.Length));
+                    }
                     record.SetLength(0);
+                    oversizedRecord = false;
                     remaining = remaining[(newline + 1)..];
                     state = state with
                     {
@@ -284,8 +301,24 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
                 }
             }
 
+            if (oversizedRecord)
+            {
+                var fingerprintStart = Math.Max(0, endOffset - 16 * 1024);
+                state = state with
+                {
+                    Offset = endOffset,
+                    RecordStart = fingerprintStart,
+                    Fingerprint = ReadFingerprint(stream, fingerprintStart, endOffset),
+                    OversizedRecord = true
+                };
+            }
+            else
+            {
+                state = state with { OversizedRecord = false };
+            }
+
             // Commit metadata and progress together; retry unfinished records on the next append.
-            if (state.Offset > 0)
+            if (state.Offset > 0 && !oversizedRecord)
             {
                 state = state with { Fingerprint = ReadFingerprint(stream, state.RecordStart, state.Offset) };
             }
@@ -483,7 +516,8 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
         ObservedModel? Model,
         DateTimeOffset? LastTokenAt,
         long RecordStart = 0,
-        byte[]? Fingerprint = null)
+        byte[]? Fingerprint = null,
+        bool OversizedRecord = false)
     {
         public bool HasUserActivity => LastTokenAt is not null && Model?.ExcludeSession != true;
     }

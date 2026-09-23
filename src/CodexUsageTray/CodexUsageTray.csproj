@@ -28,6 +28,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Sigstore" />
+    <EmbeddedResource Include="Updates\GitHubTufRoot.json"
+                      LogicalName="CodexUsageTray.GitHubTufRoot.json" />
     <Content Include="..\..\LICENSE"
              Link="LICENSE.txt"
              CopyToPublishDirectory="PreserveNewest" />

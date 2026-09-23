@@ -64,6 +64,10 @@ public sealed partial class CodexUsageObservationReaderTests
     [InlineData("""{"id":2,"result":{"loginId":"login-1"}}""")]
     [InlineData("""{"id":2,"result":{"loginId":"login-1","authUrl":"not a URL"}}""")]
     [InlineData("""{"id":2,"result":{"loginId":"login-1","authUrl":"http://chatgpt.com/auth"}}""")]
+    [InlineData("""{"id":2,"result":{"loginId":"login-1","authUrl":"https://chatgpt.com.evil.test/auth"}}""")]
+    [InlineData("""{"id":2,"result":{"loginId":"login-1","authUrl":"https://evil.test/auth"}}""")]
+    [InlineData("""{"id":2,"result":{"loginId":"login-1","authUrl":"https://chatgpt.com:444/auth"}}""")]
+    [InlineData("""{"id":2,"result":{"loginId":"login-1","authUrl":"https://user@chatgpt.com/auth"}}""")]
     public async Task InvalidSignInDetailsNeverOpenTheBrowser(string response)
     {
         var processes = new ScriptedCodexProcessExecution();

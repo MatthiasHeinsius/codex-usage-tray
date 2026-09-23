@@ -23,6 +23,7 @@ try {
         -r win-x64 `
         --self-contained true `
         -p:PublishSingleFile=true `
+        -p:IncludeNativeLibrariesForSelfExtract=true `
         -p:DebugType=None `
         -p:DebugSymbols=false `
         -o $outputDirectory

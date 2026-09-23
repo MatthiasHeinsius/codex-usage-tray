@@ -49,7 +49,7 @@ jobs:
         run: |
           dotnet restore ./CodexUsageTray.slnx
           if ($LASTEXITCODE -ne 0) { throw 'Solution restore failed.' }
-          dotnet restore ./src/CodexUsageTray/CodexUsageTray.csproj -r win-x64 -p:SelfContained=true -p:PublishSingleFile=true
+          dotnet restore ./src/CodexUsageTray/CodexUsageTray.csproj -r win-x64 -p:SelfContained=true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
           if ($LASTEXITCODE -ne 0) { throw 'Release runtime restore failed.' }
 
       - name: Generate dependency snapshot

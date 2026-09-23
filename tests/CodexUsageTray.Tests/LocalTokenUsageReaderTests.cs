@@ -33,6 +33,20 @@ public sealed class LocalTokenUsageReaderTests
         Assert.Equal(2_000, reader.ReadToday(September7, TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public void ReadTodaySkipsAnOversizedRecordAcrossAppends()
+    {
+        using var directory = new TemporaryDirectory("local-usage-oversized");
+        var sessionPath = SessionPath(directory, September7);
+        File.WriteAllText(sessionPath, new string('x', 8 * 1024 * 1024 + 1), Utf8WithoutByteOrderMark);
+        var reader = new LocalTokenUsageReader(directory.RootPath);
+
+        Assert.Null(reader.ReadToday(September7, TestContext.Current.CancellationToken));
+
+        File.AppendAllText(sessionPath, "\n" + UsageLine(September7, 42) + "\n", Utf8WithoutByteOrderMark);
+        Assert.Equal(42, reader.ReadToday(September7, TestContext.Current.CancellationToken));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

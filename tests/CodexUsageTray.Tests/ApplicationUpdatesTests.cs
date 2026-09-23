@@ -370,8 +370,7 @@ public sealed class ApplicationUpdatesTests
 
     private static AvailableApplicationUpdate CreateAvailableUpdate() => new(
         AvailableVersion,
-        new Uri("https://example.test/CodexUsageTray.exe"),
-        new Uri("https://example.test/SHA256SUMS.txt"));
+        new Uri("https://example.test/CodexUsageTray.exe"));
 
     private sealed class ScriptedSource : IApplicationUpdateSource
     {

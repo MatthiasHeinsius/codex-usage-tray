@@ -494,7 +494,8 @@ internal sealed class WinFormsApplicationShell :
     {
         var confirmed = MessageBox.Show(
             "Your Codex sign-in expired and could not be refreshed automatically.\n\n"
-                + "Codex Usage Tray can open ChatGPT in your browser so you can sign in again. Continue?",
+                + "Codex Usage Tray can open this sign-in page in your browser:\n\n"
+                + $"{signInPage.AbsoluteUri}\n\nContinue?",
             "Reconnect Codex",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Question,

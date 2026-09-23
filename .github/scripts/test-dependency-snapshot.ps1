@@ -20,10 +20,14 @@ foreach ($manifest in $snapshot.manifests.Values) {
     }
     if ($manifest.file.source_location -eq 'src/CodexUsageTray/CodexUsageTray.csproj') {
         $applicationManifests++
-        # The current application ships only these two runtime packs, not ASP.NET or ILLink.
+        # The application ships the runtime packs and release-attestation verifier packages.
         $expectedRuntime = @(
             "Microsoft.NETCore.App.Runtime.win-x64/$runtimeVersion"
             "Microsoft.WindowsDesktop.App.Runtime.win-x64/$runtimeVersion"
+            'Sigstore/0.5.0'
+            'Tuf/0.5.0'
+            'NSec.Cryptography/25.4.0'
+            'libsodium/1.0.20.1'
         )
         $actualRuntime = @($resolved.Keys | Where-Object { $resolved[$_].scope -eq 'runtime' })
         if (Compare-Object $expectedRuntime $actualRuntime) { throw "Unexpected runtime inventory in $($manifest.name)." }
