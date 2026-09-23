@@ -493,7 +493,7 @@ internal sealed class UsagePopupForm : Form
     {
         Text = text,
         Font = new Font("Segoe UI Semibold", 10f, FontStyle.Bold),
-        AutoSize = true
+        TextAlign = ContentAlignment.MiddleLeft
     };
 
     private static Label MakeValueLabel() => new()
@@ -507,7 +507,8 @@ internal sealed class UsagePopupForm : Form
     {
         Text = text,
         ForeColor = Color.FromArgb(148, 163, 184),
-        AutoEllipsis = true
+        AutoEllipsis = true,
+        TextAlign = ContentAlignment.MiddleLeft
     };
 
     private static Label MakeTokenValue() => new()
@@ -580,11 +581,12 @@ internal sealed class UsagePopupForm : Form
         public void LayoutCompact(int row, bool sharesRefreshRow)
         {
             var top = 86 + (36 * row);
-            Title.Location = new Point(ContentInset, top);
             Indicator.Location = new Point(180, top - 2);
             Indicator.Size = new Size(16, 24);
             Value.Location = new Point(198, top - 2);
             Value.Size = new Size(76, LabelHeight(Value, 24));
+            Title.Location = new Point(ContentInset, top);
+            Title.Size = new Size(Indicator.Left - ContentInset - 4, Value.Height - 4);
             Reset.Location = new Point(282, top);
             Reset.Size = new Size(sharesRefreshRow ? 82 : 126, LabelHeight(Reset, 24));
         }
@@ -592,11 +594,12 @@ internal sealed class UsagePopupForm : Form
         public void LayoutExtended(int section)
         {
             var top = 86 + (90 * section);
-            Title.Location = new Point(ContentInset, top);
             Indicator.Size = new Size(16, 24);
             Value.Size = new Size(Math.Max(96, Value.PreferredWidth), LabelHeight(Value, 24));
             Value.Location = new Point(PopupWidth - ContentInset - Value.Width, top);
             Indicator.Location = new Point(Value.Left - Indicator.Width - 4, top);
+            Title.Location = new Point(ContentInset, top);
+            Title.Size = new Size(Indicator.Left - ContentInset - 4, Value.Height);
             Reset.Location = new Point(ContentInset, top + 31);
             Reset.Size = new Size(ContentWidth, LabelHeight(Reset, 24));
             Bar.Location = new Point(ContentInset, top + 59);
