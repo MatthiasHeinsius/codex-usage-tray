@@ -240,15 +240,78 @@ public sealed class UsagePopupFormTests
                 <= ControlWithText<Label>(popup, "100% left").Width);
             Assert.True(ControlWithText<Label>(popup, "42% left").PreferredWidth
                 <= ControlWithText<Label>(popup, "42% left").Width);
+            var resetIcons = popup.Controls.OfType<Label>()
+                .Where(label => label.Text == "↶")
+                .OrderBy(label => label.Top)
+                .ToArray();
+            var extendedResets = popup.Controls.OfType<Label>()
+                .Where(label => label.Text.StartsWith("resets in ", StringComparison.Ordinal))
+                .OrderBy(label => label.Top)
+                .ToArray();
+            var resetToolTip = (ToolTip)typeof(UsagePopupForm)
+                .GetField("toolTip", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(popup)!;
+            Assert.Equal(2, resetIcons.Length);
+            Assert.Equal(2, extendedResets.Length);
+            Assert.True(string.IsNullOrEmpty(resetToolTip.GetToolTip(extendedResets[0])));
+            Assert.All(resetIcons, icon => Assert.True(icon.Visible));
+            Assert.Equal(ControlWithText<Label>(popup, "5-hour limit").Left + 3, resetIcons[0].Left);
+            Assert.Equal(ControlWithText<Label>(popup, "Weekly limit").Left + 3, resetIcons[1].Left);
+            Assert.Equal(resetIcons[0].Right + 4, extendedResets[0].Left);
+            Assert.Equal(resetIcons[1].Right + 4, extendedResets[1].Left);
+            Assert.True(extendedResets[0].PreferredWidth <= extendedResets[0].Width);
+            Assert.True(extendedResets[1].PreferredWidth <= extendedResets[1].Width);
+            var extendedFiveHourIndicatorLeft = ControlWithAccessibleName<Control>(
+                popup, "5-hour limit pace: Using allowance slower than the window passes").Left;
+            var extendedWeeklyIndicatorLeft = ControlWithAccessibleName<Control>(
+                popup, "Weekly limit pace: Using allowance faster than the window passes").Left;
+            var extendedFiveHourValue = ControlWithText<Label>(popup, "100% left");
+            var extendedWeeklyValue = ControlWithText<Label>(popup, "42% left");
+            var fiveHourPercentLeft = extendedFiveHourValue.Right - extendedFiveHourValue.PreferredWidth;
+            var weeklyPercentLeft = extendedWeeklyValue.Right - extendedWeeklyValue.PreferredWidth;
             popup.SetViewModeForScreenshot(compact: true);
 
-            Assert.True(ControlWithAccessibleName<Control>(
-                popup, "5-hour limit pace: Using allowance slower than the window passes").Visible);
-            Assert.True(ControlWithAccessibleName<Control>(
-                popup, "Weekly limit pace: Using allowance faster than the window passes").Visible);
-            Assert.True(ControlWithAccessibleName<Control>(
-                popup, "5-hour limit pace: Using allowance slower than the window passes").Right
-                <= ControlWithText<Label>(popup, "100% left").Left);
+            var fiveHourIndicator = ControlWithAccessibleName<Control>(
+                popup, "5-hour limit pace: Using allowance slower than the window passes");
+            var weeklyIndicator = ControlWithAccessibleName<Control>(
+                popup, "Weekly limit pace: Using allowance faster than the window passes");
+            var fiveHourReset = ControlWithText<Label>(popup, "3h 12m");
+            var weeklyReset = ControlWithText<Label>(popup, "3d 8h");
+            var weeklyValue = ControlWithText<Label>(popup, "42%");
+            Assert.Equal(weeklyValue.PreferredHeight + 2, weeklyValue.Height);
+            Assert.Equal(weeklyValue.Bottom + 20, popup.ClientSize.Height);
+            Assert.Equal(4, fiveHourReset.Padding.Top);
+            Assert.Equal(4, weeklyReset.Padding.Top);
+            Assert.Equal(presentation.Popup.FiveHour.ResetTooltipText, resetToolTip.GetToolTip(fiveHourReset));
+            Assert.Equal(presentation.Popup.Weekly.ResetTooltipText, resetToolTip.GetToolTip(weeklyReset));
+            Assert.Equal(presentation.Popup.FiveHour.ResetTooltipText, resetToolTip.GetToolTip(resetIcons[0]));
+            Assert.Equal(presentation.Popup.FiveHour.ResetTooltipText, fiveHourReset.AccessibleDescription);
+            Assert.True(fiveHourIndicator.Visible);
+            Assert.True(weeklyIndicator.Visible);
+            Assert.Equal(extendedFiveHourIndicatorLeft, fiveHourIndicator.Left);
+            Assert.Equal(extendedWeeklyIndicatorLeft, weeklyIndicator.Left);
+            Assert.Equal(fiveHourPercentLeft, ControlWithText<Label>(popup, "100%").Left);
+            Assert.Equal(weeklyPercentLeft, ControlWithText<Label>(popup, "42%").Left);
+            Assert.True(ControlWithText<Label>(popup, "5-hour limit").Right < fiveHourReset.Left);
+            Assert.True(ControlWithText<Label>(popup, "Weekly limit").Right < weeklyReset.Left);
+            Assert.All(resetIcons, icon => Assert.True(icon.Visible));
+            Assert.True(ControlWithText<Label>(popup, "5-hour limit").Right < resetIcons[0].Left);
+            Assert.True(ControlWithText<Label>(popup, "Weekly limit").Right < resetIcons[1].Left);
+            Assert.True(resetIcons[0].Right < fiveHourReset.Left);
+            Assert.True(resetIcons[1].Right < weeklyReset.Left);
+            Assert.True(fiveHourReset.Right < fiveHourIndicator.Left);
+            Assert.True(weeklyReset.Right < weeklyIndicator.Left);
+            Assert.True(fiveHourReset.PreferredWidth <= fiveHourReset.Width);
+            Assert.True(weeklyReset.PreferredWidth <= weeklyReset.Width);
+            var refreshButton = ControlWithAccessibleName<RefreshIconButton>(popup, "Refresh usage");
+            Assert.True(ControlWithText<Label>(popup, "42%").Right < refreshButton.Left);
+            Assert.False(refreshButton.Bounds.IntersectsWith(weeklyReset.Bounds));
+            Assert.Equal(20, popup.ClientSize.Height - refreshButton.Bottom);
+            Assert.Equal(20, popup.ClientSize.Height - Math.Max(
+                ControlWithText<Label>(popup, "42%").Bottom,
+                weeklyReset.Bottom));
+            popup.SetViewModeForScreenshot(compact: false);
+            Assert.True(string.IsNullOrEmpty(resetToolTip.GetToolTip(extendedResets[0])));
         });
     }
 
@@ -285,7 +348,7 @@ public sealed class UsagePopupFormTests
                 popup.Controls.OfType<Label>().Where(label => label.Text == "Unavailable"),
                 label => Assert.True(label.PreferredWidth <= label.Width));
             Assert.All(
-                popup.Controls.OfType<Label>().Where(label => !label.AutoSize),
+                popup.Controls.OfType<Label>().Where(label => !label.AutoSize && label.Text != "↶"),
                 label => Assert.True(
                     label.Height - TextRenderer.MeasureText(
                         label.Text,
@@ -329,6 +392,11 @@ public sealed class UsagePopupFormTests
             var activeStatus = ControlWithText<Label>(popup, "Plus · GPT-6 Sol");
             Assert.True(activeStatus.Visible);
             Assert.True(activeStatus.PreferredWidth <= activeStatus.Width);
+            if (compact)
+            {
+                Assert.False(activeStatus.Bounds.IntersectsWith(
+                    ControlWithAccessibleName<RefreshIconButton>(popup, "Refresh usage").Bounds));
+            }
 
             popup.SetActivityForScreenshot(new CodexSessionActivity(now, CodexModel.Unknown));
             Assert.NotNull(ControlWithText<Label>(popup, "Plus · unknown model"));
@@ -414,7 +482,7 @@ public sealed class UsagePopupFormTests
             var fiveHourTitle = ControlWithText<Label>(popup, "5-hour limit");
             var weeklyTitle = ControlWithText<Label>(popup, "Weekly limit");
             var fiveHourValue = popup.Controls.OfType<Label>()
-                .Where(label => label.Text == "Unavailable" && label.TextAlign == ContentAlignment.MiddleRight)
+                .Where(label => label.Text == "—" && label.Visible)
                 .OrderBy(label => label.Top)
                 .First();
             Assert.True(refreshButton.Visible);
@@ -427,7 +495,7 @@ public sealed class UsagePopupFormTests
             Assert.Equal(fiveHourTitle.Left, weeklyTitle.Left);
             Assert.Equal(popup.Padding.Right, popup.ClientSize.Width - refreshButton.Right);
             Assert.Equal(popup.Padding.Bottom, popup.ClientSize.Height - refreshButton.Bottom);
-            Assert.Equal(extendedRefreshInset, popup.ClientSize.Height - refreshButton.Bottom);
+            Assert.False(refreshButton.Bounds.IntersectsWith(fiveHourValue.Bounds));
             Assert.True(weeklyReset.Right + 10 <= refreshButton.Left);
 
             var screen = Screen.FromControl(popup);
@@ -437,6 +505,7 @@ public sealed class UsagePopupFormTests
             popup.Controls.OfType<ViewModeIconButton>().Single().PerformClick();
 
             Assert.Equal(snappedTop, popup.Top);
+            Assert.Equal(extendedRefreshInset, popup.ClientSize.Height - refreshButton.Bottom);
         });
     }
 
@@ -540,6 +609,7 @@ public sealed class UsagePopupFormTests
             Assert.Equal(86, weeklyTitle.Top);
             Assert.True(popup.ClientSize.Height < extendedHeight);
             Assert.Equal(20, popup.ClientSize.Height - refreshButton.Bottom);
+            Assert.False(refreshButton.Bounds.IntersectsWith(ControlWithText<Label>(popup, "60%").Bounds));
         });
     }
 
