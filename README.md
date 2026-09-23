@@ -9,12 +9,15 @@ This is an unofficial community project. It is not affiliated with OpenAI.
 ## What it shows
 
 - Remaining 5-hour and weekly allowances reported for the account, with their reset times
+- Whether each allowance is being used faster or slower than its window passes
 - The signed-in subscription, active Codex model, and recent inference activity
 - Inference tokens used today
 - Total inference tokens reported for the account
 - Live countdowns in a compact view
 
 The tray icon uses an outer ring for the 5-hour allowance and an inner ring for the weekly allowance. When the account reports only one allowance, that allowance uses a single outer ring. The popup omits allowances the account does not report and resizes to fit. The rings and extended-view bars change color continuously from green at 100% remaining through yellow near 50%, orange at 25%, and red at 10%. The app refreshes the limits and countdowns once a minute. It refreshes daily and lifetime activity when you open or switch to the extended view.
+
+The icon beside each allowance compares its used percentage with the percentage of the window that has elapsed. An orange up arrow means use is more than five percentage points ahead of time; a green down arrow means it is more than five points behind. A gray right arrow means the difference is within five points. A clock appears when the reset time has passed. The icon is hidden when there is not enough information to compare pace. Hover over it for a description.
 
 The popup's pixel-art indicator shows Luna, Terra, Sol, or Astra when it can identify the active model from local Codex session logs. Its ring rotates at a speed based on allowance use relative to elapsed time, including while Codex is idle. A separate glow shows recent token activity and fades over 15 seconds. When the allowance reaches zero, the ring shows a repeating red flash. During the final 15 minutes before reset, a double flash in the green used for a full ring takes priority. After reset, it flashes cyan until the new window is activated and for five minutes afterward. The account line shows the subscription with the active model and its version, such as `GPT-6 Astra`, or `idle` in both views.
 
