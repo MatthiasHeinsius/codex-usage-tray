@@ -147,6 +147,116 @@ public sealed class CodexSessionActivityMonitorTests
         Assert.Equal(userTokenAt, monitor.Current.LastTokenAt);
     }
 
+    [Theory]
+    [InlineData("codex-auto-review")]
+    [InlineData("gpt-6-luna")]
+    public async Task FindsStartupActivityBeyondTwelveIneligibleSessions(string newerModel)
+    {
+        using var directory = new TemporaryDirectory("session-activity-startup-selection");
+        var now = DateTimeOffset.Now;
+        var userSession = SessionPath(directory, "user.jsonl");
+        var userTokenAt = now.AddMinutes(-1);
+        File.WriteAllText(userSession,
+            ModelLine(userTokenAt, "gpt-6-astra") + "\n" + TokenLine(userTokenAt) + "\n", Utf8);
+        File.SetLastWriteTimeUtc(userSession, userTokenAt.UtcDateTime);
+        for (var index = 0; index < 12; index++)
+        {
+            var path = SessionPath(directory, $"newer-{index}.jsonl");
+            File.WriteAllText(path, ModelLine(now, newerModel) + "\n" +
+                (newerModel == "codex-auto-review" ? TokenLine(now) + "\n" : string.Empty), Utf8);
+            File.SetLastWriteTimeUtc(path, now.UtcDateTime);
+        }
+
+        using var monitor = new CodexSessionActivityMonitor(directory.RootPath);
+
+        await ObserveChangeAsync(monitor, expected: new CodexSessionActivity(userTokenAt, CodexModel.Astra, "6"));
+    }
+
+    [Theory]
+    [InlineData("unrelated.jsonl")]
+    [InlineData("sessions-other/unrelated.jsonl")]
+    [InlineData("archived_sessions-other/unrelated.jsonl")]
+    [InlineData("other/sessions/unrelated.jsonl")]
+    public async Task IgnoresLiveActivityOutsideSessionDirectories(string relativePath)
+    {
+        using var directory = new TemporaryDirectory("session-activity-directory-scope");
+        var now = DateTimeOffset.Now;
+        var session = SessionPath(directory);
+        File.WriteAllText(session, ModelLine(now, "gpt-6-astra") + "\n" + TokenLine(now) + "\n", Utf8);
+        var unrelated = directory.FilePath(relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(unrelated)!);
+        using var monitor = new CodexSessionActivityMonitor(directory.RootPath);
+        await ObserveChangeAsync(monitor, expected: new CodexSessionActivity(now, CodexModel.Astra, "6"));
+
+        var unexpectedActivity = new TaskCompletionSource<CodexSessionActivity>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        monitor.Changed += (_, _) =>
+        {
+            if (monitor.Current is { Model: CodexModel.Luna } unexpected)
+            {
+                unexpectedActivity.TrySetResult(unexpected);
+            }
+        };
+        var activity = await ObserveChangeAsync(monitor, () =>
+        {
+            File.WriteAllText(unrelated,
+                ModelLine(now.AddMinutes(1), "gpt-6-luna") + "\n" + TokenLine(now.AddMinutes(1)) + "\n", Utf8);
+            File.AppendAllText(session, TokenLine(now.AddSeconds(1)) + "\n", Utf8);
+        });
+
+        Assert.Equal(new CodexSessionActivity(now.AddSeconds(1), CodexModel.Astra, "6"), activity);
+        // The unrelated path may arrive in a later watcher batch than the legitimate append.
+        var quietPeriod = Task.Delay(TimeSpan.FromMilliseconds(250), TestContext.Current.CancellationToken);
+        Assert.Same(quietPeriod, await Task.WhenAny(quietPeriod, unexpectedActivity.Task));
+        await quietPeriod;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StartupKeepsRecentAgeAndUserSessionLimits(bool outsideAgeLimit)
+    {
+        using var directory = new TemporaryDirectory("session-activity-startup-limits");
+        var now = DateTimeOffset.Now;
+        var recentCount = outsideAgeLimit ? 1 : 12;
+        for (var index = 0; index < recentCount; index++)
+        {
+            var path = SessionPath(directory, $"user-{index}.jsonl");
+            File.WriteAllText(path, TokenLine(now.AddSeconds(-index)) + "\n", Utf8);
+            File.SetLastWriteTimeUtc(path, now.AddMinutes(-index).UtcDateTime);
+        }
+        var oldSession = SessionPath(directory, "old.jsonl");
+        File.WriteAllText(oldSession, TokenLine(now.AddMinutes(2)) + "\n", Utf8);
+        File.SetLastWriteTimeUtc(oldSession, (outsideAgeLimit ? now.AddDays(-3) : now.AddHours(-1)).UtcDateTime);
+
+        using var monitor = new CodexSessionActivityMonitor(directory.RootPath);
+
+        await ObserveChangeAsync(monitor, expected: new CodexSessionActivity(now, CodexModel.Unknown));
+    }
+
+    [Theory]
+    [InlineData("sessions")]
+    [InlineData("archived_sessions")]
+    public async Task TracksFilesMovedIntoAndOutOfSessionDirectories(string directoryName)
+    {
+        using var directory = new TemporaryDirectory("session-activity-move-scope");
+        var now = DateTimeOffset.Now;
+        var fallback = SessionPath(directory);
+        File.WriteAllText(fallback, TokenLine(now) + "\n", Utf8);
+        var outside = directory.FilePath("outside.jsonl");
+        File.WriteAllText(outside,
+            ModelLine(now.AddSeconds(1), "gpt-6-luna") + "\n" + TokenLine(now.AddSeconds(1)) + "\n", Utf8);
+        using var monitor = new CodexSessionActivityMonitor(directory.RootPath);
+        var expectedFallback = new CodexSessionActivity(now, CodexModel.Unknown);
+        await ObserveChangeAsync(monitor, expected: expectedFallback);
+        var inside = directory.FilePath(Path.Combine(directoryName, "moved.jsonl"));
+        Directory.CreateDirectory(Path.GetDirectoryName(inside)!);
+
+        await ObserveChangeAsync(monitor, () => File.Move(outside, inside),
+            new CodexSessionActivity(now.AddSeconds(1), CodexModel.Luna, "6"));
+        await ObserveChangeAsync(monitor, () => File.Move(inside, outside), expectedFallback);
+    }
+
     [Fact]
     public async Task ReplacesAnOlderKnownModelWithAnUnrecognizedCurrentModel()
     {
