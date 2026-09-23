@@ -7,7 +7,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>CodexUsageTray</AssemblyName>
     <RootNamespace>CodexUsageTray</RootNamespace>
-    <Version>2.1.0</Version>
+    <Version>2.2.0</Version>
     <AssemblyTitle>Codex Usage Tray</AssemblyTitle>
     <Product>Codex Usage Tray</Product>
     <Authors>Matthias Heinsius</Authors>
