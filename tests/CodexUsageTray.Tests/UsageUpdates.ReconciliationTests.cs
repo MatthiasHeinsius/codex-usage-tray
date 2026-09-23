@@ -45,7 +45,8 @@ public sealed partial class UsageUpdatesTests
                     new AccountActivityObservation.Observed(
                         LifetimeTokens: 123_456_789,
                         TodayTokens: 987_654,
-                        LatestDailyBucketDate: DateOnly.FromDateTime(activityObservedAt.LocalDateTime))),
+                        LatestDailyBucketDate: DateOnly.FromDateTime(activityObservedAt.LocalDateTime)),
+                    AccountEmail: "user@example.com"),
                 Local: null),
             new UsageObservations(
                 new AccountUsageObservation(
@@ -53,7 +54,8 @@ public sealed partial class UsageUpdatesTests
                     [new AllowanceWindow(25, TimeSpan.FromHours(5), allowanceObservedAt.AddHours(3))],
                     "team",
                     "Codex",
-                    new AccountActivityObservation.NotRequested()),
+                    new AccountActivityObservation.NotRequested(),
+                    AccountEmail: "USER@example.com"),
                 Local: null));
 
         Assert.Equal("Team", presentation.Popup.AccountStatus);
@@ -63,6 +65,61 @@ public sealed partial class UsageUpdatesTests
         Assert.Equal(
             $"Updated {allowanceObservedAt.LocalDateTime.ToString("t", CultureInfo.InvariantCulture)}",
             presentation.Popup.UpdatedText);
+    }
+
+    [Fact]
+    public async Task RoutineUpdateClearsActivityAfterAccountSwitch()
+    {
+        var observedAt = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
+        var presentation = await PublishAsync(
+            new UsageObservations(
+                new AccountUsageObservation(
+                    observedAt,
+                    [],
+                    "plus",
+                    "Codex",
+                    new AccountActivityObservation.Observed(10_000, 2_000, new DateOnly(2026, 9, 7)),
+                    AccountEmail: "first@example.com"),
+                Local: null),
+            new UsageObservations(
+                new AccountUsageObservation(
+                    observedAt.AddMinutes(1),
+                    [],
+                    "plus",
+                    "Codex",
+                    new AccountActivityObservation.NotRequested(),
+                    AccountEmail: "second@example.com"),
+                Local: null));
+
+        Assert.Equal("Unavailable", presentation.Popup.LifetimeTokens);
+        Assert.Equal("Unavailable", presentation.Popup.TodayTokens);
+    }
+
+    [Fact]
+    public async Task RoutineUpdateClearsActivityWhenAccountIdentityIsUnknown()
+    {
+        var observedAt = new DateTimeOffset(2026, 9, 7, 12, 0, 0, TimeSpan.FromHours(2));
+        var presentation = await PublishAsync(
+            new UsageObservations(
+                new AccountUsageObservation(
+                    observedAt,
+                    [],
+                    "plus",
+                    "Codex",
+                    new AccountActivityObservation.Observed(10_000, 2_000, new DateOnly(2026, 9, 7)),
+                    AccountEmail: "user@example.com"),
+                Local: null),
+            new UsageObservations(
+                new AccountUsageObservation(
+                    observedAt.AddMinutes(1),
+                    [],
+                    "plus",
+                    "Codex",
+                    new AccountActivityObservation.NotRequested()),
+                Local: null));
+
+        Assert.Equal("Unavailable", presentation.Popup.LifetimeTokens);
+        Assert.Equal("Unavailable", presentation.Popup.TodayTokens);
     }
 
     [Fact]
@@ -80,7 +137,8 @@ public sealed partial class UsageUpdatesTests
                     new AccountActivityObservation.Observed(
                         LifetimeTokens: 10_000,
                         TodayTokens: null,
-                        LatestDailyBucketDate: new DateOnly(2026, 9, 6))),
+                        LatestDailyBucketDate: new DateOnly(2026, 9, 6)),
+                    AccountEmail: "user@example.com"),
                 new LocalUsageObservation(new DateOnly(2026, 9, 7), 2_000)),
             new UsageObservations(
                 new AccountUsageObservation(
@@ -88,7 +146,8 @@ public sealed partial class UsageUpdatesTests
                     [],
                     "plus",
                     "Codex",
-                    new AccountActivityObservation.NotRequested()),
+                    new AccountActivityObservation.NotRequested(),
+                    AccountEmail: "user@example.com"),
                 Local: null));
 
         Assert.Equal("12K tokens", presentation.Popup.LifetimeTokens);

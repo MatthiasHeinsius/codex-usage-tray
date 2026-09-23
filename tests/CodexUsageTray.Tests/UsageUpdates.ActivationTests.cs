@@ -201,6 +201,76 @@ public sealed partial class UsageUpdatesTests
     }
 
     [Fact]
+    public async Task AccountSwitchDoesNotReportAnAllowanceTransition()
+    {
+        var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
+        var reset = now.AddHours(5);
+        var settings = new ActivationSettings { ActivationEnabled = false, NotificationsEnabled = true };
+        await using var updates = CreateActivationUpdates(
+            new ActivationObservationReader(
+                ObserveAllowance(now, 99, reset, accountEmail: "first@example.com"),
+                ObserveAllowance(now.AddMinutes(1), 100, reset, accountEmail: "second@example.com"),
+                ObserveAllowance(now.AddMinutes(2), 99, reset, accountEmail: "second@example.com"),
+                ObserveAllowance(now.AddMinutes(3), 100, reset, accountEmail: "second@example.com")),
+            new ActivationRecordingCommand(), settings, new ActivationTimeProvider(now));
+
+        await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+        var switched = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+        await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+        var usedUp = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+
+        Assert.Empty(switched.Notices);
+        Assert.Equal("5-hour allowance used up.", Assert.Single(usedUp.Notices).Message);
+    }
+
+    [Fact]
+    public async Task AccountSwitchDiscardsPendingActivation()
+    {
+        var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
+        var originalReset = now.AddHours(5);
+        var newReset = originalReset.AddMinutes(1);
+        var settings = new ActivationSettings();
+        var command = new ActivationRecordingCommand();
+        var time = new ActivationTimeProvider(now);
+        await using var updates = CreateActivationUpdates(
+            new ActivationObservationReader(
+                ObserveAllowance(now, 0, originalReset, accountEmail: "first@example.com"),
+                ObserveAllowance(now.AddMinutes(1), 0, newReset, accountEmail: "second@example.com")),
+            command, settings, time);
+
+        await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+        time.Advance(TimeSpan.FromMinutes(1));
+        await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, command.CallCount);
+        Assert.Null(settings.ReadActivatedReset(AllowanceWindowKind.FiveHour));
+    }
+
+    [Fact]
+    public async Task AccountSwitchDuringActivationRecoveryDiscardsOldTarget()
+    {
+        var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
+        var originalReset = now.AddHours(5);
+        var newReset = originalReset.AddMinutes(1);
+        var settings = new ActivationSettings();
+        var command = new ActivationRecordingCommand();
+        command.FailNext(new IOException("Activation failed."));
+        await using var updates = CreateActivationUpdates(
+            new ActivationObservationReader(
+                ObserveAllowance(now, 0, originalReset, accountEmail: "first@example.com"),
+                ObserveAllowance(now.AddSeconds(1), 0, newReset, accountEmail: "second@example.com"),
+                ObserveAllowance(now.AddMinutes(1), 0, newReset, accountEmail: "second@example.com")),
+            command, settings, new ActivationTimeProvider(now));
+
+        var recovered = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+        await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+
+        Assert.Empty(recovered.Notices);
+        Assert.Equal(2, command.CallCount);
+        Assert.Null(settings.ReadActivatedReset(AllowanceWindowKind.FiveHour));
+    }
+
+    [Fact]
     public async Task ConcurrentUpdatesShareOneActivationCommand()
     {
         var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
@@ -636,7 +706,8 @@ public sealed partial class UsageUpdatesTests
         int fiveHourUsedPercent,
         DateTimeOffset? fiveHourReset,
         int? weeklyUsedPercent = null,
-        DateTimeOffset? weeklyReset = null) =>
+        DateTimeOffset? weeklyReset = null,
+        string? accountEmail = null) =>
         new(
             new AccountUsageObservation(
                 observedAt,
@@ -649,7 +720,8 @@ public sealed partial class UsageUpdatesTests
                 }.OfType<AllowanceWindow>().ToArray(),
                 "plus",
                 "Codex",
-                new AccountActivityObservation.NotRequested()),
+                new AccountActivityObservation.NotRequested(),
+                accountEmail),
             Local: null);
 
     private static UsageObservations ObserveWeeklyAllowance(

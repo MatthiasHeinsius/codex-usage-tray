@@ -6,6 +6,8 @@ This context presents the user's current Codex allowance and inference activity 
 
 **Usage Snapshot**:
 The best currently known usage state, combining account data, retained activity from an earlier refresh, and local activity when needed.
+Activity from an earlier refresh is retained only when the current and previous observations identify the same account email.
+A detected account identity change clears pending activation attempts and starts a new allowance transition baseline.
 _Avoid_: Raw account response, usage response
 
 **Usage Observation**:
