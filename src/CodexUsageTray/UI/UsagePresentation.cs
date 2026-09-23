@@ -341,7 +341,7 @@ internal abstract record UsagePresentation(
                 return $"{AccountStatus} · idle";
             }
 
-            return $"{AccountStatus} · using {activity.ModelDisplayName}";
+            return $"{AccountStatus} · {activity.ModelDisplayName}";
         }
     }
 
