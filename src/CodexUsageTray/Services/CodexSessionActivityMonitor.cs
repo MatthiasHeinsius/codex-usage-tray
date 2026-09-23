@@ -33,6 +33,7 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
     private readonly object readGate = new();
     private readonly HashSet<string> pendingPaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, SessionState> sessions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly string[] sessionDirectories;
     private readonly FileSystemWatcher? watcher;
     private readonly System.Threading.Timer debounceTimer;
     private CodexSessionActivity current = CodexSessionActivity.Empty;
@@ -47,6 +48,10 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(codexHome);
         codexHome = Path.GetFullPath(codexHome);
+        sessionDirectories = [
+            Path.Combine(codexHome, "sessions") + Path.DirectorySeparatorChar,
+            Path.Combine(codexHome, "archived_sessions") + Path.DirectorySeparatorChar
+        ];
         debounceTimer = new System.Threading.Timer(ProcessPendingPaths);
         if (Directory.Exists(codexHome))
         {
@@ -62,7 +67,7 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
             watcher.EnableRaisingEvents = true;
         }
 
-        ThreadPool.QueueUserWorkItem(_ => LoadRecentSessions(codexHome));
+        ThreadPool.QueueUserWorkItem(_ => LoadRecentSessions());
     }
 
     public event EventHandler? Changed;
@@ -95,7 +100,7 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
         debounceTimer.Dispose();
     }
 
-    private void LoadRecentSessions(string codexHome)
+    private void LoadRecentSessions()
     {
         if (Volatile.Read(ref disposed))
         {
@@ -104,9 +109,8 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
 
         var cutoff = DateTime.UtcNow - RecentFileAge;
         var candidates = new List<FileInfo>();
-        foreach (var directoryName in new[] { "sessions", "archived_sessions" })
+        foreach (var directory in sessionDirectories)
         {
-            var directory = Path.Combine(codexHome, directoryName);
             if (!Directory.Exists(directory))
             {
                 continue;
@@ -129,8 +133,8 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
             }
         }
 
-        ReadSessions(candidates.OrderByDescending(file => file.LastWriteTimeUtc).Take(12)
-            .Select(file => file.FullName));
+        ReadSessions(candidates.OrderByDescending(file => file.LastWriteTimeUtc)
+            .Select(file => file.FullName), maximumUserSessions: 12);
     }
 
     private void OnFileChanged(object sender, FileSystemEventArgs eventArgs) => Queue(eventArgs.FullPath);
@@ -143,6 +147,11 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
 
     private void Queue(string path)
     {
+        if (!sessionDirectories.Any(directory => path.StartsWith(directory, StringComparison.OrdinalIgnoreCase)))
+        {
+            return;
+        }
+
         lock (gate)
         {
             if (disposed)
@@ -172,11 +181,12 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
         ReadSessions(paths);
     }
 
-    private void ReadSessions(IEnumerable<string> paths)
+    private void ReadSessions(IEnumerable<string> paths, int maximumUserSessions = int.MaxValue)
     {
         // Timer callbacks can overlap; keep ingestion and publication in the same order.
         lock (readGate)
         {
+            var userSessions = 0;
             foreach (var path in paths)
             {
                 if (Volatile.Read(ref disposed))
@@ -185,10 +195,16 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
                 }
 
                 ReadSession(path);
+                // Review-only and tokenless sessions must not consume the startup selection.
+                if (sessions.TryGetValue(path, out var session) && session.HasUserActivity
+                    && ++userSessions >= maximumUserSessions)
+                {
+                    break;
+                }
             }
 
             var latest = sessions.Values
-                .Where(session => session.LastTokenAt is not null && session.Model?.ExcludeSession != true)
+                .Where(session => session.HasUserActivity)
                 .MaxBy(session => session.LastTokenAt);
             var activity = latest is null
                 ? CodexSessionActivity.Empty
@@ -467,7 +483,10 @@ internal sealed class CodexSessionActivityMonitor : IDisposable
         ObservedModel? Model,
         DateTimeOffset? LastTokenAt,
         long RecordStart = 0,
-        byte[]? Fingerprint = null);
+        byte[]? Fingerprint = null)
+    {
+        public bool HasUserActivity => LastTokenAt is not null && Model?.ExcludeSession != true;
+    }
 
     private sealed record ObservedModel(
         DateTimeOffset ObservedAt,
