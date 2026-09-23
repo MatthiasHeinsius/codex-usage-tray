@@ -282,6 +282,10 @@ internal sealed class UsagePopupForm : Form
         var weeklyVisible = displayedPresentation?.Weekly.IsVisible ?? true;
         var visibleAllowanceCount = (fiveHourVisible ? 1 : 0) + (weeklyVisible ? 1 : 0);
         compactView = compact;
+        if (displayedPresentation is not null)
+        {
+            RenderPresentation(displayedPresentation);
+        }
 
         statusLabel.Visible = true;
         statusLabel.Location = new Point(80, 50);
@@ -385,11 +389,6 @@ internal sealed class UsagePopupForm : Form
         }
 
         toolTip.SetToolTip(viewModeButton, compact ? "Show extended view" : "Show compact view");
-        if (displayedPresentation is not null)
-        {
-            RenderPresentation(displayedPresentation);
-        }
-
         Invalidate(invalidateChildren: true);
         Update();
     }
@@ -588,10 +587,10 @@ internal sealed class UsagePopupForm : Form
         {
             var top = 86 + (90 * section);
             Title.Location = new Point(ContentInset, top);
-            Indicator.Location = new Point(294, top);
             Indicator.Size = new Size(16, 24);
-            Value.Location = new Point(258, top);
-            Value.Size = new Size(150, LabelHeight(Value, 24));
+            Value.Size = new Size(Math.Max(96, Value.PreferredWidth), LabelHeight(Value, 24));
+            Value.Location = new Point(PopupWidth - ContentInset - Value.Width, top);
+            Indicator.Location = new Point(Value.Left - Indicator.Width - 4, top);
             Reset.Location = new Point(ContentInset, top + 31);
             Reset.Size = new Size(ContentWidth, LabelHeight(Reset, 24));
             Bar.Location = new Point(ContentInset, top + 59);
