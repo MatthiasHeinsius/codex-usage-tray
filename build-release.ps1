@@ -26,6 +26,7 @@ try {
         -p:IncludeNativeLibrariesForSelfExtract=true `
         -p:DebugType=None `
         -p:DebugSymbols=false `
+        -p:RestoreLockedMode=true `
         -o $outputDirectory
     if ($LASTEXITCODE -ne 0) {
         throw 'Publishing the release failed.'

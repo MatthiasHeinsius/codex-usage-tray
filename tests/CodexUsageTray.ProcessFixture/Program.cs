@@ -28,6 +28,26 @@ switch (args)
         Thread.Sleep(TimeSpan.FromMilliseconds(800));
         return 0;
 
+    case ["emit", var countText]:
+        var count = int.Parse(countText, CultureInfo.InvariantCulture);
+        Console.Out.Write(new string('o', count) + "stdout end");
+        Console.Error.Write(new string('e', count) + "stderr end");
+        return 0;
+
+    case ["oversized-line", var lengthText]:
+        Console.Out.WriteLine(new string('x', int.Parse(lengthText, CultureInfo.InvariantCulture)));
+        return 0;
+
+    case ["long-diagnostic", var newline]:
+        Console.Out.WriteLine("ready");
+        Console.Out.Flush();
+        Console.Error.Write(new string('x', 5000) + "end");
+        if (bool.Parse(newline))
+        {
+            Console.Error.WriteLine();
+        }
+        return 0;
+
     default:
         Console.Error.WriteLine("Usage: CodexUsageTray.ProcessFixture hold <pid-path> | delay | single-instance <mutex-name>");
         return 2;

@@ -20,10 +20,13 @@ runs:
     - name: Restore
       shell: pwsh
       run: |
-        if (-not (Test-Path -LiteralPath .\tests\CodexUsageTray.Tests\packages.lock.json)) {
-          throw 'The test dependency lock file is missing.'
+        foreach ($lockFile in @('.\src\CodexUsageTray\packages.lock.json', '.\tests\CodexUsageTray.Tests\packages.lock.json')) {
+          if (-not (Test-Path -LiteralPath $lockFile)) {
+            throw "The dependency lock file is missing: $lockFile"
+          }
         }
-        dotnet restore .\CodexUsageTray.slnx
+        dotnet restore .\CodexUsageTray.slnx --locked-mode
+        if ($LASTEXITCODE -ne 0) { throw 'Locked dependency restore failed.' }
 
     - name: Build
       shell: pwsh

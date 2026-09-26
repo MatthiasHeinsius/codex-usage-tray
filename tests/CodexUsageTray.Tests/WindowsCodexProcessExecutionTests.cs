@@ -34,6 +34,78 @@ public sealed class WindowsCodexProcessExecutionTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public async Task CaptureKeepsOnlyTheTailOfEachLargeStream()
+    {
+        await WithCommandAsync(
+            $"""
+            @echo off
+            "{ProcessFixturePath}" emit 25000
+            """,
+            async execution =>
+            {
+                var result = await execution.CaptureAsync(
+                    string.Empty,
+                    TimeSpan.FromSeconds(5),
+                    TestContext.Current.CancellationToken);
+
+                Assert.Equal(0, result.ExitCode);
+                Assert.Equal(new string('o', 16_384 - "stdout end".Length) + "stdout end", result.StandardOutput);
+                Assert.Equal(new string('e', 16_384 - "stderr end".Length) + "stderr end", result.StandardError);
+            });
+    }
+
+    [Fact]
+    public async Task ExchangeRejectsAnOversizedProtocolLine()
+    {
+        await WithCommandAsync(
+            $"""
+            @echo off
+            "{ProcessFixturePath}" oversized-line {WindowsCodexProcessExecution.MaxProtocolLineChars + 1}
+            """,
+            async execution =>
+            {
+                var failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                    execution.ExchangeLinesAsync(
+                        string.Empty,
+                        TimeSpan.FromSeconds(20),
+                        async lines => await lines.ReadLineAsync(),
+                        TestContext.Current.CancellationToken));
+
+                Assert.Contains("oversized", failure.Message, StringComparison.Ordinal);
+            });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExchangeDrainsFinalDiagnosticsAfterTheResponse(bool newline)
+    {
+        await WithCommandAsync(
+            $"""
+            @echo off
+            "{ProcessFixturePath}" long-diagnostic {newline}
+            """,
+            async execution =>
+            {
+                ICodexLineExchange? usedLines = null;
+                await execution.ExchangeLinesAsync(
+                    string.Empty,
+                    TimeSpan.FromSeconds(5),
+                    async lines =>
+                    {
+                        usedLines = lines;
+                        Assert.Equal("ready", await lines.ReadLineAsync());
+                        return true;
+                    },
+                    TestContext.Current.CancellationToken);
+
+                Assert.NotNull(usedLines);
+                Assert.Equal(4096, usedLines.LastStandardErrorLine?.Length);
+                Assert.EndsWith("end", usedLines.LastStandardErrorLine, StringComparison.Ordinal);
+            });
+    }
+
+    [Fact]
     public async Task ExchangeLinesWritesFlushesAndReadsWithStandardErrorDiagnostics()
     {
         await WithCommandAsync(
