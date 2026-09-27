@@ -47,7 +47,7 @@ Hover over the tray icon to see both remaining percentages.
 
 ![Codex Usage Tray icon and hover text](docs/images/tray-tooltip.png)
 
-Right-click the tray icon to open the app menu.
+Right-click the tray icon to open the app menu. This example has Windows startup and update checks enabled; both are off on first launch.
 
 ![Codex Usage Tray context menu](docs/images/context-menu.png)
 

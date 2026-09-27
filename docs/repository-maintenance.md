@@ -26,6 +26,8 @@ GitHub Actions permits local actions and GitHub-owned actions. External action r
 
 ## Releases
 
+Before proposing a version bump, regenerate the README screenshots with the asset generator command in the README and review them against the current UI. Update the bug report version placeholder along with the application version.
+
 Only the repository owner can create `v*` tags. A separate ruleset prevents anyone from updating or deleting those tags. The release workflow checks that the tagged commit is already in `main` and that the tag matches the application version. Push a new version tag only after the version change and its checks have passed on `main`.
 
 The release build validates the solution and published executable before generating provenance. Only that build receives attestation and OIDC write permissions. A separate job receives `contents: write` to publish the assets. Its artifact download explicitly fails on a digest mismatch before publication. Immutable releases preserve the published tag and asset contents. The download-verification commands are in the README.
