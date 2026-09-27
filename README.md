@@ -54,17 +54,17 @@ Right-click the tray icon to open the app menu.
 ## Requirements
 
 - 64-bit Windows 10 or Windows 11
-- Codex CLI installed and signed in with your ChatGPT account
+- Codex CLI installed
 
 The portable release includes the .NET desktop runtime. It does not require a separate .NET installation or administrator access.
 
-If the cached Codex sign-in expires, the tray first asks Codex to refresh it. If that fails, the tray asks before opening a sign-in URL on `chatgpt.com` or `auth.openai.com` and shows the full URL in the prompt. If browser sign-in cannot finish, run `codex logout` and then `codex login` in a terminal before refreshing again.
+On first launch without a Codex account, the tray asks before opening a ChatGPT sign-in URL in your browser and shows the full URL in the prompt. After you finish signing in, it retries the account read through app-server. A change to the credential file restarts the connection before that read. If browser sign-in cannot finish, run `codex login` in a terminal and refresh again. If a cached sign-in expires later, the tray first asks Codex to refresh it and offers browser sign-in if that fails; run `codex logout` and then `codex login` if the expired sign-in cannot recover.
 
 ## Install
 
 Download [`CodexUsageTray.exe`](https://github.com/MatthiasHeinsius/codex-usage-tray/releases/latest/download/CodexUsageTray.exe) from the [latest GitHub release](https://github.com/MatthiasHeinsius/codex-usage-tray/releases/latest). Move it to a permanent location, then run it. You can also build the executable from source.
 
-Left-click the tray icon to open or close the usage window. A double-click performs the same toggle once. Right-click the icon to refresh the data, change startup settings, check for updates, open the Codex usage page or project README, read the licenses and notices, or exit.
+Left-click the tray icon to open or close the usage window. A double-click performs the same toggle once. Right-click the icon to refresh the data, reconnect the account, change startup settings, check for updates, open the Codex usage page or project README, read the licenses and notices, or exit.
 
 `Check for updates on startup` is off by default and appears directly below `Start with Windows` in the tray menu. Enable it to check GitHub when the app starts. Use `Check for updates` to run a check manually.
 
@@ -100,7 +100,11 @@ The pin button keeps the popup open and above other windows. While pinned, drag 
 
 ## Usage data and privacy
 
-The app runs the installed Codex CLI in app-server mode to read account usage and the signed-in account email. If the sign-in expires, it can ask Codex to refresh the session and, after confirmation, start ChatGPT browser sign-in. It does not directly read, copy, or store credentials from `%USERPROFILE%\.codex\auth.json`.
+The app starts one Codex CLI app-server process for its first usage read and keeps it open. Scheduled and manual refreshes use that connection for allowance limits, account identity, token usage, and sign-in recovery. Before an exchange, it restarts the process if the prior exchange failed, if `auth.json` changed after an external `codex login`, `codex logout`, or account switch, or if the child is 30 minutes old. It closes the process when the tray exits. Scheduled refreshes still poll once per minute; the app-server's sparse notifications do not replace account reads. The app checks only the credential file's existence, size, and modification time. It does not read, copy, or store its contents.
+
+To switch accounts, run `codex logout` and then `codex login` in a terminal. The tray detects a changed `auth.json` on its next read. An account change stored only in the OS credential manager may take until the next 30-minute process renewal to appear. Use **Reconnect account** in the tray menu to restart the tray's connection and read the current CLI account immediately. This does not sign out the CLI or other Codex clients.
+
+If the sign-in expires, the app asks Codex to refresh it and, after confirmation, can start ChatGPT browser sign-in. Authentication failures restart the connection so unfinished replies from the failed read cannot be mistaken for new replies. Optional allowance activation also uses the app-server connection. It requires a known account email and checks that the account still matches the usage read, then starts an ephemeral, read-only GPT-5.6 Luna thread, sends `Hi`, waits for the turn to complete, and unsubscribes. App-server loads applicable user configuration and exec-policy rules. The activation thread requests no tools.
 
 The activity indicator watches recent files in `%USERPROFILE%\.codex\sessions` and `%USERPROFILE%\.codex\archived_sessions` for token activity and model names. Files elsewhere under `.codex` do not supply activity. At startup, it considers files modified within the last two days, reading newest first until it finds 12 sessions with eligible token activity or runs out of candidates. It ignores internal `codex-auto-review` sessions when choosing the active model and activity state; review-only and tokenless files do not count toward the startup limit. This filter does not change inference totals. It reads these files locally and does not change them.
 
@@ -108,13 +112,13 @@ When first observing a session, the indicator reads its complete records from th
 
 The account service may publish daily token buckets a day late. If today's bucket is missing, the app totals `token_usage_record` entries from the local Codex session history. If the account total ends with yesterday's data, the app adds today's local total to the displayed inference total. Routine allowance refreshes retain activity only while the signed-in account email remains the same. If the email changes or is unavailable, retained token figures clear until the next activity read. On a new local date, today's retained activity clears while the lifetime total remains available with its observation time.
 
-A detected account change also resets pending allowance activation attempts and the allowance transition baseline, so the new account's first refresh does not produce a notification based on the previous account.
+A detected account change also resets pending allowance activation attempts and the allowance transition baseline, so the new account's first refresh does not produce a notification based on the previous account. Saved activation markers are matched to a hash of the account email, so another account cannot inherit them.
 
 The app does not upload the usage data it reads from the account or local history. Update checks contact the GitHub releases API. When you accept an update, the app downloads the executable and obtains its Release attestation from GitHub's API and trust metadata from `tuf-repo.github.com`. The optional auto-activation feature only sends the `Hi` request described above.
 
 Local history reads process complete records in chunks and retain unfinished records for the next refresh. Records larger than 8 MiB, malformed records, and invalid token counts are ignored. If a local total exceeds the supported integer range, account data remains available without that local total. Canceled or interrupted reads can retry without skipping or counting records twice.
 
-The app stores its view, update, allowance activation, and notification preferences under `HKEY_CURRENT_USER\Software\CodexUsageTray`. The optional Windows startup shortcut is in the current user's Startup folder.
+The app stores its view, update, allowance activation, and notification preferences and its account-specific activation markers under `HKEY_CURRENT_USER\Software\CodexUsageTray`. The optional Windows startup shortcut is in the current user's Startup folder.
 
 If Windows denies access to saved preferences, the app uses the first-launch defaults. A blocked popup-view save still lets you change views for the current session. Other preference changes report save failures and restore the previous menu checkmark.
 

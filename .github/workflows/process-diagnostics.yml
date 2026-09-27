@@ -13,11 +13,11 @@ on:
         type: number
         default: 3
       filter:
-        description: Optional full-suite isolation filter; include the four cancellation cases
+        description: Optional full-suite isolation filter; include both cancellation cases
         type: string
         default: ''
       cold_start:
-        description: Run the five-second deadline case before warming the fixture
+        description: Run the two-second timeout case before warming the fixture
         type: boolean
         default: true
 

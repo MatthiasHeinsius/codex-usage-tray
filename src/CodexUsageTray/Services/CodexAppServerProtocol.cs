@@ -5,11 +5,17 @@ namespace CodexUsageTray;
 internal static class CodexAppServerProtocol
 {
     private const string ExpiredAuthenticationError = "Provided authentication token is expired";
+    private const string MissingAuthenticationError = "authentication required to read rate limits";
     private static readonly string ClientVersion = typeof(CodexAppServerProtocol).Assembly
         .GetName().Version?.ToString(3) ?? "unknown";
 
     internal static async Task InitializeAsync(ICodexLineExchange lines)
     {
+        if (lines.IsInitialized)
+        {
+            return;
+        }
+
         await SendAsync(lines, new
         {
             id = 1,
@@ -28,6 +34,7 @@ internal static class CodexAppServerProtocol
 
         await ReadResponseAsync(lines, 1).ConfigureAwait(false);
         await SendAsync(lines, new { method = "initialized" }).ConfigureAwait(false);
+        lines.MarkInitialized();
     }
 
     internal static Task SendAsync(ICodexLineExchange lines, object message) =>
@@ -55,7 +62,7 @@ internal static class CodexAppServerProtocol
         var line = await lines.ReadLineAsync().ConfigureAwait(false);
         if (line is null)
         {
-            throw new InvalidOperationException("The Codex app-server closed before returning usage data.");
+            throw new CodexAppServerDisconnectedException();
         }
 
         using var document = JsonDocument.Parse(line);
@@ -76,9 +83,19 @@ internal static class CodexAppServerProtocol
         {
             throw new CodexAuthenticationExpiredException();
         }
+        if (message?.Contains(MissingAuthenticationError, StringComparison.OrdinalIgnoreCase) is true
+            || message?.Contains("not logged in", StringComparison.OrdinalIgnoreCase) is true)
+        {
+            throw new CodexAuthenticationRequiredException();
+        }
 
         throw new InvalidOperationException($"Codex returned an error: {message}");
     }
 }
 
 internal sealed class CodexAuthenticationExpiredException : InvalidOperationException;
+
+internal sealed class CodexAuthenticationRequiredException : InvalidOperationException;
+
+internal sealed class CodexAppServerDisconnectedException()
+    : InvalidOperationException("The Codex app-server closed before returning usage data.");

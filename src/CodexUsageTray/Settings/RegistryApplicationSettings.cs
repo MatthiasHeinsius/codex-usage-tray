@@ -1,4 +1,6 @@
 using System.Security;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Win32;
 
 namespace CodexUsageTray;
@@ -12,6 +14,7 @@ internal sealed class RegistryApplicationSettings : IAllowanceWindowActivationSe
     private const string FiveHourResetName = "LastStartedFiveHourReset";
     private const string WeeklyResetName = "LastStartedWeeklyReset";
     private readonly string registryPath;
+    private string? accountIdentity;
 
     internal static RegistryApplicationSettings Current { get; } = new(@"Software\CodexUsageTray");
 
@@ -55,8 +58,18 @@ internal sealed class RegistryApplicationSettings : IAllowanceWindowActivationSe
         set => WriteBoolean(NotificationsEnabledName, value);
     }
 
+    public void SetAccountIdentity(string? email) =>
+        accountIdentity = string.IsNullOrWhiteSpace(email)
+            ? null
+            : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(email.Trim().ToUpperInvariant())));
+
     public DateTimeOffset? ReadActivatedReset(AllowanceWindowKind window)
     {
+        if (!string.Equals(ReadValue(ResetAccountName(window)) as string, accountIdentity, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
         var stored = ReadValue(ResetName(window));
         var seconds = stored switch
         {
@@ -83,6 +96,14 @@ internal sealed class RegistryApplicationSettings : IAllowanceWindowActivationSe
     {
         using var key = Registry.CurrentUser.CreateSubKey(registryPath, writable: true);
         key.SetValue(ResetName(window), reset.ToUnixTimeSeconds(), RegistryValueKind.QWord);
+        if (accountIdentity is { } identity)
+        {
+            key.SetValue(ResetAccountName(window), identity, RegistryValueKind.String);
+        }
+        else
+        {
+            key.DeleteValue(ResetAccountName(window), throwOnMissingValue: false);
+        }
     }
 
     private object? ReadValue(string name)
@@ -111,4 +132,7 @@ internal sealed class RegistryApplicationSettings : IAllowanceWindowActivationSe
 
     private static string ResetName(AllowanceWindowKind window) =>
         window == AllowanceWindowKind.FiveHour ? FiveHourResetName : WeeklyResetName;
+
+    private static string ResetAccountName(AllowanceWindowKind window) =>
+        ResetName(window) + "Account";
 }

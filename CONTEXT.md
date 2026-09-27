@@ -7,7 +7,7 @@ This context presents the user's current Codex allowance and inference activity 
 **Usage Snapshot**:
 The best currently known usage state, combining account data, retained activity from an earlier refresh, and local activity when needed.
 Activity from an earlier refresh is retained only when the current and previous observations identify the same account email.
-A detected account identity change clears pending activation attempts and starts a new allowance transition baseline.
+A changed or unavailable account identity clears pending activation attempts and starts a new allowance transition baseline.
 _Avoid_: Raw account response, usage response
 
 **Usage Observation**:
@@ -48,6 +48,7 @@ _Avoid_: Expired Allowance Window, unavailable window
 
 **Allowance Window Activation**:
 The transition of an Unused Allowance Window into active use, confirmed when its reset time changes. A successful inference request alone does not confirm activation.
+The app sends activation requests only for a known account and keeps confirmed reset markers separate by account.
 _UI label_: Auto-start allowance window
 _Avoid in domain language_: Successful request, window start
 
