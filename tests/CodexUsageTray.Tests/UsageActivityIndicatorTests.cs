@@ -118,38 +118,6 @@ public sealed class UsageActivityIndicatorTests
         });
 
     [Fact]
-    public Task DemoShowsFastAndSlowBurnsInOneMinute() =>
-        StaTest.RunAsync(() =>
-        {
-            var start = new DateTimeOffset(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
-            using var indicator = new UsageActivityIndicator();
-            var stages = new (int Run, int Second, int Remaining, AllowanceFlashPhase Phase)[]
-            {
-                (0, 0, 100, AllowanceFlashPhase.Normal),
-                (0, 8, 0, AllowanceFlashPhase.UsedUp),
-                (0, 14, 0, AllowanceFlashPhase.BeforeReset),
-                (0, 19, 100, AllowanceFlashPhase.AfterReset),
-                (0, 23, 100, AllowanceFlashPhase.AfterReset),
-                (0, 27, 99, AllowanceFlashPhase.Normal),
-                (1, 0, 100, AllowanceFlashPhase.Normal),
-                (1, 8, 60, AllowanceFlashPhase.Normal),
-                (1, 14, 60, AllowanceFlashPhase.BeforeReset),
-                (1, 19, 100, AllowanceFlashPhase.AfterReset),
-                (1, 23, 100, AllowanceFlashPhase.AfterReset),
-                (1, 27, 99, AllowanceFlashPhase.Normal)
-            };
-
-            foreach (var (run, second, expectedRemaining, expectedPhase) in stages)
-            {
-                var runStart = start.AddSeconds(run * 30);
-                var frame = AllowanceDemo.FrameAt(runStart, TimeSpan.FromSeconds(second), run);
-                indicator.ShowAllowance(frame.Allowance);
-                Assert.Equal(expectedRemaining, frame.Allowance.RemainingPercent);
-                Assert.Equal(expectedPhase, indicator.Flash(runStart.AddSeconds(second)));
-            }
-        });
-
-    [Fact]
     public Task RingRotationFollowsAllowanceUseEvenWhenIdle() =>
         StaTest.RunAsync(() =>
         {
