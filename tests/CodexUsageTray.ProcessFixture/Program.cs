@@ -47,6 +47,16 @@ switch (args)
                 Console.Error.Flush();
             }
 
+            if (method == "model/list")
+            {
+                Console.WriteLine(JsonSerializer.Serialize(new
+                {
+                    id = id.GetInt32(),
+                    result = new { data = new[] { new { model = "gpt-6-luna", isDefault = true } } }
+                }));
+                continue;
+            }
+
             if (method == "thread/start")
             {
                 Console.WriteLine(JsonSerializer.Serialize(new

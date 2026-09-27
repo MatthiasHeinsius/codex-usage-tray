@@ -94,7 +94,7 @@ Use the view button to switch between compact and extended modes. Compact mode s
 
 The pin button keeps the popup open and above other windows. While pinned, drag the popup by its outer border or the circular activity indicator to move it. The popup snaps either flush with the screen and taskbar edges or with an eight-pixel gap. A pinned popup keeps its position when hidden. An unpinned popup opens next to the tray.
 
-`Auto-start allowance window` activates a 5-hour or weekly allowance that has 100% remaining by sending an ephemeral `Hi` request with GPT-5.6 Luna. This request consumes Codex inference. The app sends it only when every reported allowance has some capacity left. The app confirms activation when the allowance reset time changes on a later one-minute refresh. It makes one initial request and up to three retries for each activation. A used-up allowance waits for its reset; other command failures retry after five minutes. Retry counts reset when the application restarts.
+`Auto-start allowance window` activates a 5-hour or weekly allowance that has 100% remaining by sending an ephemeral `Hi` request with GPT-6 Luna when the signed-in account offers it, GPT-5.6 Luna if available instead, or that account's default Codex model otherwise. This request consumes Codex inference. The app sends it only when every reported allowance has some capacity left. The app confirms activation when the allowance reset time changes on a later one-minute refresh. It makes one initial request and up to three retries for each activation. A used-up allowance waits for its reset; other command failures retry after five minutes. Retry counts reset when the application restarts.
 
 `Notify on allowance changes` reports when an allowance becomes used up and when it resets. Notifications are off by default, combine simultaneous 5-hour and weekly events, and do not repeat when the application starts or retries an activation.
 
@@ -104,7 +104,7 @@ The app starts one Codex CLI app-server process for its first usage read and kee
 
 To switch accounts, run `codex logout` and then `codex login` in a terminal. The tray detects a changed `auth.json` on its next read. An account change stored only in the OS credential manager may take until the next 30-minute process renewal to appear. Use **Reconnect account** in the tray menu to restart the tray's connection and read the current CLI account immediately. This does not sign out the CLI or other Codex clients.
 
-If the sign-in expires, the app asks Codex to refresh it and, after confirmation, can start ChatGPT browser sign-in. Authentication failures restart the connection so unfinished replies from the failed read cannot be mistaken for new replies. Optional allowance activation also uses the app-server connection. It requires a known account email and checks that the account still matches the usage read, then starts an ephemeral, read-only GPT-5.6 Luna thread, sends `Hi`, waits for the turn to complete, and unsubscribes. App-server loads applicable user configuration and exec-policy rules. The activation thread requests no tools.
+If the sign-in expires, the app asks Codex to refresh it and, after confirmation, can start ChatGPT browser sign-in. Authentication failures restart the connection so unfinished replies from the failed read cannot be mistaken for new replies. Optional allowance activation also uses the app-server connection. It requires a known account email and checks that the account still matches the usage read, then lists the account's available models and starts an ephemeral, read-only thread with the selected model. It sends `Hi`, waits for the turn to complete, and unsubscribes. App-server loads applicable user configuration and exec-policy rules. The activation thread requests no tools.
 
 The activity indicator watches recent files in `%USERPROFILE%\.codex\sessions` and `%USERPROFILE%\.codex\archived_sessions` for token activity and model names. Files elsewhere under `.codex` do not supply activity. At startup, it considers files modified within the last two days, reading newest first until it finds 12 sessions with eligible token activity or runs out of candidates. It ignores internal `codex-auto-review` sessions when choosing the active model and activity state; review-only and tokenless files do not count toward the startup limit. This filter does not change inference totals. It reads these files locally and does not change them.
 
@@ -130,14 +130,6 @@ Install the [.NET SDK](https://dotnet.microsoft.com/download) version pinned in 
 dotnet build .\CodexUsageTray.slnx -c Release
 dotnet test --solution .\CodexUsageTray.slnx -c Release --no-build
 ```
-
-To see a one-minute demo of the allowance lifecycle in the actual indicator, run:
-
-```powershell
-.\src\CodexUsageTray\bin\Release\net10.0-windows\CodexUsageTray.exe --demo
-```
-
-The demo uses sample allowance data and repeats two 30-second runs. A fast burn reaches zero; a slower burn resets with 60% remaining. Each run shows the final 15 minutes before reset, the reset, activation, and the end of the cyan flash. It opens separately from the tray app.
 
 The test project uses xUnit.net 4 and Microsoft Testing Platform v2. To collect a Cobertura report with the MTP coverage extension, run:
 

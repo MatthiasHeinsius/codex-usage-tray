@@ -44,13 +44,14 @@ internal sealed class CodexWindowStarter : IAllowanceWindowActivationCommand
                         }
                     }
 
+                    var model = await SelectActivationModelAsync(lines).ConfigureAwait(false);
                     await SendAsync(lines, new
                     {
                         id = 2,
                         method = "thread/start",
                         @params = new
                         {
-                            model = "gpt-5.6-luna",
+                            model,
                             cwd = Path.GetTempPath(),
                             approvalPolicy = "never",
                             sandbox = "read-only",
@@ -98,6 +99,67 @@ internal sealed class CodexWindowStarter : IAllowanceWindowActivationCommand
         {
             throw new InvalidOperationException("The automatic Codex request did not finish within two minutes.");
         }
+    }
+
+    private static async Task<string> SelectActivationModelAsync(ICodexLineExchange lines)
+    {
+        string? cursor = null;
+        string? olderLuna = null;
+        string? defaultModel = null;
+        do
+        {
+            var parameters = new Dictionary<string, object>
+            {
+                ["limit"] = 100,
+                ["includeHidden"] = false
+            };
+            if (cursor is not null)
+            {
+                parameters["cursor"] = cursor;
+            }
+            await SendAsync(lines, new { id = 6, method = "model/list", @params = parameters })
+                .ConfigureAwait(false);
+            var response = await ReadResponseAsync(lines, 6).ConfigureAwait(false);
+            if (!response.TryGetProperty("result", out var result)
+                || !result.TryGetProperty("data", out var models)
+                || models.ValueKind != JsonValueKind.Array)
+            {
+                throw new InvalidOperationException("Codex did not return available activation models.");
+            }
+
+            foreach (var candidate in models.EnumerateArray())
+            {
+                if (candidate.ValueKind != JsonValueKind.Object
+                    || !candidate.TryGetProperty("model", out var value)
+                    || value.ValueKind != JsonValueKind.String
+                    || string.IsNullOrWhiteSpace(value.GetString()))
+                {
+                    continue;
+                }
+
+                var model = value.GetString()!;
+                if (model == "gpt-6-luna")
+                {
+                    return model;
+                }
+                if (model == "gpt-5.6-luna")
+                {
+                    olderLuna = model;
+                }
+                if (candidate.TryGetProperty("isDefault", out var isDefault)
+                    && isDefault.ValueKind == JsonValueKind.True)
+                {
+                    defaultModel = model;
+                }
+            }
+
+            cursor = result.TryGetProperty("nextCursor", out var next)
+                && next.ValueKind == JsonValueKind.String ? next.GetString() : null;
+        }
+        while (cursor is not null);
+
+        return olderLuna ?? defaultModel
+            ?? throw new InvalidOperationException("Codex did not offer an activation model.");
     }
 
     private static async Task WaitForCompletedTurnAsync(ICodexLineExchange lines, string threadId)
