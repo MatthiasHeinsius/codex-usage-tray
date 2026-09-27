@@ -29,7 +29,7 @@ public sealed partial class UsageUpdatesTests
 
         Assert.Equal(2, reader.CallCount);
         Assert.Equal(2, command.CallCount);
-        Assert.Null(next.Popup.ActivityIndicator.ActivatedResetAt);
+        Assert.False(next.Popup.ActivityIndicator.AwaitingActivation);
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public sealed partial class UsageUpdatesTests
 
         Assert.Equal(3, reader.CallCount);
         Assert.Equal(2, command.CallCount);
-        Assert.Null(next.Popup.ActivityIndicator.ActivatedResetAt);
+        Assert.False(next.Popup.ActivityIndicator.AwaitingActivation);
     }
 
     [Fact]
@@ -99,7 +99,7 @@ public sealed partial class UsageUpdatesTests
             await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
             time.Advance(TimeSpan.FromMinutes(1));
             var confirmed = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
-            Assert.Equal(activatedReset, confirmed.Popup.ActivityIndicator.ActivatedResetAt);
+            Assert.False(confirmed.Popup.ActivityIndicator.AwaitingActivation);
         }
 
         var afterRestartCommand = new ActivationRecordingCommand();
@@ -114,7 +114,7 @@ public sealed partial class UsageUpdatesTests
         Assert.Equal(1, command.CallCount);
         Assert.Equal(0, afterRestartCommand.CallCount);
         Assert.Equal(activatedReset, settings.ReadActivatedReset(AllowanceWindowKind.FiveHour));
-        Assert.Equal(activatedReset, resumedPresentation.Popup.ActivityIndicator.ActivatedResetAt);
+        Assert.False(resumedPresentation.Popup.ActivityIndicator.AwaitingActivation);
     }
 
     [Fact]
@@ -623,9 +623,9 @@ public sealed partial class UsageUpdatesTests
         var returned = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
 
         Assert.Equal(AllowanceWindowKind.FiveHour, fiveHour.Popup.ActivityIndicator.WindowKind);
-        Assert.Equal(fiveHourReset, fiveHour.Popup.ActivityIndicator.ActivatedResetAt);
+        Assert.False(fiveHour.Popup.ActivityIndicator.AwaitingActivation);
         Assert.Equal(AllowanceWindowKind.Weekly, weekly.Popup.ActivityIndicator.WindowKind);
-        Assert.Equal(weeklyActivatedReset, weekly.Popup.ActivityIndicator.ActivatedResetAt);
+        Assert.False(weekly.Popup.ActivityIndicator.AwaitingActivation);
         Assert.Equal(fiveHour.Popup.ActivityIndicator, returned.Popup.ActivityIndicator);
         Assert.Equal([AllowanceWindowKind.FiveHour, AllowanceWindowKind.Weekly, AllowanceWindowKind.FiveHour],
             settings.HistoryReads);
@@ -662,7 +662,7 @@ public sealed partial class UsageUpdatesTests
         {
             var presentation = await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
             Assert.Equal(selected, presentation.Popup.ActivityIndicator.WindowKind);
-            Assert.Null(presentation.Popup.ActivityIndicator.ActivatedResetAt);
+            Assert.False(presentation.Popup.ActivityIndicator.AwaitingActivation);
         }
         Assert.Equal(selected, Assert.Single(settings.HistoryReads));
     }
@@ -707,7 +707,7 @@ public sealed partial class UsageUpdatesTests
 
         Assert.Equal(1, command.CallCount);
         Assert.Equal(AllowanceWindowKind.Weekly, presentation.Popup.ActivityIndicator.WindowKind);
-        Assert.Equal(weeklyReset, presentation.Popup.ActivityIndicator.ActivatedResetAt);
+        Assert.False(presentation.Popup.ActivityIndicator.AwaitingActivation);
         Assert.Equal([AllowanceWindowKind.FiveHour, AllowanceWindowKind.Weekly], settings.HistoryReads);
     }
 
@@ -811,11 +811,13 @@ public sealed partial class UsageUpdatesTests
         public bool ActivationEnabled { get; set; } = true;
         public bool NotificationsEnabled { get; set; }
         public void SetAccountIdentity(string? email) { }
-        public AllowanceWindowKind? DeniedHistory { get; init; }
+        public AllowanceWindowKind? DeniedHistory { get; set; }
+        public Action? BeforeHistoryRead { get; set; }
         public List<AllowanceWindowKind> HistoryReads { get; } = [];
 
         public DateTimeOffset? ReadActivatedReset(AllowanceWindowKind window)
         {
+            BeforeHistoryRead?.Invoke();
             HistoryReads.Add(window);
             if (DeniedHistory == window)
             {
