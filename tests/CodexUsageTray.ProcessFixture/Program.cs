@@ -36,6 +36,16 @@ switch (args)
                 await Task.Delay(TimeSpan.FromSeconds(20));
                 continue;
             }
+            if (method == "oversized-line")
+            {
+                Console.WriteLine(new string('x', 1_048_577));
+                continue;
+            }
+            if (method == "long-diagnostic")
+            {
+                Console.Error.WriteLine(new string('x', 5000) + "end");
+                Console.Error.Flush();
+            }
 
             if (method == "thread/start")
             {

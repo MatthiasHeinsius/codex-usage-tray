@@ -101,6 +101,61 @@ public sealed class WindowsCodexProcessExecutionTests
             });
     }
 
+    [Fact]
+    public async Task AppServerRejectsAnOversizedProtocolLine()
+    {
+        await WithCommandAsync(
+            $"""
+            @echo off
+            "{ProcessFixturePath}" app-server "%~dp0retry.marker"
+            """,
+            async (execution, _) =>
+            {
+                var failure = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                    execution.ExchangeLinesAsync(
+                        TimeSpan.FromSeconds(20),
+                        async lines =>
+                        {
+                            await CodexAppServerProtocol.InitializeAsync(lines);
+                            await CodexAppServerProtocol.SendAsync(lines, new { id = 2, method = "oversized-line" });
+                            return await lines.ReadLineAsync();
+                        },
+                        TestContext.Current.CancellationToken));
+
+                Assert.Contains("oversized", failure.Message, StringComparison.Ordinal);
+            });
+    }
+
+    [Fact]
+    public async Task AppServerKeepsOnlyTheTailOfLongDiagnosticLines()
+    {
+        await WithCommandAsync(
+            $"""
+            @echo off
+            "{ProcessFixturePath}" app-server "%~dp0retry.marker"
+            """,
+            async (execution, _) =>
+            {
+                await execution.ExchangeLinesAsync(
+                    TimeSpan.FromSeconds(5),
+                    async lines =>
+                    {
+                        await CodexAppServerProtocol.InitializeAsync(lines);
+                        await CodexAppServerProtocol.SendAsync(lines, new { id = 2, method = "long-diagnostic" });
+                        await CodexAppServerProtocol.ReadResponseAsync(lines, 2);
+                        for (var attempt = 0; attempt < 50 && lines.LastStandardErrorLine is null; attempt++)
+                        {
+                            await Task.Delay(10, TestContext.Current.CancellationToken);
+                        }
+
+                        Assert.Equal(4096, lines.LastStandardErrorLine?.Length);
+                        Assert.EndsWith("end", lines.LastStandardErrorLine, StringComparison.Ordinal);
+                        return true;
+                    },
+                    TestContext.Current.CancellationToken);
+            });
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

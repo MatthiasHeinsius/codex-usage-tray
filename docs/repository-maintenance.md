@@ -4,7 +4,9 @@
 
 Dependabot checks NuGet packages, GitHub Actions, and the .NET SDK weekly. SDK updates change `global.json`; they do not update the separately pinned runtime in `src/CodexUsageTray/CodexUsageTray.csproj`.
 
-The test project's `packages.lock.json` records exact transitive package versions. Ordinary restore keeps them when package requirements have not changed, and CI uses locked-mode restore. `dotnet restore --force-evaluate` recalculates the graph from upstream requirements and can reset transitive-only updates to older minimum versions. Review the lock-file diff and update the license inventory when refreshing it.
+The application and test projects each have a `packages.lock.json` recording exact package versions and content hashes. The application lock includes the `win-x64` release graph and the ILLink build dependency used for single-file publishing. Ordinary restore keeps these versions when package requirements have not changed. CI and `build-release.ps1` require locked-mode restore.
+
+After changing a package version or the runtime pin, run `dotnet restore .\CodexUsageTray.slnx` to update the affected lock files, then review and commit their diffs with the version change. Verify with the checks in `CONTRIBUTING.md` and `.\build-release.ps1`. `dotnet restore --force-evaluate` recalculates the graph from upstream requirements and can reset transitive-only updates to older minimum versions. Update the license inventory when its contents change.
 
 The Security maintenance workflow checks Microsoft's release metadata on pull requests, pushes to `main`, and Mondays at 05:43 UTC. It fails when the runtime pin differs from the latest patch in its .NET channel, or the channel is out of support. The release workflow runs the same check before publishing. A failure requires a maintenance PR that updates the runtime pin and reviews the complete license inventory in `THIRD-PARTY-NOTICES.txt` and `docs/license-audit.md`. Keep the pin explicit so a runtime update cannot silently change the bundled notice requirements.
 

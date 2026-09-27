@@ -29,11 +29,17 @@ internal interface ICodexLineExchange
 
 internal sealed class WindowsCodexProcessExecution : ICodexProcessExecution, IAsyncDisposable
 {
+    internal const int MaxProtocolLineChars = 1_048_576;
+    private const int MaxDiagnosticLineChars = 4_096;
     private static readonly Encoding Utf8WithoutByteOrderMark = new UTF8Encoding(false);
     private readonly SemaphoreSlim appServerGate = new(1, 1);
     private Process? appServer;
     private bool appServerInitialized;
     private bool discardAppServerAfterExchange;
+    private AppServerDiagnostics? appServerDiagnostics;
+    private CancellationTokenSource? appServerErrorCancellation;
+    private Task? appServerErrorDrain;
+    private bool skipLineFeed;
     private (bool Exists, long Length, DateTime LastWriteUtc) authFileState;
     private DateTime appServerStartedUtc;
     private bool disposed;
@@ -90,11 +96,15 @@ internal sealed class WindowsCodexProcessExecution : ICodexProcessExecution, IAs
                 appServerStartedUtc = DateTime.UtcNow;
                 authFileState = currentAuthFileState;
                 appServerInitialized = false;
-                appServer.ErrorDataReceived += RecordAppServerError;
-                appServer.BeginErrorReadLine();
+                appServerDiagnostics = new AppServerDiagnostics();
+                appServerErrorCancellation = new CancellationTokenSource();
+                appServerErrorDrain = DrainStandardErrorAsync(
+                    appServer.StandardError,
+                    appServerDiagnostics,
+                    appServerErrorCancellation.Token);
             }
 
-            var lines = new PersistentAppServerLines(this, appServer, deadline.Token);
+            var lines = new PersistentAppServerLines(this, appServer, appServerDiagnostics!, deadline.Token);
             try
             {
                 var result = await exchange(lines).ConfigureAwait(false);
@@ -132,13 +142,56 @@ internal sealed class WindowsCodexProcessExecution : ICodexProcessExecution, IAs
         }
     }
 
-    private string? lastAppServerError;
-
-    private void RecordAppServerError(object sender, DataReceivedEventArgs eventArgs)
+    private static async Task DrainStandardErrorAsync(
+        StreamReader reader,
+        AppServerDiagnostics diagnostics,
+        CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(eventArgs.Data))
+        var buffer = new char[4096];
+        var line = new char[MaxDiagnosticLineChars];
+        var next = 0;
+        var count = 0;
+        int read;
+        while ((read = await reader.ReadAsync(buffer.AsMemory(), cancellationToken)
+                   .ConfigureAwait(false)) > 0)
         {
-            Volatile.Write(ref lastAppServerError, eventArgs.Data);
+            foreach (var character in buffer.AsSpan(0, read))
+            {
+                if (character is '\r' or '\n')
+                {
+                    RecordLine();
+                    next = 0;
+                    count = 0;
+                    continue;
+                }
+
+                line[next] = character;
+                next = (next + 1) % line.Length;
+                count = Math.Min(count + 1, line.Length);
+            }
+        }
+
+        RecordLine();
+
+        void RecordLine()
+        {
+            if (count == 0)
+            {
+                return;
+            }
+
+            var start = count == line.Length ? next : 0;
+            var value = string.Create(count, (line, start), static (result, state) =>
+            {
+                for (var index = 0; index < result.Length; index++)
+                {
+                    result[index] = state.line[(state.start + index) % state.line.Length];
+                }
+            });
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                diagnostics.Record(value);
+            }
         }
     }
 
@@ -157,16 +210,31 @@ internal sealed class WindowsCodexProcessExecution : ICodexProcessExecution, IAs
     private void StopAppServer()
     {
         var process = appServer;
+        var errorCancellation = appServerErrorCancellation;
+        var errorDrain = appServerErrorDrain;
         appServer = null;
         appServerInitialized = false;
         discardAppServerAfterExchange = false;
-        Volatile.Write(ref lastAppServerError, null);
+        appServerDiagnostics = null;
+        appServerErrorCancellation = null;
+        appServerErrorDrain = null;
+        skipLineFeed = false;
         if (process is null)
         {
             return;
         }
 
+        errorCancellation?.Cancel();
         TryStopProcess(process);
+        try
+        {
+            errorDrain?.Wait(TimeSpan.FromMilliseconds(500));
+        }
+        catch
+        {
+            // Cancellation or process shutdown can interrupt the diagnostic reader.
+        }
+        errorCancellation?.Dispose();
         process.Dispose();
     }
 
@@ -190,9 +258,12 @@ internal sealed class WindowsCodexProcessExecution : ICodexProcessExecution, IAs
     private sealed class PersistentAppServerLines(
         WindowsCodexProcessExecution owner,
         Process process,
+        AppServerDiagnostics diagnostics,
         CancellationToken cancellationToken) : ICodexLineExchange
     {
-        public string? LastStandardErrorLine => Volatile.Read(ref owner.lastAppServerError);
+        private readonly char[] lineCharacter = new char[1];
+
+        public string? LastStandardErrorLine => diagnostics.LastLine;
         public bool IsInitialized => owner.appServerInitialized;
         public void MarkInitialized() => owner.appServerInitialized = true;
         public void DiscardConnection() => owner.discardAppServerAfterExchange = true;
@@ -203,7 +274,46 @@ internal sealed class WindowsCodexProcessExecution : ICodexProcessExecution, IAs
             await process.StandardInput.FlushAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        public ValueTask<string?> ReadLineAsync() => process.StandardOutput.ReadLineAsync(cancellationToken);
+        public async ValueTask<string?> ReadLineAsync()
+        {
+            var line = new StringBuilder();
+            while (await process.StandardOutput.ReadAsync(lineCharacter.AsMemory(), cancellationToken)
+                       .ConfigureAwait(false) != 0)
+            {
+                var character = lineCharacter[0];
+                if (owner.skipLineFeed)
+                {
+                    owner.skipLineFeed = false;
+                    if (character == '\n')
+                    {
+                        continue;
+                    }
+                }
+
+                if (character is '\r' or '\n')
+                {
+                    owner.skipLineFeed = character == '\r';
+                    return line.ToString();
+                }
+
+                if (line.Length == MaxProtocolLineChars)
+                {
+                    throw new InvalidDataException("Codex returned an oversized app-server message.");
+                }
+
+                line.Append(character);
+            }
+
+            return line.Length == 0 ? null : line.ToString();
+        }
+    }
+
+    private sealed class AppServerDiagnostics
+    {
+        private string? lastLine;
+
+        public string? LastLine => Volatile.Read(ref lastLine);
+        public void Record(string line) => Volatile.Write(ref lastLine, line);
     }
 
     private static Process Start(string codexPath)
