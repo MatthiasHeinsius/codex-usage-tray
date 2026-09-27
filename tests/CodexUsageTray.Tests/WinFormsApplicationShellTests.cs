@@ -69,6 +69,7 @@ public sealed class WinFormsApplicationShellTests
             Assert.Empty(recording.NotificationSettings);
 
             await shell.PerformMenuClickAsync("Refresh", cancellationToken);
+            await shell.PerformMenuClickAsync("Reconnect account", cancellationToken);
             await shell.PerformMenuClickAsync("Start with Windows", cancellationToken);
             await shell.PerformMenuClickAsync(WinFormsApplicationShell.AutomaticUpdateMenuText, cancellationToken);
             await shell.PerformMenuClickAsync(WinFormsApplicationShell.AllowanceActivationMenuText, cancellationToken);
@@ -84,7 +85,7 @@ public sealed class WinFormsApplicationShellTests
             Assert.True(state.AutomaticUpdateEnabled);
             Assert.False(state.AllowanceActivationEnabled);
             Assert.True(state.AllowanceNotificationsEnabled);
-            Assert.Equal([UsageUpdateIntent.Activity], recording.UsageRequests);
+            Assert.Equal([UsageUpdateIntent.Activity, UsageUpdateIntent.Reconnect], recording.UsageRequests);
             Assert.Equal([ApplicationUpdateIntent.Manual], recording.ApplicationUpdateRequests);
             Assert.Equal([false], recording.StartupSettings);
             Assert.Equal([true], recording.AutomaticUpdateSettings);

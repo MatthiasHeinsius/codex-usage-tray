@@ -107,6 +107,27 @@ public sealed class RegistryApplicationSettingsTests
         Assert.Equal(weekly, settings.ReadActivatedReset(AllowanceWindowKind.Weekly));
     }
 
+    [Fact]
+    public void ActivatedResetsBelongToTheAccountThatStartedThem()
+    {
+        using var registry = new TestRegistryKey();
+        var settings = new RegistryApplicationSettings(registry.Path);
+        var reset = new DateTimeOffset(2026, 9, 14, 18, 0, 0, TimeSpan.Zero);
+
+        settings.SetAccountIdentity("FIRST@example.com");
+        settings.WriteActivatedReset(AllowanceWindowKind.FiveHour, reset);
+        Assert.Equal(reset, settings.ReadActivatedReset(AllowanceWindowKind.FiveHour));
+
+        settings.SetAccountIdentity("second@example.com");
+        Assert.Null(settings.ReadActivatedReset(AllowanceWindowKind.FiveHour));
+        settings.WriteActivatedReset(AllowanceWindowKind.FiveHour, reset);
+
+        settings.SetAccountIdentity("first@example.com");
+        Assert.Null(settings.ReadActivatedReset(AllowanceWindowKind.FiveHour));
+        settings.SetAccountIdentity("SECOND@example.com");
+        Assert.Equal(reset, settings.ReadActivatedReset(AllowanceWindowKind.FiveHour));
+    }
+
     [Theory]
     [InlineData("1", RegistryValueKind.String)]
     [InlineData(long.MinValue, RegistryValueKind.QWord)]

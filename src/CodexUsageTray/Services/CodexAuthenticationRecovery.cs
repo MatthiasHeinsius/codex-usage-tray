@@ -14,6 +14,8 @@ internal sealed class CodexAuthenticationRecovery
 {
     internal const string FailureMessage =
         "Codex sign-in expired. Run codex logout, then codex login. Refresh again.";
+    internal const string SignInRequiredMessage =
+        "Codex sign-in is required. Run codex login in a terminal, then refresh again.";
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(45);
     private static readonly TimeSpan SignInTimeout = TimeSpan.FromMinutes(5);
     private readonly ICodexProcessExecution processExecution;
@@ -34,6 +36,7 @@ internal sealed class CodexAuthenticationRecovery
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(operation);
+        var signInRequired = false;
         try
         {
             return await RunOperationAndMarkAuthenticationHealthyAsync(
@@ -46,8 +49,12 @@ internal sealed class CodexAuthenticationRecovery
             // Codex normally refreshes managed ChatGPT credentials itself. Force one refresh
             // before asking the user to sign in again.
         }
+        catch (CodexAuthenticationRequiredException)
+        {
+            signInRequired = true;
+        }
 
-        if (await TryRefreshAsync(cancellationToken).ConfigureAwait(false))
+        if (!signInRequired && await TryRefreshAsync(cancellationToken).ConfigureAwait(false))
         {
             try
             {
@@ -56,7 +63,8 @@ internal sealed class CodexAuthenticationRecovery
                         cancellationToken)
                     .ConfigureAwait(false);
             }
-            catch (CodexAuthenticationExpiredException)
+            catch (InvalidOperationException exception)
+                when (exception is CodexAuthenticationExpiredException or CodexAuthenticationRequiredException)
             {
                 // The stored refresh credential can no longer recover the session.
             }
@@ -73,13 +81,14 @@ internal sealed class CodexAuthenticationRecovery
                         cancellationToken)
                     .ConfigureAwait(false);
             }
-            catch (CodexAuthenticationExpiredException)
+            catch (InvalidOperationException exception)
+                when (exception is CodexAuthenticationExpiredException or CodexAuthenticationRequiredException)
             {
                 // The completed sign-in did not produce usable account credentials.
             }
         }
 
-        throw new InvalidOperationException(FailureMessage);
+        throw new InvalidOperationException(signInRequired ? SignInRequiredMessage : FailureMessage);
     }
 
     private async Task<TResult> RunOperationAndMarkAuthenticationHealthyAsync<TResult>(
@@ -96,7 +105,6 @@ internal sealed class CodexAuthenticationRecovery
         try
         {
             return await processExecution.ExchangeLinesAsync(
-                "app-server --stdio",
                 RequestTimeout,
                 async lines =>
                 {
@@ -127,7 +135,6 @@ internal sealed class CodexAuthenticationRecovery
         try
         {
             return await processExecution.ExchangeLinesAsync(
-                "app-server --stdio",
                 SignInTimeout,
                 async lines =>
                 {
@@ -158,6 +165,7 @@ internal sealed class CodexAuthenticationRecovery
                             method = "account/login/cancel",
                             @params = new { loginId }
                         }).ConfigureAwait(false);
+                        lines.DiscardConnection();
                         return false;
                     }
 

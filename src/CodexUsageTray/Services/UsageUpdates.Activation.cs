@@ -25,13 +25,14 @@ internal sealed record AllowanceWindowActivationResult(
 
 internal interface IAllowanceWindowActivationCommand
 {
-    Task SendHiAsync(CancellationToken cancellationToken);
+    Task SendHiAsync(string? expectedAccountEmail, CancellationToken cancellationToken);
 }
 
 internal interface IAllowanceWindowActivationSettings
 {
     bool ActivationEnabled { get; set; }
     bool NotificationsEnabled { get; set; }
+    void SetAccountIdentity(string? email);
     DateTimeOffset? ReadActivatedReset(AllowanceWindowKind window);
     void WriteActivatedReset(AllowanceWindowKind window, DateTimeOffset reset);
 }
@@ -51,8 +52,7 @@ internal sealed partial class UsageUpdates
         var finalSnapshot = snapshot;
         ResetAllowanceStateForAccountChange(snapshot);
         var (reset, usedUp) = DetectAllowanceWindowTransitions(snapshot);
-        var confirmed = ConfirmChangedResets(snapshot);
-        if (!activationEnabled)
+        if (!activationEnabled || string.IsNullOrWhiteSpace(snapshot.AccountEmail))
         {
             return (
                 finalSnapshot,
@@ -63,6 +63,7 @@ internal sealed partial class UsageUpdates
                 });
         }
 
+        var confirmed = ConfirmChangedResets(snapshot);
         var now = timeProvider.GetUtcNow();
         var everyReportedWindowHasAllowance = EveryReportedWindowHasAllowance(snapshot);
         var targets = new List<AllowanceWindowKind>();
@@ -97,7 +98,7 @@ internal sealed partial class UsageUpdates
         {
             try
             {
-                await activationCommand.SendHiAsync(cancellationToken).ConfigureAwait(false);
+                await activationCommand.SendHiAsync(snapshot.AccountEmail, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -191,8 +192,9 @@ internal sealed partial class UsageUpdates
     private bool ResetAllowanceStateForAccountChange(UsageSnapshot snapshot)
     {
         var email = string.IsNullOrWhiteSpace(snapshot.AccountEmail) ? null : snapshot.AccountEmail;
-        if (email is null
-            || string.Equals(email, previousAccountEmail, StringComparison.OrdinalIgnoreCase))
+        settings.SetAccountIdentity(email);
+        if (email is not null
+            && string.Equals(email, previousAccountEmail, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

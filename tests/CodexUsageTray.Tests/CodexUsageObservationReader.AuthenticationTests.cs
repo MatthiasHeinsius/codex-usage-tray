@@ -2,6 +2,92 @@ namespace CodexUsageTray.Tests;
 
 public sealed partial class CodexUsageObservationReaderTests
 {
+    [Fact]
+    public async Task FirstLaunchStartsBrowserSignInWithoutTryingTokenRefresh()
+    {
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine("""{"id":2,"error":{"message":"codex account authentication required to read rate limits"}}""");
+        processes.EnqueueLine("""{"id":4,"result":{"account":null,"requiresOpenaiAuth":true}}""");
+        EnqueueSignInStart(processes);
+        processes.EnqueueLine("""{"method":"account/login/completed","params":{"loginId":"login-1","success":true}}""");
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine("""{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":0,"windowDurationMins":300}}}}""");
+        EnqueueAccountDetails(processes);
+        var interaction = new RecordingAuthenticationInteraction(confirm: true);
+        var reader = new CodexUsageObservationReader(processes, interaction);
+
+        var observation = await reader.ReadAsync(
+            UsageObservationRequest.AllowanceWindows,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, Assert.Single(observation.Account.AllowanceWindows).UsedPercent);
+        Assert.Single(interaction.SignInPages);
+        Assert.DoesNotContain(processes.WrittenLines,
+            line => line.Contains("\"refreshToken\":true", StringComparison.Ordinal));
+        Assert.Equal(2, CountUsageReads(processes));
+    }
+
+    [Theory]
+    [InlineData("codex account authentication required to read rate limits")]
+    [InlineData("Not logged in")]
+    public async Task MissingAccountWithoutInteractionExplainsHowToSignIn(string rateLimitError)
+    {
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine(System.Text.Json.JsonSerializer.Serialize(new
+        {
+            id = 2,
+            error = new { message = rateLimitError }
+        }));
+        processes.EnqueueLine("""{"id":4,"result":{"account":null,"requiresOpenaiAuth":true}}""");
+        var reader = new CodexUsageObservationReader(processes);
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            reader.ReadAsync(UsageObservationRequest.AllowanceWindows, CancellationToken.None));
+
+        Assert.Equal(CodexAuthenticationRecovery.SignInRequiredMessage, failure.Message);
+    }
+
+    [Fact]
+    public async Task NullAccountAlsoTriggersSignInWhenRateLimitReadSucceeds()
+    {
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine("""{"id":2,"result":{"rateLimits":{}}}""");
+        processes.EnqueueLine("""{"id":4,"result":{"account":null,"requiresOpenaiAuth":true}}""");
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new CodexUsageObservationReader(processes)
+                .ReadAsync(UsageObservationRequest.AllowanceWindows, CancellationToken.None));
+
+        Assert.Equal(CodexAuthenticationRecovery.SignInRequiredMessage, failure.Message);
+    }
+
+    [Fact]
+    public async Task DecliningFirstLaunchSignInDoesNotPromptEveryMinute()
+    {
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine("""{"id":2,"error":{"message":"codex account authentication required to read rate limits"}}""");
+        EnqueueSignInStart(processes);
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine("""{"id":2,"error":{"message":"codex account authentication required to read rate limits"}}""");
+        var interaction = new RecordingAuthenticationInteraction(confirm: false);
+        var reader = new CodexUsageObservationReader(processes, interaction);
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                reader.ReadAsync(UsageObservationRequest.AllowanceWindows, CancellationToken.None));
+            Assert.Equal(CodexAuthenticationRecovery.SignInRequiredMessage, failure.Message);
+        }
+
+        Assert.Single(interaction.SignInPages);
+        Assert.Single(processes.WrittenLines,
+            line => line.Contains("\"account/login/start\"", StringComparison.Ordinal));
+    }
+
     [Theory]
     [InlineData("timeout")]
     [InlineData("broken pipe")]

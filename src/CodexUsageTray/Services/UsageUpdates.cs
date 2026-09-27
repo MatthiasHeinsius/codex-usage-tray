@@ -5,7 +5,8 @@ namespace CodexUsageTray;
 internal enum UsageUpdateIntent
 {
     Routine,
-    Activity
+    Activity,
+    Reconnect
 }
 
 internal interface IUsageUpdates : IAsyncDisposable
@@ -23,6 +24,7 @@ internal interface IUsageUpdates : IAsyncDisposable
 internal sealed partial class UsageUpdates : IUsageUpdates
 {
     private readonly IUsageObservationReader observations;
+    private WindowsCodexProcessExecution? ownedProcessExecution;
     private readonly IAllowanceWindowActivationCommand activationCommand;
     private readonly IAllowanceWindowActivationSettings settings;
     private readonly TimeProvider timeProvider;
@@ -54,12 +56,14 @@ internal sealed partial class UsageUpdates : IUsageUpdates
     {
         ArgumentNullException.ThrowIfNull(authenticationInteraction);
         var processExecution = new WindowsCodexProcessExecution();
-        return new UsageUpdates(
+        var updates = new UsageUpdates(
             new CodexUsageObservationReader(processExecution, authenticationInteraction),
             new CodexWindowStarter(processExecution),
             RegistryApplicationSettings.Current,
             TimeProvider.System,
             CultureInfo.CurrentCulture);
+        updates.ownedProcessExecution = processExecution;
+        return updates;
     }
 
     public bool ActivationEnabled
@@ -107,13 +111,18 @@ internal sealed partial class UsageUpdates : IUsageUpdates
         var observationRequest = intent switch
         {
             UsageUpdateIntent.Routine => UsageObservationRequest.AllowanceWindows,
-            UsageUpdateIntent.Activity => UsageObservationRequest.AllowanceWindowsAndActivity,
+            UsageUpdateIntent.Activity or UsageUpdateIntent.Reconnect =>
+                UsageObservationRequest.AllowanceWindowsAndActivity,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(intent),
                 intent,
                 "Unknown Usage Update intent.")
         };
-        return ExecuteUpdateAsync(observationRequest, CapturePreferences(), cancellationToken);
+        return ExecuteUpdateAsync(
+            observationRequest,
+            CapturePreferences(),
+            intent == UsageUpdateIntent.Reconnect,
+            cancellationToken);
     }
 
     public async ValueTask DisposeAsync()
@@ -125,6 +134,10 @@ internal sealed partial class UsageUpdates : IUsageUpdates
 
         lifetime.Cancel();
         await updateGate.WaitAsync().ConfigureAwait(false);
+        if (ownedProcessExecution is not null)
+        {
+            await ownedProcessExecution.DisposeAsync().ConfigureAwait(false);
+        }
         updateGate.Dispose();
         lifetime.Dispose();
     }
@@ -140,6 +153,7 @@ internal sealed partial class UsageUpdates : IUsageUpdates
     private async Task<UsagePresentation.Ready> ExecuteUpdateAsync(
         UsageObservationRequest observationRequest,
         (bool ActivationEnabled, bool NotificationsEnabled) preferences,
+        bool reconnect,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
@@ -150,6 +164,10 @@ internal sealed partial class UsageUpdates : IUsageUpdates
         try
         {
             cancellation.Token.ThrowIfCancellationRequested();
+            if (reconnect)
+            {
+                ownedProcessExecution?.RequestReconnect();
+            }
             var snapshot = await RequestSnapshotAsync(observationRequest, cancellation.Token)
                 .ConfigureAwait(false);
             var (finalSnapshot, allowanceEvents) = await ObserveAllowanceWindowsAsync(

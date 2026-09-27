@@ -56,7 +56,8 @@ internal sealed class UsagePresentations : IAsyncDisposable
         UsageUpdateIntent intent,
         CancellationToken cancellationToken = default)
     {
-        if (intent is not UsageUpdateIntent.Routine and not UsageUpdateIntent.Activity)
+        if (intent is not UsageUpdateIntent.Routine and not UsageUpdateIntent.Activity
+            and not UsageUpdateIntent.Reconnect)
         {
             throw new ArgumentOutOfRangeException(nameof(intent), intent, "Unknown Usage Update intent.");
         }

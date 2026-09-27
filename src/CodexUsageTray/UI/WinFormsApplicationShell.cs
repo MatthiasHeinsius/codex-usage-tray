@@ -88,6 +88,7 @@ internal sealed class WinFormsApplicationShell :
             updateItem,
             open: (_, _) => ShowPopup(),
             refresh: async (_, _) => await commands.RequestUsageUpdate(UsageUpdateIntent.Activity),
+            reconnect: async (_, _) => await commands.RequestUsageUpdate(UsageUpdateIntent.Reconnect),
             openUsagePage: (_, _) => commands.OpenUsagePage(),
             openProjectReadme: (_, _) => commands.OpenProjectReadme(),
             openLegalNotices: (_, _) => commands.OpenLegalNotices(),
@@ -252,6 +253,7 @@ internal sealed class WinFormsApplicationShell :
             noOp,
             noOp,
             noOp,
+            noOp,
             noOp);
     }
 
@@ -263,6 +265,7 @@ internal sealed class WinFormsApplicationShell :
         ToolStripMenuItem update,
         EventHandler open,
         EventHandler refresh,
+        EventHandler reconnect,
         EventHandler openUsagePage,
         EventHandler openProjectReadme,
         EventHandler openLegalNotices,
@@ -272,6 +275,7 @@ internal sealed class WinFormsApplicationShell :
         var menu = new ContextMenuStrip();
         menu.Items.Add("Open", null, open);
         menu.Items.Add("Refresh", null, refresh);
+        menu.Items.Add("Reconnect account", null, reconnect);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(startup);
         menu.Items.Add(automaticUpdate);
@@ -498,7 +502,7 @@ internal sealed class WinFormsApplicationShell :
     private static bool ConfirmAndOpenSignIn(Uri signInPage)
     {
         var confirmed = MessageBox.Show(
-            "Your Codex sign-in expired and could not be refreshed automatically.\n\n"
+            "Codex Usage Tray needs a ChatGPT sign-in to read account usage.\n\n"
                 + "Codex Usage Tray can open this sign-in page in your browser:\n\n"
                 + $"{signInPage.AbsoluteUri}\n\nContinue?",
             "Reconnect Codex",

@@ -226,7 +226,8 @@ public sealed partial class UsageUpdatesTests
                 [new AllowanceWindow(usedPercent, TimeSpan.FromHours(5), reset)],
                 "plus",
                 "Codex",
-                new AccountActivityObservation.NotRequested()),
+                new AccountActivityObservation.NotRequested(),
+                "user@example.com"),
             Local: null);
 
     private sealed class QueueUsageObservationReader(params UsageObservations[] observations)
@@ -298,7 +299,7 @@ public sealed partial class UsageUpdatesTests
 
     private sealed class FailingActivationCommand : IAllowanceWindowActivationCommand
     {
-        public Task SendHiAsync(CancellationToken cancellationToken) =>
+        public Task SendHiAsync(string? expectedAccountEmail, CancellationToken cancellationToken) =>
             Task.FromException(new InvalidOperationException("Synthetic activation failure."));
     }
 
@@ -306,7 +307,7 @@ public sealed partial class UsageUpdatesTests
     {
         public int CallCount { get; private set; }
 
-        public Task SendHiAsync(CancellationToken cancellationToken)
+        public Task SendHiAsync(string? expectedAccountEmail, CancellationToken cancellationToken)
         {
             CallCount++;
             return Task.CompletedTask;
@@ -321,7 +322,7 @@ public sealed partial class UsageUpdatesTests
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int CallCount { get; private set; }
 
-        public async Task SendHiAsync(CancellationToken cancellationToken)
+        public async Task SendHiAsync(string? expectedAccountEmail, CancellationToken cancellationToken)
         {
             CallCount++;
             Started.TrySetResult();
@@ -337,6 +338,7 @@ public sealed partial class UsageUpdatesTests
 
         public bool ThrowOnActivationWrite { get; set; }
         public bool ThrowOnNotificationWrite { get; set; }
+        public void SetAccountIdentity(string? email) { }
         public bool ActivationEnabled
         {
             get => activationEnabled;

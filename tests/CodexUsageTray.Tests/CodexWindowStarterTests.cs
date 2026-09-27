@@ -1,77 +1,112 @@
+using System.Text.Json;
+
 namespace CodexUsageTray.Tests;
 
 public sealed class CodexWindowStarterTests
 {
-    private const string ExpectedArguments =
-        "exec --ephemeral --skip-git-repo-check --ignore-user-config --ignore-rules "
-        + "-m gpt-5.6-luna -s read-only --color never \"Hi\"";
-
-    [Fact]
-    public async Task SendHiUsesCapturedProcessExecution()
-    {
-        var processes = new ScriptedCodexProcessExecution
-        {
-            CapturedOutput = new CodexProcessOutput(0, "completed", string.Empty)
-        };
-        var starter = new CodexWindowStarter(processes);
-
-        await starter.SendHiAsync(CancellationToken.None);
-
-        Assert.Equal(ExpectedArguments, processes.CaptureArguments);
-        Assert.Equal(TimeSpan.FromMinutes(2), processes.CaptureTimeout);
-        Assert.Equal(CancellationToken.None, processes.CaptureCancellationToken);
-    }
-
     [Theory]
-    [InlineData("output detail", "first error\r\nlast error\r\n", "last error")]
-    [InlineData("first output\r\nlast output\r\n", "", "last output")]
-    [InlineData("", "", "exit code 7")]
-    public async Task SendHiReportsTheMostUsefulFailureDetail(
-        string standardOutput,
-        string standardError,
-        string expectedDetail)
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SendHiUsesEphemeralThreadOnAppServer(bool completionBeforeTurnResponse)
     {
-        var processes = new ScriptedCodexProcessExecution
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine("""{"id":5,"result":{"account":{"email":"user@example.com"}}}""");
+        processes.EnqueueLine("""{"method":"thread/started","params":{"thread":{"id":"thr_1"}}}""");
+        processes.EnqueueLine("""{"id":2,"result":{"thread":{"id":"thr_1","ephemeral":true}}}""");
+        var started = """{"id":3,"result":{"turn":{"id":"turn_1","status":"inProgress"}}}""";
+        var completed = """{"method":"turn/completed","params":{"threadId":"thr_1","turn":{"id":"turn_1","status":"completed"}}}""";
+        processes.EnqueueLine(completionBeforeTurnResponse ? completed : started);
+        processes.EnqueueLine(completionBeforeTurnResponse ? started : completed);
+        processes.EnqueueLine("""{"id":4,"result":{"status":"unsubscribed"}}""");
+
+        await new CodexWindowStarter(processes).SendHiAsync("USER@example.com", CancellationToken.None);
+
+        Assert.Equal(TimeSpan.FromMinutes(2), processes.ExchangeTimeout);
+        var requests = processes.WrittenLines.Select(line => JsonDocument.Parse(line)).ToArray();
+        try
         {
-            CapturedOutput = new CodexProcessOutput(7, standardOutput, standardError)
-        };
-        var starter = new CodexWindowStarter(processes);
-
-        var failure = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => starter.SendHiAsync(CancellationToken.None));
-
-        Assert.Equal($"The automatic Codex request failed: {expectedDetail}", failure.Message);
+            Assert.Equal("initialize", requests[0].RootElement.GetProperty("method").GetString());
+            Assert.Equal("account/read", requests[2].RootElement.GetProperty("method").GetString());
+            var thread = requests[3].RootElement;
+            Assert.Equal("thread/start", thread.GetProperty("method").GetString());
+            var options = thread.GetProperty("params");
+            Assert.True(options.GetProperty("ephemeral").GetBoolean());
+            Assert.Equal("gpt-5.6-luna", options.GetProperty("model").GetString());
+            Assert.Equal("read-only", options.GetProperty("sandbox").GetString());
+            Assert.Equal("never", options.GetProperty("approvalPolicy").GetString());
+            var turn = requests[4].RootElement;
+            Assert.Equal("turn/start", turn.GetProperty("method").GetString());
+            Assert.Equal("Hi", turn.GetProperty("params").GetProperty("input")[0].GetProperty("text").GetString());
+            Assert.Equal("thread/unsubscribe", requests[5].RootElement.GetProperty("method").GetString());
+        }
+        finally
+        {
+            foreach (var request in requests)
+            {
+                request.Dispose();
+            }
+        }
     }
 
     [Fact]
-    public async Task SendHiMapsProcessTimeout()
+    public async Task SendHiStopsWhenTheAccountChangedAfterTheUsageRead()
     {
-        var processes = new ScriptedCodexProcessExecution
-        {
-            CaptureFailure = new OperationCanceledException()
-        };
-        var starter = new CodexWindowStarter(processes);
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine("""{"id":5,"result":{"account":{"email":"second@example.com"}}}""");
 
-        var failure = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => starter.SendHiAsync(CancellationToken.None));
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new CodexWindowStarter(processes).SendHiAsync("first@example.com", CancellationToken.None));
 
-        Assert.Equal("The automatic Codex request did not finish within two minutes.", failure.Message);
+        Assert.Equal("Codex account changed before allowance activation.", failure.Message);
+        Assert.DoesNotContain(processes.WrittenLines, line => line.Contains("thread/start", StringComparison.Ordinal));
     }
 
     [Fact]
-    public async Task SendHiPreservesCallerCancellation()
+    public async Task SendHiRejectsStoredThreadWithoutSendingTurn()
     {
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine("""{"id":2,"result":{"thread":{"id":"thr_1","ephemeral":false}}}""");
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new CodexWindowStarter(processes).SendHiAsync(null, CancellationToken.None));
+
+        Assert.Equal("Codex did not start an ephemeral activation thread.", failure.Message);
+        Assert.DoesNotContain(processes.WrittenLines, line => line.Contains("turn/start", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SendHiReportsTurnFailure()
+    {
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueLine("""{"id":1,"result":{}}""");
+        processes.EnqueueLine("""{"id":2,"result":{"thread":{"id":"thr_1","ephemeral":true}}}""");
+        processes.EnqueueLine("""{"id":3,"result":{"turn":{"id":"turn_1","status":"inProgress"}}}""");
+        processes.EnqueueLine("""{"method":"turn/completed","params":{"threadId":"thr_1","turn":{"id":"turn_1","status":"failed","error":{"message":"quota unavailable"}}}}""");
+
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new CodexWindowStarter(processes).SendHiAsync(null, CancellationToken.None));
+
+        Assert.Equal("The automatic Codex request failed: quota unavailable", failure.Message);
+    }
+
+    [Fact]
+    public async Task SendHiMapsTimeoutAndPreservesCallerCancellation()
+    {
+        var processes = new ScriptedCodexProcessExecution();
+        processes.EnqueueReadFailure(new OperationCanceledException());
+        var starter = new CodexWindowStarter(processes);
+
+        var timeout = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            starter.SendHiAsync(null, CancellationToken.None));
+        Assert.Equal("The automatic Codex request did not finish within two minutes.", timeout.Message);
+
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        var processes = new ScriptedCodexProcessExecution
-        {
-            CaptureFailure = new OperationCanceledException(cancellation.Token)
-        };
-        var starter = new CodexWindowStarter(processes);
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => starter.SendHiAsync(cancellation.Token));
-
-        Assert.Equal(cancellation.Token, processes.CaptureCancellationToken);
+        processes.EnqueueReadFailure(new OperationCanceledException(cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => starter.SendHiAsync(null, cancellation.Token));
+        Assert.Equal(cancellation.Token, processes.ExchangeCancellationToken);
     }
 }

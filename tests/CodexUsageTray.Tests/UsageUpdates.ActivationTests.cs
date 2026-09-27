@@ -224,6 +224,23 @@ public sealed partial class UsageUpdatesTests
     }
 
     [Fact]
+    public async Task UnknownAccountDoesNotStartAnAllowanceWindow()
+    {
+        var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
+        var command = new ActivationRecordingCommand();
+        await using var updates = CreateActivationUpdates(
+            new ActivationObservationReader(
+                ObserveAllowance(now, 0, now.AddHours(5), accountEmail: null)),
+            command,
+            new ActivationSettings(),
+            new ActivationTimeProvider(now));
+
+        await updates.RequestAsync(UsageUpdateIntent.Routine, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, command.CallCount);
+    }
+
+    [Fact]
     public async Task AccountSwitchDiscardsPendingActivation()
     {
         var now = new DateTimeOffset(2026, 9, 10, 18, 0, 0, TimeSpan.FromHours(2));
@@ -707,7 +724,7 @@ public sealed partial class UsageUpdatesTests
         DateTimeOffset? fiveHourReset,
         int? weeklyUsedPercent = null,
         DateTimeOffset? weeklyReset = null,
-        string? accountEmail = null) =>
+        string? accountEmail = "user@example.com") =>
         new(
             new AccountUsageObservation(
                 observedAt,
@@ -734,7 +751,8 @@ public sealed partial class UsageUpdatesTests
                 [new AllowanceWindow(usedPercent, TimeSpan.FromDays(7), reset)],
                 "pro",
                 "Codex",
-                new AccountActivityObservation.NotRequested()),
+                new AccountActivityObservation.NotRequested(),
+                "user@example.com"),
             Local: null);
 
     private sealed class ActivationObservationReader : IUsageObservationReader
@@ -777,7 +795,7 @@ public sealed partial class UsageUpdatesTests
 
         public void FailNext(Exception exception) => failures.Enqueue(exception);
 
-        public Task SendHiAsync(CancellationToken cancellationToken)
+        public Task SendHiAsync(string? expectedAccountEmail, CancellationToken cancellationToken)
         {
             CallCount++;
             return failures.TryDequeue(out var failure)
@@ -792,6 +810,7 @@ public sealed partial class UsageUpdatesTests
 
         public bool ActivationEnabled { get; set; } = true;
         public bool NotificationsEnabled { get; set; }
+        public void SetAccountIdentity(string? email) { }
         public AllowanceWindowKind? DeniedHistory { get; init; }
         public List<AllowanceWindowKind> HistoryReads { get; } = [];
 

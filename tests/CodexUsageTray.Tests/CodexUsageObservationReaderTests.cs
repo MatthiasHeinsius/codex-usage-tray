@@ -21,7 +21,6 @@ public sealed partial class CodexUsageObservationReaderTests
             UsageObservationRequest.AllowanceWindows,
             CancellationToken.None);
 
-        Assert.Equal("app-server --stdio", processes.ExchangeArguments);
         Assert.Equal(TimeSpan.FromSeconds(45), processes.ExchangeTimeout);
         Assert.Equal(CancellationToken.None, processes.ExchangeCancellationToken);
         Assert.Collection(
@@ -357,7 +356,7 @@ public sealed partial class CodexUsageObservationReaderTests
         processes.EnqueueLine(null);
         var reader = new CodexUsageObservationReader(processes);
 
-        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        var failure = await Assert.ThrowsAnyAsync<InvalidOperationException>(() =>
             reader.ReadAsync(
                 UsageObservationRequest.AllowanceWindows,
                 TestContext.Current.CancellationToken));

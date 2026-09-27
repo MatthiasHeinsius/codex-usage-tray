@@ -71,8 +71,7 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
 
     private async Task<UsageObservations> ReadUsageAsync(bool includeActivity, CancellationToken cancellationToken)
     {
-        return await processExecution.ExchangeLinesAsync(
-            "app-server --stdio",
+        return await processExecution.ExchangeReadOnlyLinesAsync(
             RequestTimeout,
             async lines =>
             {
@@ -137,6 +136,15 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
                     }
 
                     var now = timeProvider.GetLocalNow();
+                    if (accountDetails is { } currentAccount
+                        && currentAccount.TryGetProperty("account", out var accountState)
+                        && accountState.ValueKind == JsonValueKind.Null
+                        && currentAccount.TryGetProperty("requiresOpenaiAuth", out var requiresAuth)
+                        && requiresAuth.ValueKind == JsonValueKind.True)
+                    {
+                        throw new CodexAuthenticationRequiredException();
+                    }
+
                     var account = ParseAccountObservation(rateLimits.Value, tokenUsage, now) with
                     {
                         AccountEmail = accountDetails is { } details ? ReadAccountEmail(details) : null
@@ -178,7 +186,8 @@ internal sealed class CodexUsageObservationReader : IUsageObservationReader
                 {
                     var detail = lines.LastStandardErrorLine ?? "No diagnostic message was returned.";
                     throw new InvalidOperationException(
-                        $"Codex did not return usage data within 45 seconds. {detail}");
+                        $"Codex did not return usage data within 45 seconds. {detail}",
+                        new TimeoutException());
                 }
                 catch (Exception exception) when (exception is not InvalidOperationException)
                 {

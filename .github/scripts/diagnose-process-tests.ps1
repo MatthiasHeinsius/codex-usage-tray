@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 $project = Join-Path $PSScriptRoot '../../tests/CodexUsageTray.Tests/CodexUsageTray.Tests.csproj'
-$method = 'CodexUsageTray.Tests.WindowsCodexProcessExecutionTests.ExchangeCancellationStopsBlockedIoAndTheChildProcess'
+$method = 'CodexUsageTray.Tests.WindowsCodexProcessExecutionTests.CancellationOrTimeoutStopsBlockedAppServerAndChild'
 $summary = [System.Collections.Generic.List[object]]::new()
 
 $coverageModes = switch ($Coverage) {
@@ -23,7 +23,7 @@ $coverageModes = switch ($Coverage) {
 if ($Scope -ne 'Full' -and $Filter) {
     throw 'Use -Scope Full for a custom filter.'
 }
-$expectedCancellationCases = if ($Scope -eq 'Cold') { 1 } else { 4 }
+$expectedCancellationCases = if ($Scope -eq 'Cold') { 1 } else { 2 }
 
 foreach ($collectCoverage in $coverageModes) {
     $mode = if ($collectCoverage) { 'coverage' } else { 'without-coverage' }
@@ -42,7 +42,7 @@ foreach ($collectCoverage in $coverageModes) {
             $arguments += @('--filter-method', $method)
         }
         elseif ($Scope -eq 'Cold') {
-            $arguments += @('--filter-display-name', "$method(write: True, timeout: True)")
+            $arguments += @('--filter-display-name', "$method(timeout: True)")
         }
         elseif ($Filter) {
             $arguments += @('--filter', $Filter)
@@ -64,7 +64,7 @@ foreach ($collectCoverage in $coverageModes) {
         $cancellationCases = @($tests | Where-Object { $_.testName.StartsWith($method + '(') })
         $valid = $exitCode -eq 0 -and $cancellationCases.Count -eq $expectedCancellationCases -and $passed -eq $tests.Count
         if ($Scope -ne 'Full') { $valid = $valid -and $tests.Count -eq $expectedCancellationCases }
-        if ($Scope -eq 'Full' -and -not $Filter) { $valid = $valid -and $tests.Count -gt 4 }
+        if ($Scope -eq 'Full' -and -not $Filter) { $valid = $valid -and $tests.Count -gt 2 }
         $summary.Add([pscustomobject]@{
             Scope = $Scope
             Filter = $Filter
