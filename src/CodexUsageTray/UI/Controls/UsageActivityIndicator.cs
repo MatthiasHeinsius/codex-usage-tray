@@ -33,7 +33,6 @@ internal sealed class UsageActivityIndicator : Control
     private UsagePresentation.ActivityIndicatorPresentation allowance =
         UsagePresentation.ActivityIndicatorPresentation.Unavailable;
     private CodexSessionActivity session = CodexSessionActivity.Empty;
-    private DateTimeOffset? awaitingActivationResetAt;
     private DateTimeOffset? lastFrameAt;
     private bool activityLatched;
     private float ringAngle;
@@ -146,7 +145,7 @@ internal sealed class UsageActivityIndicator : Control
             return AllowanceFlashPhase.Normal;
         }
 
-        if (awaitingActivationResetAt == resetsAt)
+        if (allowance.AwaitingActivation)
         {
             return AllowanceFlashPhase.AfterReset;
         }
@@ -167,40 +166,6 @@ internal sealed class UsageActivityIndicator : Control
 
     internal void ShowAllowance(UsagePresentation.ActivityIndicatorPresentation presentation)
     {
-        var sameWindow = allowance.WindowKind == presentation.WindowKind;
-        if (!sameWindow)
-        {
-            awaitingActivationResetAt = null;
-        }
-
-        if (presentation.ActivatedResetAt == presentation.ResetsAt
-            && presentation.ResetsAt is not null)
-        {
-            awaitingActivationResetAt = null;
-        }
-        else if (presentation.ResetObservedAt is not null)
-        {
-            awaitingActivationResetAt = presentation.ResetsAt;
-        }
-        else if (sameWindow
-            && allowance.ResetsAt is { } previousReset
-            && presentation.ResetsAt is { } currentReset
-            && currentReset != previousReset)
-        {
-            var resetShift = currentReset - previousReset;
-            if (awaitingActivationResetAt == previousReset
-                || (allowance.RemainingPercent == 100
-                    && allowance.WindowDuration is { } duration
-                    && resetShift > TimeSpan.Zero
-                    && resetShift < duration / 2))
-            {
-                awaitingActivationResetAt = null;
-            }
-            else if (presentation.RemainingPercent == 100)
-            {
-                awaitingActivationResetAt = currentReset;
-            }
-        }
         allowance = presentation;
         Invalidate();
     }
@@ -518,7 +483,7 @@ internal sealed class UsageActivityIndicator : Control
         var reset = Flash(now) switch
         {
             AllowanceFlashPhase.BeforeReset => ", reset in under fifteen minutes",
-            AllowanceFlashPhase.AfterReset => awaitingActivationResetAt == allowance.ResetsAt
+            AllowanceFlashPhase.AfterReset => allowance.AwaitingActivation
                 ? ", allowance reset and ready to activate"
                 : ", recently reset",
             AllowanceFlashPhase.UsedUp => ", allowance used up",

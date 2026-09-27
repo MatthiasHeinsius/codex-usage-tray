@@ -35,6 +35,10 @@ internal sealed partial class UsageUpdates : IUsageUpdates
     private bool activationEnabled;
     private bool notificationsEnabled;
     private int disposed;
+    private string? lastPresentedAccountEmail;
+    private UsagePresentation.ActivityIndicatorPresentation lastPresentedAllowance =
+        UsagePresentation.ActivityIndicatorPresentation.Unavailable;
+    private DateTimeOffset? awaitingActivationResetAt;
 
     internal UsageUpdates(
         IUsageObservationReader observations,
@@ -176,17 +180,71 @@ internal sealed partial class UsageUpdates : IUsageUpdates
                     cancellation.Token)
                 .ConfigureAwait(false);
             cancellation.Token.ThrowIfCancellationRequested();
-            return UsagePresentation.Create(
+            return CreatePresentation(
                 finalSnapshot,
                 allowanceEvents,
                 preferences.NotificationsEnabled,
-                timeProvider.GetLocalNow(),
-                formatProvider,
-                settings.ReadActivatedReset);
+                cancellation.Token);
         }
         finally
         {
             updateGate.Release();
         }
+    }
+
+    private UsagePresentation.Ready CreatePresentation(
+        UsageSnapshot snapshot,
+        AllowanceWindowActivationResult allowanceEvents,
+        bool notificationsEnabled,
+        CancellationToken cancellationToken)
+    {
+        var presentation = UsagePresentation.Create(
+            snapshot, allowanceEvents, notificationsEnabled, timeProvider.GetLocalNow(), formatProvider);
+        var allowance = presentation.Popup.ActivityIndicator;
+        var activatedReset = allowance.WindowKind is { } kind ? settings.ReadActivatedReset(kind) : null;
+        var sameAccount = !string.IsNullOrWhiteSpace(snapshot.AccountEmail)
+            && string.Equals(snapshot.AccountEmail, lastPresentedAccountEmail, StringComparison.OrdinalIgnoreCase);
+        var sameWindow = sameAccount && allowance.WindowKind == lastPresentedAllowance.WindowKind;
+        var awaitingReset = sameWindow ? awaitingActivationResetAt : null;
+
+        if (activatedReset == allowance.ResetsAt && allowance.ResetsAt is not null)
+        {
+            awaitingReset = null;
+        }
+        else if (allowance.AwaitingActivation)
+        {
+            awaitingReset = allowance.ResetsAt;
+        }
+        else if (sameWindow
+            && lastPresentedAllowance.ResetsAt is { } previousReset
+            && allowance.ResetsAt is { } currentReset
+            && currentReset != previousReset)
+        {
+            var resetShift = currentReset - previousReset;
+            if (awaitingReset == previousReset
+                || (lastPresentedAllowance.RemainingPercent == 100
+                    && lastPresentedAllowance.WindowDuration is { } duration
+                    && resetShift > TimeSpan.Zero
+                    && resetShift < duration / 2))
+            {
+                awaitingReset = null;
+            }
+            else if (allowance.RemainingPercent == 100)
+            {
+                awaitingReset = currentReset;
+            }
+        }
+
+        allowance = allowance with
+        {
+            AwaitingActivation = allowance.ResetsAt is not null && awaitingReset == allowance.ResetsAt
+        };
+        presentation = presentation with { Popup = presentation.Popup with { ActivityIndicator = allowance } };
+        cancellationToken.ThrowIfCancellationRequested();
+        // Commit visual history only when a complete successful presentation is ready.
+        lastPresentedAccountEmail = snapshot.AccountEmail;
+        lastPresentedAllowance = allowance;
+        awaitingActivationResetAt = awaitingReset;
+        return presentation;
     }
 }

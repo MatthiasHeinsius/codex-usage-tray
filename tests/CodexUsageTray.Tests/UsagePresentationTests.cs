@@ -43,7 +43,7 @@ public sealed class UsagePresentationTests
         Assert.Equal(64, presentation.Popup.ActivityIndicator.RemainingPercent);
         Assert.Equal(fiveHourReset, presentation.Popup.ActivityIndicator.ResetsAt);
         Assert.Equal(TimeSpan.FromHours(5), presentation.Popup.ActivityIndicator.WindowDuration);
-        Assert.Null(presentation.Popup.ActivityIndicator.ResetObservedAt);
+        Assert.False(presentation.Popup.ActivityIndicator.AwaitingActivation);
         Assert.Equal(64, presentation.Tray.FiveHourRemaining);
         Assert.Equal(42, presentation.Tray.WeeklyRemaining);
         Assert.Equal("Codex · 5h 64% · week 42%", presentation.Tray.Tooltip);
@@ -133,7 +133,7 @@ public sealed class UsagePresentationTests
             now,
             CultureInfo.InvariantCulture);
 
-        Assert.Equal(now, presentation.Popup.ActivityIndicator.ResetObservedAt);
+        Assert.True(presentation.Popup.ActivityIndicator.AwaitingActivation);
     }
 
     [Fact]
@@ -176,8 +176,8 @@ public sealed class UsagePresentationTests
 
         Assert.Equal(AllowanceWindowKind.FiveHour, primaryFiveHourPresentation.Popup.ActivityIndicator.WindowKind);
         Assert.Equal(AllowanceWindowKind.Weekly, primaryWeeklyPresentation.Popup.ActivityIndicator.WindowKind);
-        Assert.Null(primaryFiveHourPresentation.Popup.ActivityIndicator.ResetObservedAt);
-        Assert.Equal(now, primaryWeeklyPresentation.Popup.ActivityIndicator.ResetObservedAt);
+        Assert.False(primaryFiveHourPresentation.Popup.ActivityIndicator.AwaitingActivation);
+        Assert.True(primaryWeeklyPresentation.Popup.ActivityIndicator.AwaitingActivation);
     }
 
     [Fact]

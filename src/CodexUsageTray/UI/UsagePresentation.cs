@@ -39,8 +39,7 @@ internal abstract record UsagePresentation(
         AllowanceWindowActivationResult allowanceEvents,
         bool notificationsEnabled,
         DateTimeOffset now,
-        IFormatProvider formatProvider,
-        Func<AllowanceWindowKind, DateTimeOffset?>? readActivatedReset = null)
+        IFormatProvider formatProvider)
     {
         var fiveHour = PresentAllowance(snapshot.FiveHour, snapshot.AllowanceObservedAt, now, formatProvider);
         var weekly = PresentAllowance(snapshot.Weekly, snapshot.AllowanceObservedAt, now, formatProvider);
@@ -65,8 +64,7 @@ internal abstract record UsagePresentation(
                     indicatorWindow.RemainingPercent,
                     indicatorWindow.ResetsAt,
                     indicatorWindow.Duration,
-                    (allowanceEvents.Reset & indicatorSelection) == AllowanceWindows.None ? null : now,
-                    readActivatedReset?.Invoke(indicatorKind)),
+                    (allowanceEvents.Reset & indicatorSelection) != AllowanceWindows.None),
             ShowsSessionActivity: true);
         var tray = new TrayPresentation(
             snapshot.FiveHour?.RemainingPercent,
@@ -356,10 +354,9 @@ internal abstract record UsagePresentation(
         int? RemainingPercent,
         DateTimeOffset? ResetsAt,
         TimeSpan? WindowDuration,
-        DateTimeOffset? ResetObservedAt,
-        DateTimeOffset? ActivatedResetAt = null)
+        bool AwaitingActivation = false)
     {
-        public static ActivityIndicatorPresentation Unavailable { get; } = new(null, null, null, null, null);
+        public static ActivityIndicatorPresentation Unavailable { get; } = new(null, null, null, null);
     }
 
     internal sealed record AllowancePresentation
