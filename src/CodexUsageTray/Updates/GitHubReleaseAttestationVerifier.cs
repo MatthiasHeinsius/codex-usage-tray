@@ -153,9 +153,9 @@ internal sealed class GitHubTrustRootProvider : ITrustRootProvider
             TargetsBaseUrl = new Uri(TufRepository, "targets/"),
             TrustedRoot = bootstrap.ToArray()
         });
-        var rootBytes = await tuf.DownloadTargetAsync("trusted_root.json", cancellationToken)
+        var rootTarget = await tuf.GetTargetAsync("trusted_root.json", cancellationToken)
             .ConfigureAwait(false);
-        return ParseTrustedRoot(rootBytes);
+        return ParseTrustedRoot(rootTarget.Content.ToArray());
     }
 
     internal static TrustedRoot ParseTrustedRoot(byte[] rootBytes)
@@ -163,7 +163,7 @@ internal sealed class GitHubTrustRootProvider : ITrustRootProvider
         var root = JsonNode.Parse(rootBytes)
             ?? throw new InvalidDataException("GitHub returned an empty trusted root.");
 
-        // GitHub publishes hostname-only URI fields; Sigstore 0.5 expects absolute URIs.
+        // GitHub publishes hostname-only URI fields; Sigstore expects absolute URIs.
         foreach (var field in new[] { "certificateAuthorities", "timestampAuthorities" })
         {
             foreach (var authority in root[field]?.AsArray() ?? [])
