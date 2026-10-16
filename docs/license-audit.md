@@ -1,6 +1,6 @@
 # Third-party license audit
 
-Audit date: 2026-09-13. Dependency inventory updated: 2026-09-23.
+Audit date: 2026-09-13. Dependency inventory updated: 2026-10-16.
 
 This report records the license sources needed to build the repository's third-party notice file. It separates software embedded in the released executable from tools used only to build or test the source. The upstream license and notice files linked below are the text to preserve. This report is not a substitute for those files.
 
@@ -12,10 +12,10 @@ The test project directly references these packages:
 
 | Package | Version | Role |
 | --- | ---: | --- |
-| `Microsoft.Testing.Extensions.CodeCoverage` | 18.11.2 | Test-only coverage extension |
-| `xunit.v3.mtp-v2` | 4.0.1 | Test framework and Microsoft Testing Platform v2 runner |
+| `Microsoft.Testing.Extensions.CodeCoverage` | 18.12.0 | Test-only coverage extension |
+| `xunit.v3.mtp-v2` | 4.0.2 | Test framework and Microsoft Testing Platform v2 runner |
 
-The restored `tests/CodexUsageTray.Tests/obj/project.assets.json` also contains Microsoft Testing Platform 2.4.1, its MSBuild and telemetry extensions, Microsoft Application Insights 2.23.0, Microsoft Code Coverage dependencies, xUnit.net 4.0.1 runner components, and xUnit analyzers 2.1.0. The test lock file records `Microsoft.DiaSymReader` 2.2.12 and `Microsoft.Extensions.DependencyModel` 10.0.12. Use `dotnet package list --project tests/CodexUsageTray.Tests/CodexUsageTray.Tests.csproj --include-transitive` to reproduce the exact graph.
+The restored `tests/CodexUsageTray.Tests/obj/project.assets.json` also contains Microsoft Testing Platform 2.5.1, its MSBuild and telemetry extensions, Microsoft Application Insights 2.23.0, Microsoft Code Coverage dependencies, xUnit.net 4.0.2 runner components, and xUnit analyzers 2.2.0. The test lock file records `Microsoft.DiaSymReader` 2.2.12 and `Microsoft.Extensions.DependencyModel` 10.0.12. Use `dotnet package list --project tests/CodexUsageTray.Tests/CodexUsageTray.Tests.csproj --include-transitive` to reproduce the exact graph.
 
 The screenshot generator has no external package references. It only references the application project.
 
@@ -23,21 +23,21 @@ The screenshot generator has no external package references. It only references 
 
 ### .NET 10 Windows runtime and Windows Desktop Framework
 
-The self-contained runtime packs are pinned to 10.0.12 through `RuntimeFrameworkVersion` and `TargetLatestRuntimePatch` in the application project. The repository also pins SDK 10.0.401 with roll-forward disabled. A dependency upgrade must update the notice inventory in the same change.
+The self-contained runtime packs are pinned to 10.0.13 through `RuntimeFrameworkVersion` and `TargetLatestRuntimePatch` in the application project. The repository also requires SDK 10.0.401 or a later 10.0.4xx patch through `latestPatch` roll-forward. A dependency upgrade must update the notice inventory in the same change.
 
 Microsoft states that self-contained and single-file applications embed .NET runtime parts. Its licensing guide also says that every .NET binary distribution must carry its license and third-party notice. See [.NET license information](https://github.com/dotnet/core/blob/main/license-information.md) and the [.NET asset licensing model](https://github.com/dotnet/runtime/blob/main/docs/project/licensing-assets.md).
 
-On Windows, the [.NET Windows license map](https://github.com/dotnet/core/blob/main/license-information-windows.md) assigns the [.NET Library License](https://dotnet.microsoft.com/en-us/dotnet_library_license.htm) to `coreclr.dll`, runtimes embedded in single-file binaries, and `Microsoft.DiaSymReader.Native.amd64.dll`. It assigns the MIT license to the other files in the current payload. A local inspection of a 10.0.12 publish found those restricted runtime parts, so the release notices must include the full .NET Library License, not only the MIT text.
+On Windows, the [.NET Windows license map](https://github.com/dotnet/core/blob/main/license-information-windows.md) assigns the [.NET Library License](https://dotnet.microsoft.com/en-us/dotnet_library_license.htm) to `coreclr.dll`, runtimes embedded in single-file binaries, and `Microsoft.DiaSymReader.Native.amd64.dll`. It assigns the MIT license to the other files in the current payload. A local inspection of a 10.0.13 publish found those restricted runtime parts, so the release notices must include the full .NET Library License, not only the MIT text.
 
 The inspected WinForms publish also contained `WindowsBase.dll`, which comes from the WPF repository. It did not contain `PresentationNative_cor3.dll`, `vcruntime140_cor3.dll`, `wpfgfx_cor3.dll`, or `D3DCompiler_47_cor3.dll`. The Windows SDK License listed for `D3DCompiler_47_cor3.dll` therefore does not apply to the current artifact. Recheck this when the build settings or target framework changes.
 
-For the current 10.0.12 payload, preserve these upstream texts:
+For the current 10.0.13 payload, preserve these upstream texts:
 
 | Component | Main license and copyright | Third-party notices |
 | --- | --- | --- |
-| .NET Runtime 10.0.12 | [MIT, `Copyright (c) .NET Foundation and Contributors`](https://raw.githubusercontent.com/dotnet/runtime/v10.0.12/LICENSE.TXT) plus the [.NET Library License](https://dotnet.microsoft.com/en-us/dotnet_library_license.htm) for the binaries listed above | [Complete Runtime notice file](https://raw.githubusercontent.com/dotnet/runtime/v10.0.12/THIRD-PARTY-NOTICES.TXT) |
-| Windows Forms 10.0.12 | [MIT, same .NET Foundation copyright](https://raw.githubusercontent.com/dotnet/winforms/v10.0.12/LICENSE.TXT) | [Complete WinForms notice file](https://raw.githubusercontent.com/dotnet/winforms/v10.0.12/THIRD-PARTY-NOTICES.TXT), including `Copyright © Sven Groot (Ookii.org) 2009` for Ookii.Dialogs |
-| WPF-origin `WindowsBase.dll` 10.0.12 | [MIT, same .NET Foundation copyright](https://raw.githubusercontent.com/dotnet/wpf/v10.0.12/LICENSE.TXT) | [Complete WPF notice file](https://raw.githubusercontent.com/dotnet/wpf/v10.0.12/THIRD-PARTY-NOTICES.TXT), including zlib and Json.NET notices |
+| .NET Runtime 10.0.13 | [MIT, `Copyright (c) .NET Foundation and Contributors`](https://raw.githubusercontent.com/dotnet/runtime/v10.0.13/LICENSE.TXT) plus the [.NET Library License](https://dotnet.microsoft.com/en-us/dotnet_library_license.htm) for the binaries listed above | [Complete Runtime notice file](https://raw.githubusercontent.com/dotnet/runtime/v10.0.13/THIRD-PARTY-NOTICES.TXT) |
+| Windows Forms 10.0.13 | [MIT, same .NET Foundation copyright](https://raw.githubusercontent.com/dotnet/winforms/v10.0.13/LICENSE.TXT) | [Complete WinForms notice file](https://raw.githubusercontent.com/dotnet/winforms/v10.0.13/THIRD-PARTY-NOTICES.TXT), including `Copyright © Sven Groot (Ookii.org) 2009` for Ookii.Dialogs |
+| WPF-origin `WindowsBase.dll` 10.0.13 | [MIT, same .NET Foundation copyright](https://raw.githubusercontent.com/dotnet/wpf/v10.0.13/LICENSE.TXT) | [Complete WPF notice file](https://raw.githubusercontent.com/dotnet/wpf/v10.0.13/THIRD-PARTY-NOTICES.TXT), including zlib and Json.NET notices |
 
 The three linked MIT files have the same license text and copyright line. A compiled notice may reproduce that MIT text once if its heading names all three .NET components. Preserve each upstream third-party notice file intact. Selective copying risks losing notices for code that the single-file bundler embedded.
 
@@ -49,19 +49,19 @@ The [Sigstore 0.5.0](https://www.nuget.org/packages/Sigstore/0.5.0) package and 
 
 These packages are present in the source and test dependency graph, but `build-release.ps1` does not publish the test project. They are not part of `CodexUsageTray.exe`. Keep their notices in the repository-wide notice inventory. They do not need to be represented as components of the released application unless the distribution also contains test binaries or test tooling.
 
-### Microsoft Testing Platform 2.4.1
+### Microsoft Testing Platform 2.5.1
 
-`xunit.v3.mtp-v2` brings in `Microsoft.Testing.Platform`, `Microsoft.Testing.Platform.MSBuild`, `Microsoft.Testing.Extensions.Telemetry`, and `Microsoft.Testing.Extensions.TrxReport.Abstractions` 2.4.1. These packages come from [Microsoft TestFX](https://github.com/microsoft/testfx), declare MIT, and identify `Copyright (c) Microsoft Corporation`.
+`xunit.v3.mtp-v2` brings in `Microsoft.Testing.Platform`, `Microsoft.Testing.Platform.MSBuild`, `Microsoft.Testing.Extensions.Telemetry`, and `Microsoft.Testing.Extensions.TrxReport.Abstractions` 2.5.1. These packages come from [Microsoft TestFX](https://github.com/microsoft/testfx), declare MIT, and identify `Copyright (c) Microsoft Corporation`.
 
 The telemetry extension brings in Microsoft Application Insights 2.23.0 and supporting Microsoft libraries. Their package metadata declares MIT. Preserve the common Microsoft MIT attribution already included in the notice file.
 
-### Microsoft Code Coverage 18.11.2
+### Microsoft Code Coverage 18.12.0
 
-The [Microsoft.Testing.Extensions.CodeCoverage 18.11.2 package](https://www.nuget.org/packages/Microsoft.Testing.Extensions.CodeCoverage/18.11.2) uses the Microsoft .NET Library license. Its package contains `License.txt` and `ThirdPartyNotices.txt`; preserve both files. The third-party notice identifies Mono.Cecil 0.11.3, Serilog 2.10.0, Serilog.Sinks.File 4.1.0, and Coverlet collector 3.1.2.
+The [Microsoft.Testing.Extensions.CodeCoverage 18.12.0 package](https://www.nuget.org/packages/Microsoft.Testing.Extensions.CodeCoverage/18.12.0) uses the Microsoft .NET Library license. Its package contains `License.txt` and `ThirdPartyNotices.txt`; preserve both files. The third-party notice identifies Mono.Cecil 0.11.6, Serilog 2.10.0, Serilog.Sinks.File 4.1.0, and Coverlet collector 3.1.2.
 
-### xUnit.net 4.0.1 and analyzers 2.1.0
+### xUnit.net 4.0.2 and analyzers 2.2.0
 
-The [xunit.v3.mtp-v2 4.0.1 package](https://www.nuget.org/packages/xunit.v3.mtp-v2/4.0.1) restores the xUnit.net assertion library, core, extensibility, common runner, and in-process runner at 4.0.1. It also restores xUnit analyzers 2.1.0. The packages declare Apache-2.0 and identify `Copyright (C) .NET Foundation`.
+The [xunit.v3.mtp-v2 4.0.2 package](https://www.nuget.org/packages/xunit.v3.mtp-v2/4.0.2) restores the xUnit.net assertion library, core, extensibility, common runner, and in-process runner at 4.0.2. It also restores xUnit analyzers 2.2.0. The packages declare Apache-2.0 and identify `Copyright (C) .NET Foundation`.
 
 - Include one complete copy of the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0.txt).
 - Preserve xUnit's license and the MIT notice for code adapted from MSBuild.
@@ -69,7 +69,7 @@ The [xunit.v3.mtp-v2 4.0.1 package](https://www.nuget.org/packages/xunit.v3.mtp-
 
 ## Continuous-integration dependencies
 
-The workflows reference `actions/checkout` v7.0.1, `actions/setup-dotnet` v6.0.0, `actions/upload-artifact` v7.0.1, and `actions/download-artifact` v8.0.1. Each uses the MIT license with `Copyright (c) 2018 GitHub, Inc. and contributors`. Preserve one copy of that common text. The sources at the workflows' pinned commits are the [checkout license](https://github.com/actions/checkout/blob/3d3c42e5aac5ba805825da76410c181273ba90b1/LICENSE), [setup-dotnet license](https://github.com/actions/setup-dotnet/blob/a98b56852c35b8e3190ac28c8c2271da59106c68/LICENSE), [upload-artifact license](https://github.com/actions/upload-artifact/blob/043fb46d1a93c77aae656e7c1c64a875d1fc6a0a/LICENSE), and [download-artifact license](https://github.com/actions/download-artifact/blob/3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c/LICENSE).
+The workflows reference `actions/checkout` v7.0.1, `actions/setup-dotnet` v6.0.0, `actions/upload-artifact` v7.0.2, and `actions/download-artifact` v8.0.2. Each uses the MIT license with `Copyright (c) 2018 GitHub, Inc. and contributors`. Preserve one copy of that common text. The sources at the workflows' pinned commits are the [checkout license](https://github.com/actions/checkout/blob/3d3c42e5aac5ba805825da76410c181273ba90b1/LICENSE), [setup-dotnet license](https://github.com/actions/setup-dotnet/blob/a98b56852c35b8e3190ac28c8c2271da59106c68/LICENSE), [upload-artifact license](https://github.com/actions/upload-artifact/blob/cf430e030ddbb5b0abf93d22962f4752f3646cd9/LICENSE), and [download-artifact license](https://github.com/actions/download-artifact/blob/9000827ccba6bdab643e8b6fd33ac0654aef8333/LICENSE).
 
 The release workflow also uses `actions/attest` v4.2.2, whose [MIT license](https://github.com/actions/attest/blob/1e69f48acb82d1966a394da916b4c1698aa569d6/LICENSE) states `Copyright GitHub`. This attribution accompanies the shared MIT license in the notice inventory. The action runs in CI and is not bundled into the executable.
 
@@ -87,7 +87,7 @@ Record Codex CLI as an external prerequisite, not as redistributed software. Its
 
 ## Notice-file assembly checklist
 
-For the current binary release, include the .NET Library License, one labeled copy of the shared .NET MIT license, the complete 10.0.12 Runtime, WinForms, and WPF third-party notice files, and the Sigstore, Tuf, NSec, and libsodium notices described above. The project embeds these texts in the executable, exposes them through the tray menu, and copies both legal files beside the executable. The release workflow uploads the sidecar files as separate release assets.
+For the current binary release, include the .NET Library License, one labeled copy of the shared .NET MIT license, the complete 10.0.13 Runtime, WinForms, and WPF third-party notice files, and the Sigstore, Tuf, NSec, and libsodium notices described above. The project embeds these texts in the executable, exposes them through the tray menu, and copies both legal files beside the executable. The release workflow uploads the sidecar files as separate release assets.
 
 For the repository-wide inventory, add the Microsoft Testing Platform, Microsoft Code Coverage, xUnit.net, and xUnit analyzer texts listed above. Include the full Apache License 2.0 once. Mark that section as test and development tooling.
 
