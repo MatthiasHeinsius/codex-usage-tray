@@ -144,7 +144,7 @@ BUILD AND CONTINUOUS-INTEGRATION TOOLS
 ===============================================================================
 
 .NET SDK and MSBuild 10.0
-  Minimum SDK: 10.0.401; latest installed 10.0.4xx patch
+  Minimum SDK: 10.0.402; latest installed 10.0.4xx patch
   Project: https://github.com/dotnet/dotnet
   Copyright (c) .NET Foundation and Contributors
   Copyright (c) Microsoft Corporation. All rights reserved.
