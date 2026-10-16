@@ -19,7 +19,7 @@ the .NET release toolchain change.
 DISTRIBUTED WITH THE SELF-CONTAINED APPLICATION
 ===============================================================================
 
-Microsoft .NET runtime and Windows Desktop runtime 10.0.12
+Microsoft .NET runtime and Windows Desktop runtime 10.0.13
   Packages:
     Microsoft.NETCore.App.Runtime.win-x64
     Microsoft.WindowsDesktop.App.Runtime.win-x64
@@ -157,7 +157,7 @@ BUILD AND CONTINUOUS-INTEGRATION TOOLS
   License: Microsoft .NET Library license and component licenses recorded in
            the .NET distribution
 
-Microsoft .NET IL Linker build tasks 10.0.12
+Microsoft .NET IL Linker build tasks 10.0.13
   Package: Microsoft.NET.ILLink.Tasks
   Project: https://github.com/dotnet/runtime
   Copyright (c) Microsoft Corporation. All rights reserved.
@@ -1874,7 +1874,7 @@ You are solely responsible for determining the appropriateness of using and dist
 
 
 ===============================================================================
-DOTNET MIT LICENSE FOR RUNTIME, WINDOWS FORMS, AND WPF 10.0.12
+DOTNET MIT LICENSE FOR RUNTIME, WINDOWS FORMS, AND WPF 10.0.13
 ===============================================================================
 
 The MIT License (MIT)
