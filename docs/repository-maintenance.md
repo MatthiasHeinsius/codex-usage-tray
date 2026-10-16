@@ -34,6 +34,8 @@ Only the repository owner can create `v*` tags. A separate ruleset prevents anyo
 
 The release build validates the solution and published executable before generating provenance. Only that build receives attestation and OIDC write permissions. A separate job receives `contents: write` to publish the assets. Its artifact download explicitly fails on a digest mismatch before publication. Immutable releases preserve the published tag and asset contents. The download-verification commands are in the README.
 
+After the workflow publishes a release, replace its generated notes with a short version summary, a `Changes` section describing user-visible fixes and dependency updates, and a compare link from the previous release tag to the new one. Follow the format of the previous release and describe only changes included since that tag.
+
 Immutable releases automatically receive a GitHub Release attestation binding the tag, commit, and asset digests. The updater cryptographically verifies that attestation against GitHub's Sigstore trust root before installing the executable. `src/CodexUsageTray/Updates/GitHubTufRoot.json` is the pinned bootstrap root for GitHub's TUF repository, copied from GitHub CLI v2.100.0; the updater uses TUF to obtain current trust material. The release workflow still generates a separate build provenance attestation for manual verification. Check that a release is immutable and that `gh release verify-asset vX.Y.Z CodexUsageTray.exe --repo MatthiasHeinsius/codex-usage-tray` succeeds before announcing it.
 
 ## Actions storage
