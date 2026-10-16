@@ -23,21 +23,21 @@ The screenshot generator has no external package references. It only references 
 
 ### .NET 10 Windows runtime and Windows Desktop Framework
 
-The self-contained runtime packs are pinned to 10.0.12 through `RuntimeFrameworkVersion` and `TargetLatestRuntimePatch` in the application project. The repository also requires SDK 10.0.401 or a later 10.0.4xx patch through `latestPatch` roll-forward. A dependency upgrade must update the notice inventory in the same change.
+The self-contained runtime packs are pinned to 10.0.13 through `RuntimeFrameworkVersion` and `TargetLatestRuntimePatch` in the application project. The repository also requires SDK 10.0.401 or a later 10.0.4xx patch through `latestPatch` roll-forward. A dependency upgrade must update the notice inventory in the same change.
 
 Microsoft states that self-contained and single-file applications embed .NET runtime parts. Its licensing guide also says that every .NET binary distribution must carry its license and third-party notice. See [.NET license information](https://github.com/dotnet/core/blob/main/license-information.md) and the [.NET asset licensing model](https://github.com/dotnet/runtime/blob/main/docs/project/licensing-assets.md).
 
-On Windows, the [.NET Windows license map](https://github.com/dotnet/core/blob/main/license-information-windows.md) assigns the [.NET Library License](https://dotnet.microsoft.com/en-us/dotnet_library_license.htm) to `coreclr.dll`, runtimes embedded in single-file binaries, and `Microsoft.DiaSymReader.Native.amd64.dll`. It assigns the MIT license to the other files in the current payload. A local inspection of a 10.0.12 publish found those restricted runtime parts, so the release notices must include the full .NET Library License, not only the MIT text.
+On Windows, the [.NET Windows license map](https://github.com/dotnet/core/blob/main/license-information-windows.md) assigns the [.NET Library License](https://dotnet.microsoft.com/en-us/dotnet_library_license.htm) to `coreclr.dll`, runtimes embedded in single-file binaries, and `Microsoft.DiaSymReader.Native.amd64.dll`. It assigns the MIT license to the other files in the current payload. A local inspection of a 10.0.13 publish found those restricted runtime parts, so the release notices must include the full .NET Library License, not only the MIT text.
 
 The inspected WinForms publish also contained `WindowsBase.dll`, which comes from the WPF repository. It did not contain `PresentationNative_cor3.dll`, `vcruntime140_cor3.dll`, `wpfgfx_cor3.dll`, or `D3DCompiler_47_cor3.dll`. The Windows SDK License listed for `D3DCompiler_47_cor3.dll` therefore does not apply to the current artifact. Recheck this when the build settings or target framework changes.
 
-For the current 10.0.12 payload, preserve these upstream texts:
+For the current 10.0.13 payload, preserve these upstream texts:
 
 | Component | Main license and copyright | Third-party notices |
 | --- | --- | --- |
-| .NET Runtime 10.0.12 | [MIT, `Copyright (c) .NET Foundation and Contributors`](https://raw.githubusercontent.com/dotnet/runtime/v10.0.12/LICENSE.TXT) plus the [.NET Library License](https://dotnet.microsoft.com/en-us/dotnet_library_license.htm) for the binaries listed above | [Complete Runtime notice file](https://raw.githubusercontent.com/dotnet/runtime/v10.0.12/THIRD-PARTY-NOTICES.TXT) |
-| Windows Forms 10.0.12 | [MIT, same .NET Foundation copyright](https://raw.githubusercontent.com/dotnet/winforms/v10.0.12/LICENSE.TXT) | [Complete WinForms notice file](https://raw.githubusercontent.com/dotnet/winforms/v10.0.12/THIRD-PARTY-NOTICES.TXT), including `Copyright © Sven Groot (Ookii.org) 2009` for Ookii.Dialogs |
-| WPF-origin `WindowsBase.dll` 10.0.12 | [MIT, same .NET Foundation copyright](https://raw.githubusercontent.com/dotnet/wpf/v10.0.12/LICENSE.TXT) | [Complete WPF notice file](https://raw.githubusercontent.com/dotnet/wpf/v10.0.12/THIRD-PARTY-NOTICES.TXT), including zlib and Json.NET notices |
+| .NET Runtime 10.0.13 | [MIT, `Copyright (c) .NET Foundation and Contributors`](https://raw.githubusercontent.com/dotnet/runtime/v10.0.13/LICENSE.TXT) plus the [.NET Library License](https://dotnet.microsoft.com/en-us/dotnet_library_license.htm) for the binaries listed above | [Complete Runtime notice file](https://raw.githubusercontent.com/dotnet/runtime/v10.0.13/THIRD-PARTY-NOTICES.TXT) |
+| Windows Forms 10.0.13 | [MIT, same .NET Foundation copyright](https://raw.githubusercontent.com/dotnet/winforms/v10.0.13/LICENSE.TXT) | [Complete WinForms notice file](https://raw.githubusercontent.com/dotnet/winforms/v10.0.13/THIRD-PARTY-NOTICES.TXT), including `Copyright © Sven Groot (Ookii.org) 2009` for Ookii.Dialogs |
+| WPF-origin `WindowsBase.dll` 10.0.13 | [MIT, same .NET Foundation copyright](https://raw.githubusercontent.com/dotnet/wpf/v10.0.13/LICENSE.TXT) | [Complete WPF notice file](https://raw.githubusercontent.com/dotnet/wpf/v10.0.13/THIRD-PARTY-NOTICES.TXT), including zlib and Json.NET notices |
 
 The three linked MIT files have the same license text and copyright line. A compiled notice may reproduce that MIT text once if its heading names all three .NET components. Preserve each upstream third-party notice file intact. Selective copying risks losing notices for code that the single-file bundler embedded.
 
@@ -87,7 +87,7 @@ Record Codex CLI as an external prerequisite, not as redistributed software. Its
 
 ## Notice-file assembly checklist
 
-For the current binary release, include the .NET Library License, one labeled copy of the shared .NET MIT license, the complete 10.0.12 Runtime, WinForms, and WPF third-party notice files, and the Sigstore, Tuf, NSec, and libsodium notices described above. The project embeds these texts in the executable, exposes them through the tray menu, and copies both legal files beside the executable. The release workflow uploads the sidecar files as separate release assets.
+For the current binary release, include the .NET Library License, one labeled copy of the shared .NET MIT license, the complete 10.0.13 Runtime, WinForms, and WPF third-party notice files, and the Sigstore, Tuf, NSec, and libsodium notices described above. The project embeds these texts in the executable, exposes them through the tray menu, and copies both legal files beside the executable. The release workflow uploads the sidecar files as separate release assets.
 
 For the repository-wide inventory, add the Microsoft Testing Platform, Microsoft Code Coverage, xUnit.net, and xUnit analyzer texts listed above. Include the full Apache License 2.0 once. Mark that section as test and development tooling.
 
