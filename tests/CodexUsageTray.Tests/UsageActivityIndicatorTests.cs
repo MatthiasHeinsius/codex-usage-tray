@@ -2,6 +2,81 @@ namespace CodexUsageTray.Tests;
 
 public sealed class UsageActivityIndicatorTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task UsedUpWeeklyAllowanceIsVisibleWhenFiveHourAllowanceHasCapacity(bool hasFiveHour) =>
+        StaTest.RunAsync(() =>
+        {
+            var now = new DateTimeOffset(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
+            var snapshot = new UsageSnapshot(
+                now, now,
+                hasFiveHour ? new AllowanceWindow(20, TimeSpan.FromHours(5), now.AddHours(3)) : null,
+                new AllowanceWindow(100, TimeSpan.FromDays(7), now.AddDays(2)),
+                lifetimeTokens: null, todayTokens: null, plan: "plus", limitName: "Codex");
+            var presentation = UsagePresentation.Create(snapshot, now, System.Globalization.CultureInfo.InvariantCulture);
+            using var indicator = new UsageActivityIndicator();
+            indicator.ShowAllowance(presentation.Popup.ActivityIndicator);
+
+            Assert.Equal(AllowanceFlashPhase.UsedUp, indicator.Flash(now));
+        });
+
+    [Theory]
+    [InlineData(20, 100, 10, 2880, "Weekly", "UsedUp")]
+    [InlineData(100, 100, 10, 2880, "Weekly", "UsedUp")]
+    [InlineData(100, 100, 120, 10, "FiveHour", "UsedUp")]
+    [InlineData(100, 100, 10, 15, "Weekly", "BeforeReset")]
+    [InlineData(100, 100, 15, 10, "FiveHour", "BeforeReset")]
+    [InlineData(0, 100, 300, 2880, "Weekly", "UsedUp")]
+    [InlineData(100, 0, 120, 10080, "FiveHour", "UsedUp")]
+    [InlineData(100, 100, 10, null, "Weekly", "UsedUp")]
+    [InlineData(100, 100, null, 10, "FiveHour", "UsedUp")]
+    [InlineData(100, 100, 10, 10, "FiveHour", "BeforeReset")]
+    [InlineData(100, 100, null, null, "FiveHour", "UsedUp")]
+    [InlineData(50, 50, 150, 5040, "FiveHour", "Normal")]
+    public Task RingShowsTheAllowanceThatStillBlocksUse(
+        int fiveHourUsed, int weeklyUsed, int? fiveHourResetMinutes, int? weeklyResetMinutes,
+        string expectedWindow, string expectedFlash) =>
+        StaTest.RunAsync(() =>
+        {
+            var now = new DateTimeOffset(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
+            var snapshot = new UsageSnapshot(
+                now, now,
+                new AllowanceWindow(fiveHourUsed, TimeSpan.FromHours(5),
+                    fiveHourResetMinutes is { } fiveHourMinutes ? now.AddMinutes(fiveHourMinutes) : null),
+                new AllowanceWindow(weeklyUsed, TimeSpan.FromDays(7),
+                    weeklyResetMinutes is { } weeklyMinutes ? now.AddMinutes(weeklyMinutes) : null),
+                lifetimeTokens: null, todayTokens: null, plan: "plus", limitName: "Codex");
+            var presentation = UsagePresentation.Create(snapshot, now, System.Globalization.CultureInfo.InvariantCulture);
+            using var indicator = new UsageActivityIndicator();
+            indicator.ShowAllowance(presentation.Popup.ActivityIndicator);
+
+            Assert.Equal(expectedWindow, presentation.Popup.ActivityIndicator.WindowKind.ToString());
+            Assert.Equal(expectedFlash, indicator.Flash(now).ToString());
+        });
+
+    [Fact]
+    public Task RingUsesTheMoreConsumedAllowancesPercentageAndPace() =>
+        StaTest.RunAsync(() =>
+        {
+            var now = new DateTimeOffset(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
+            var snapshot = new UsageSnapshot(
+                now, now,
+                new AllowanceWindow(0, TimeSpan.FromHours(5), now.AddHours(5)),
+                new AllowanceWindow(50, TimeSpan.FromDays(7), now.AddDays(3.5)),
+                lifetimeTokens: null, todayTokens: null, plan: "plus", limitName: "Codex");
+            var presentation = UsagePresentation.Create(snapshot, now, System.Globalization.CultureInfo.InvariantCulture);
+            using var indicator = new UsageActivityIndicator();
+            indicator.ShowAllowance(presentation.Popup.ActivityIndicator);
+
+            Assert.Equal(180, indicator.RingSweep);
+            Assert.Equal(6, indicator.RingDegreesPerSecond(now));
+            Assert.Equal(AllowanceFlashPhase.Normal, indicator.Flash(now));
+            indicator.Advance(now);
+            indicator.Advance(now.AddMilliseconds(50));
+            Assert.InRange(indicator.RingAngle, .29f, .31f);
+        });
+
     [Fact]
     public Task CombinesRecentActivityWithAllowancePaceAndFlashPhase() =>
         StaTest.RunAsync(() =>
@@ -27,6 +102,9 @@ public sealed class UsageActivityIndicatorTests
     [InlineData(20, 901, "Normal")]
     [InlineData(20, 900, "BeforeReset")]
     [InlineData(20, 30, "BeforeReset")]
+    [InlineData(20, 0, "Normal")]
+    [InlineData(20, -1, "Normal")]
+    [InlineData(0, 0, "UsedUp")]
     [InlineData(0, -120, "UsedUp")]
     public Task FlashReflectsTheTimeUntilReset(int remaining, int secondsUntilReset, string expected) =>
         StaTest.RunAsync(() =>
@@ -39,30 +117,55 @@ public sealed class UsageActivityIndicatorTests
             Assert.Equal(expected, indicator.Flash(now).ToString());
         });
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public Task RepeatedPresentationsDoNotExtendThePostActivationFlash(bool weekly) =>
+        StaTest.RunAsync(() =>
+        {
+            var activatedAt = new DateTimeOffset(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
+            var duration = weekly ? TimeSpan.FromDays(7) : TimeSpan.FromHours(5);
+            var allowance = UsagePresentation.ActivityIndicatorPresentation.Create(
+                weekly ? AllowanceWindowKind.Weekly : AllowanceWindowKind.FiveHour,
+                new AllowanceWindow(1, duration, activatedAt.Add(duration)));
+            using var indicator = new UsageActivityIndicator();
+
+            for (var minutes = 0; minutes <= 10; minutes++)
+            {
+                indicator.ShowAllowance(allowance);
+                Assert.Equal(minutes <= 5 ? AllowanceFlashPhase.AfterReset : AllowanceFlashPhase.Normal,
+                    indicator.Flash(activatedAt.AddMinutes(minutes)));
+            }
+            Assert.Equal(AllowanceFlashPhase.Normal, indicator.Flash(activatedAt.AddMinutes(5).AddTicks(1)));
+            Assert.Equal(AllowanceFlashPhase.Normal, indicator.Flash(activatedAt.AddDays(1)));
+        });
+
     [Fact]
-    public Task ResetFlashLastsUntilFiveMinutesAfterActivation() =>
+    public Task ResetFlashStopsAfterFiveMinutesEvenWithoutActivation() =>
         StaTest.RunAsync(() =>
         {
             var now = new DateTimeOffset(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
             using var indicator = new UsageActivityIndicator();
-            indicator.ShowAllowance(new(
-                AllowanceWindowKind.FiveHour, 100, now.AddMinutes(-10), TimeSpan.FromHours(5), AwaitingActivation: true));
+            var waiting = new UsagePresentation.ActivityIndicatorPresentation(
+                AllowanceWindowKind.FiveHour, 100, now.AddHours(5), TimeSpan.FromHours(5),
+                AwaitingActivation: true, ResetFlashStartedAt: now);
+            indicator.ShowAllowance(waiting);
             Assert.Equal(AllowanceFlashPhase.AfterReset, indicator.Flash(now));
+            Assert.Equal(AllowanceFlashPhase.AfterReset, indicator.Flash(now.AddMinutes(5)));
+            Assert.Equal(AllowanceFlashPhase.Normal, indicator.Flash(now.AddMinutes(5).AddTicks(1)));
 
-            var activatedAt = now.AddMinutes(10);
-            indicator.ShowAllowance(new(
-                AllowanceWindowKind.FiveHour, 100, activatedAt.AddHours(5), TimeSpan.FromHours(5)));
-            Assert.Equal(AllowanceFlashPhase.AfterReset, indicator.Flash(activatedAt.AddMinutes(5)));
-            Assert.Equal(AllowanceFlashPhase.Normal, indicator.Flash(activatedAt.AddMinutes(5).AddSeconds(1)));
-
-            indicator.ShowAllowance(new(
-                AllowanceWindowKind.FiveHour, 99, activatedAt.AddHours(5), TimeSpan.FromHours(5)));
-            Assert.Equal(AllowanceFlashPhase.Normal, indicator.Flash(activatedAt.AddMinutes(5).AddSeconds(1)));
+            var activated = waiting with
+            {
+                ResetsAt = now.AddMinutes(4).AddHours(5),
+                AwaitingActivation = false,
+                RemainingPercent = 99
+            };
+            indicator.ShowAllowance(activated);
+            Assert.Equal(AllowanceFlashPhase.Normal, indicator.Flash(now.AddMinutes(5).AddTicks(1)));
 
             using var restarted = new UsageActivityIndicator();
-            restarted.ShowAllowance(new(
-                AllowanceWindowKind.FiveHour, 100, activatedAt.AddHours(5), TimeSpan.FromHours(5)));
-            Assert.Equal(AllowanceFlashPhase.Normal, restarted.Flash(activatedAt.AddMinutes(10)));
+            restarted.ShowAllowance(activated);
+            Assert.Equal(AllowanceFlashPhase.Normal, restarted.Flash(now.AddMinutes(10)));
         });
 
     [Theory]
@@ -73,19 +176,21 @@ public sealed class UsageActivityIndicatorTests
         {
             var now = new DateTimeOffset(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
             using var indicator = new UsageActivityIndicator();
-            indicator.ShowAllowance(new(
-                AllowanceWindowKind.FiveHour, 100, now.AddMinutes(minutesUntilReset), TimeSpan.FromHours(5)));
+            indicator.ShowAllowance(UsagePresentation.ActivityIndicatorPresentation.Create(
+                AllowanceWindowKind.FiveHour,
+                new AllowanceWindow(0, TimeSpan.FromHours(5), now.AddMinutes(minutesUntilReset))));
 
             Assert.Equal(expected, indicator.Flash(now).ToString());
         });
 
     [Fact]
-    public Task PresentationDeterminesWaitingWithoutEarlierFrames() =>
+    public Task PresentationDeterminesTheBoundedResetFlashWithoutEarlierFrames() =>
         StaTest.RunAsync(() =>
         {
             var now = new DateTimeOffset(2026, 9, 23, 12, 0, 0, TimeSpan.Zero);
             var waiting = new UsagePresentation.ActivityIndicatorPresentation(
-                AllowanceWindowKind.FiveHour, 100, now.AddHours(3), TimeSpan.FromHours(5), AwaitingActivation: true);
+                AllowanceWindowKind.FiveHour, 100, now.AddHours(3), TimeSpan.FromHours(5),
+                AwaitingActivation: true, ResetFlashStartedAt: now);
             using var indicator = new UsageActivityIndicator();
             indicator.ShowAllowance(waiting);
             indicator.Advance(now);
@@ -94,8 +199,9 @@ public sealed class UsageActivityIndicatorTests
 
             indicator.ShowAllowance(waiting with { AwaitingActivation = false });
             indicator.Advance(now);
-            Assert.Equal(AllowanceFlashPhase.Normal, indicator.Flash(now));
+            Assert.Equal(AllowanceFlashPhase.AfterReset, indicator.Flash(now));
             Assert.DoesNotContain("ready to activate", indicator.AccessibleDescription);
+            Assert.Equal(AllowanceFlashPhase.Normal, indicator.Flash(now.AddMinutes(5).AddTicks(1)));
         });
 
     [Fact]
@@ -113,7 +219,8 @@ public sealed class UsageActivityIndicatorTests
             indicator.ShowAllowance(new(AllowanceWindowKind.FiveHour, 0, now.AddMinutes(15), TimeSpan.FromHours(5)));
             Assert.Equal(AllowanceFlashPhase.BeforeReset, indicator.Flash(now));
 
-            indicator.ShowAllowance(new(AllowanceWindowKind.FiveHour, 100, now.AddHours(5), TimeSpan.FromHours(5), AwaitingActivation: true));
+            indicator.ShowAllowance(new(AllowanceWindowKind.FiveHour, 100, now.AddHours(5), TimeSpan.FromHours(5),
+                AwaitingActivation: true, ResetFlashStartedAt: now));
             Assert.Equal(AllowanceFlashPhase.AfterReset, indicator.Flash(now));
         });
 

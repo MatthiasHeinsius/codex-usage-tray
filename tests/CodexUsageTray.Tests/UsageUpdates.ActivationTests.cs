@@ -613,7 +613,7 @@ public sealed partial class UsageUpdatesTests
         var settings = new ActivationSettings { ActivationEnabled = false };
         settings.WriteActivatedReset(AllowanceWindowKind.FiveHour, fiveHourReset);
         settings.WriteActivatedReset(AllowanceWindowKind.Weekly, weeklyActivatedReset);
-        var both = ObserveAllowance(now, 20, fiveHourReset, 30, weeklyReset);
+        var both = ObserveAllowance(now, 40, fiveHourReset, 30, weeklyReset);
         await using var updates = CreateActivationUpdates(
             new ActivationObservationReader(both, ObserveWeeklyAllowance(now, 30, weeklyReset), both),
             new ActivationRecordingCommand(), settings, new ActivationTimeProvider(now));
@@ -648,7 +648,7 @@ public sealed partial class UsageUpdatesTests
         };
         var observation = weeklyOnly
             ? ObserveWeeklyAllowance(now, 30, now.AddDays(6))
-            : ObserveAllowance(now, 20, now.AddHours(4), 30, now.AddDays(6));
+            : ObserveAllowance(now, 40, now.AddHours(4), 30, now.AddDays(6));
         await using var updates = CreateActivationUpdates(
             new ActivationObservationReader(observation), new ActivationRecordingCommand(),
             settings, new ActivationTimeProvider(now));

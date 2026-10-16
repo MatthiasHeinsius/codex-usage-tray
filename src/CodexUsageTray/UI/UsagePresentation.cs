@@ -44,9 +44,16 @@ internal abstract record UsagePresentation(
         var fiveHour = PresentAllowance(snapshot.FiveHour, snapshot.AllowanceObservedAt, now, formatProvider);
         var weekly = PresentAllowance(snapshot.Weekly, snapshot.AllowanceObservedAt, now, formatProvider);
         var observationText = PresentLatestObservationTime(snapshot, formatProvider);
-        var (indicatorKind, indicatorWindow) = snapshot.FiveHour is { } fiveHourWindow
-            ? (AllowanceWindowKind.FiveHour, fiveHourWindow)
-            : (AllowanceWindowKind.Weekly, snapshot.Weekly);
+        // With several used-up allowances, use stays blocked until the last reset.
+        var useWeekly = snapshot.Weekly is { } weeklyWindow
+            && (snapshot.FiveHour is not { } fiveHourWindow
+                || weeklyWindow.RemainingPercent < fiveHourWindow.RemainingPercent
+                || (weeklyWindow.IsUsedUp && fiveHourWindow.IsUsedUp
+                    && (weeklyWindow.ResetsAt ?? DateTimeOffset.MaxValue)
+                        > (fiveHourWindow.ResetsAt ?? DateTimeOffset.MaxValue)));
+        var (indicatorKind, indicatorWindow) = useWeekly
+            ? (AllowanceWindowKind.Weekly, snapshot.Weekly)
+            : (AllowanceWindowKind.FiveHour, snapshot.FiveHour);
         var indicatorSelection = indicatorKind == AllowanceWindowKind.FiveHour
             ? AllowanceWindows.FiveHour
             : AllowanceWindows.Weekly;
@@ -57,14 +64,9 @@ internal abstract record UsagePresentation(
             TokenLabel(snapshot.TodayTokens, formatProvider),
             TokenLabel(snapshot.LifetimeTokens, formatProvider),
             observationText,
-            indicatorWindow is null
-                ? ActivityIndicatorPresentation.Unavailable
-                : new ActivityIndicatorPresentation(
-                    indicatorKind,
-                    indicatorWindow.RemainingPercent,
-                    indicatorWindow.ResetsAt,
-                    indicatorWindow.Duration,
-                    (allowanceEvents.Reset & indicatorSelection) != AllowanceWindows.None),
+            ActivityIndicatorPresentation.Create(
+                indicatorKind, indicatorWindow,
+                (allowanceEvents.Reset & indicatorSelection) != AllowanceWindows.None),
             ShowsSessionActivity: true);
         var tray = new TrayPresentation(
             snapshot.FiveHour?.RemainingPercent,
@@ -354,9 +356,27 @@ internal abstract record UsagePresentation(
         int? RemainingPercent,
         DateTimeOffset? ResetsAt,
         TimeSpan? WindowDuration,
-        bool AwaitingActivation = false)
+        bool AwaitingActivation = false,
+        DateTimeOffset? ResetFlashStartedAt = null)
     {
         public static ActivityIndicatorPresentation Unavailable { get; } = new(null, null, null, null);
+
+        internal static ActivityIndicatorPresentation Create(
+            AllowanceWindowKind kind, AllowanceWindow? window, bool awaitingActivation = false)
+        {
+            if (window is null)
+            {
+                return Unavailable;
+            }
+            var presentation = new ActivityIndicatorPresentation(
+                kind, window.RemainingPercent, window.ResetsAt, window.Duration, awaitingActivation);
+            return presentation with { ResetFlashStartedAt = presentation.InferredWindowStartedAt };
+        }
+
+        private DateTimeOffset? InferredWindowStartedAt =>
+            ResetsAt is { } reset && WindowDuration is { } duration && duration > TimeSpan.Zero
+                ? new DateTimeOffset(Math.Max(0, reset.UtcTicks - duration.Ticks), TimeSpan.Zero)
+                : null;
     }
 
     internal sealed record AllowancePresentation

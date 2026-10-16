@@ -39,10 +39,10 @@ public sealed class UsagePresentationTests
         Assert.Equal("784.2K tokens", presentation.Popup.TodayTokens);
         Assert.Equal("123.46M tokens", presentation.Popup.LifetimeTokens);
         Assert.Equal($"Updated {now.LocalDateTime.ToString("t", culture)}", presentation.Popup.UpdatedText);
-        Assert.Equal(AllowanceWindowKind.FiveHour, presentation.Popup.ActivityIndicator.WindowKind);
-        Assert.Equal(64, presentation.Popup.ActivityIndicator.RemainingPercent);
-        Assert.Equal(fiveHourReset, presentation.Popup.ActivityIndicator.ResetsAt);
-        Assert.Equal(TimeSpan.FromHours(5), presentation.Popup.ActivityIndicator.WindowDuration);
+        Assert.Equal(AllowanceWindowKind.Weekly, presentation.Popup.ActivityIndicator.WindowKind);
+        Assert.Equal(42, presentation.Popup.ActivityIndicator.RemainingPercent);
+        Assert.Equal(weeklyReset, presentation.Popup.ActivityIndicator.ResetsAt);
+        Assert.Equal(TimeSpan.FromDays(7), presentation.Popup.ActivityIndicator.WindowDuration);
         Assert.False(presentation.Popup.ActivityIndicator.AwaitingActivation);
         Assert.Equal(64, presentation.Tray.FiveHourRemaining);
         Assert.Equal(42, presentation.Tray.WeeklyRemaining);

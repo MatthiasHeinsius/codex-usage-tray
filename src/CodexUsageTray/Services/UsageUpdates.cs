@@ -39,6 +39,7 @@ internal sealed partial class UsageUpdates : IUsageUpdates
     private UsagePresentation.ActivityIndicatorPresentation lastPresentedAllowance =
         UsagePresentation.ActivityIndicatorPresentation.Unavailable;
     private DateTimeOffset? awaitingActivationResetAt;
+    private Dictionary<AllowanceWindowKind, UsagePresentation.ActivityIndicatorPresentation> allowanceFlashHistory = [];
 
     internal UsageUpdates(
         IUsageObservationReader observations,
@@ -198,14 +199,16 @@ internal sealed partial class UsageUpdates : IUsageUpdates
         bool notificationsEnabled,
         CancellationToken cancellationToken)
     {
+        var now = timeProvider.GetLocalNow();
         var presentation = UsagePresentation.Create(
-            snapshot, allowanceEvents, notificationsEnabled, timeProvider.GetLocalNow(), formatProvider);
+            snapshot, allowanceEvents, notificationsEnabled, now, formatProvider);
         var allowance = presentation.Popup.ActivityIndicator;
         var activatedReset = allowance.WindowKind is { } kind ? settings.ReadActivatedReset(kind) : null;
         var sameAccount = !string.IsNullOrWhiteSpace(snapshot.AccountEmail)
             && string.Equals(snapshot.AccountEmail, lastPresentedAccountEmail, StringComparison.OrdinalIgnoreCase);
         var sameWindow = sameAccount && allowance.WindowKind == lastPresentedAllowance.WindowKind;
         var awaitingReset = sameWindow ? awaitingActivationResetAt : null;
+        var nextFlashHistory = CreateAllowanceFlashHistory(snapshot, allowanceEvents, sameAccount, now);
 
         if (activatedReset == allowance.ResetsAt && allowance.ResetsAt is not null)
         {
@@ -237,7 +240,10 @@ internal sealed partial class UsageUpdates : IUsageUpdates
 
         allowance = allowance with
         {
-            AwaitingActivation = allowance.ResetsAt is not null && awaitingReset == allowance.ResetsAt
+            AwaitingActivation = allowance.ResetsAt is not null && awaitingReset == allowance.ResetsAt,
+            ResetFlashStartedAt = allowance.WindowKind is { } selected
+                ? nextFlashHistory.GetValueOrDefault(selected)?.ResetFlashStartedAt
+                : null
         };
         presentation = presentation with { Popup = presentation.Popup with { ActivityIndicator = allowance } };
         cancellationToken.ThrowIfCancellationRequested();
@@ -245,6 +251,47 @@ internal sealed partial class UsageUpdates : IUsageUpdates
         lastPresentedAccountEmail = snapshot.AccountEmail;
         lastPresentedAllowance = allowance;
         awaitingActivationResetAt = awaitingReset;
+        allowanceFlashHistory = nextFlashHistory;
         return presentation;
+    }
+
+    private Dictionary<AllowanceWindowKind, UsagePresentation.ActivityIndicatorPresentation> CreateAllowanceFlashHistory(
+        UsageSnapshot snapshot, AllowanceWindowActivationResult allowanceEvents, bool sameAccount, DateTimeOffset now)
+    {
+        if (string.IsNullOrWhiteSpace(snapshot.AccountEmail))
+        {
+            return [];
+        }
+
+        var history = sameAccount
+            ? new Dictionary<AllowanceWindowKind, UsagePresentation.ActivityIndicatorPresentation>(allowanceFlashHistory)
+            : [];
+        foreach (var kind in new[] { AllowanceWindowKind.FiveHour, AllowanceWindowKind.Weekly })
+        {
+            if (Window(snapshot, kind) is not { } window)
+            {
+                history.Remove(kind);
+                continue;
+            }
+            var current = UsagePresentation.ActivityIndicatorPresentation.Create(kind, window);
+            var previous = history.GetValueOrDefault(kind);
+            // Keep each allowance's original flash start across activation and selection changes.
+            var flashStartedAt = previous?.ResetFlashStartedAt ?? current.ResetFlashStartedAt;
+            var resetObserved = (allowanceEvents.Reset & Selection(kind)) != AllowanceWindows.None
+                || (previous?.ResetsAt is { } priorResetAt && current.ResetsAt is { } nextResetAt
+                    && priorResetAt <= now && nextResetAt > priorResetAt);
+            if (resetObserved)
+            {
+                flashStartedAt = previous?.ResetsAt is { } priorReset && priorReset <= now
+                    ? priorReset
+                    : current.ResetFlashStartedAt;
+                if (flashStartedAt is null || flashStartedAt > now)
+                {
+                    flashStartedAt = now;
+                }
+            }
+            history[kind] = current with { ResetFlashStartedAt = flashStartedAt };
+        }
+        return history;
     }
 }

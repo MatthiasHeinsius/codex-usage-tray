@@ -140,20 +140,10 @@ internal sealed class UsageActivityIndicator : Control
             return AllowanceFlashPhase.UsedUp;
         }
 
-        if (allowance.ResetsAt is not { } resetsAt)
+        if (allowance.RemainingPercent is not null
+            && allowance.ResetFlashStartedAt is { } flashStartedAt)
         {
-            return AllowanceFlashPhase.Normal;
-        }
-
-        if (allowance.AwaitingActivation)
-        {
-            return AllowanceFlashPhase.AfterReset;
-        }
-
-        if (allowance.WindowDuration is { } duration
-            && duration > TimeSpan.Zero)
-        {
-            var windowElapsed = now - (resetsAt - duration);
+            var windowElapsed = now - flashStartedAt;
             if (windowElapsed >= TimeSpan.Zero
                 && windowElapsed <= TimeSpan.FromMinutes(5))
             {
