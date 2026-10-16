@@ -28,7 +28,8 @@ _Avoid_: Update check, updater workflow, downloaded update
 
 **Usage Presentation**:
 The complete user-facing state of Codex usage, including loading, current or stale values, failure context, tray display, popup display, and notices.
-Its visual allowance transition history belongs to one known account and the Allowance Window selected for the activity indicator.
+Its activation waiting history belongs to one known account and the Allowance Window selected for the activity indicator.
+Reset flash timing belongs to each reported Allowance Window in that account and survives changes to the selected allowance.
 _Avoid_: UI state, view model, display data
 
 **Observation Time**:
