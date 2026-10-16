@@ -6,7 +6,7 @@ This report records the license sources needed to build the repository's third-p
 
 ## Repository evidence
 
-The application project, `src/CodexUsageTray/CodexUsageTray.csproj`, references Sigstore 0.5.0 for GitHub Release attestation verification. Its transitive runtime packages are Tuf 0.5.0, NSec.Cryptography 25.4.0, and libsodium 1.0.20.1. `build-release.ps1`, also invoked by `build-release.cmd` and both CI workflows, publishes it for `win-x64` with `--self-contained true`, `PublishSingleFile=true`, and `IncludeNativeLibrariesForSelfExtract=true`. The release embeds these packages along with .NET runtime and Windows Desktop Framework binaries.
+The application project, `src/CodexUsageTray/CodexUsageTray.csproj`, references Sigstore 1.1.1 for GitHub Release attestation verification. Its transitive runtime packages are Tuf 1.1.1 and BouncyCastle.Cryptography 2.7.0. `build-release.ps1`, also invoked by `build-release.cmd` and both CI workflows, publishes it for `win-x64` with `--self-contained true`, `PublishSingleFile=true`, and `IncludeNativeLibrariesForSelfExtract=true`. The release embeds these packages along with .NET runtime and Windows Desktop Framework binaries.
 
 The test project directly references these packages:
 
@@ -43,7 +43,7 @@ The three linked MIT files have the same license text and copyright line. A comp
 
 ### Release attestation verifier
 
-The [Sigstore 0.5.0](https://www.nuget.org/packages/Sigstore/0.5.0) package and its [Tuf 0.5.0](https://www.nuget.org/packages/Tuf/0.5.0) dependency use MIT with `Copyright (c) 2026 Mitch Denny`. Their package third-party notices identify [NSec.Cryptography 25.4.0](https://www.nuget.org/packages/NSec.Cryptography/25.4.0) (MIT, `Copyright (c) 2025 Klaus Hartke`) and [libsodium 1.0.20.1](https://www.nuget.org/packages/libsodium/1.0.20.1) (ISC, `Copyright (c) 2013-2025 Frank Denis`). Preserve the complete NSec `NOTICE`, which also covers its RFC 6234, .NET Runtime, and hex/base64 derived code. The release notice file includes the MIT license text with both new copyright lines and that full NSec notice.
+The [Sigstore 1.1.1](https://www.nuget.org/packages/Sigstore/1.1.1) package and its [Tuf 1.1.1](https://www.nuget.org/packages/Tuf/1.1.1) dependency use MIT with `Copyright (c) 2026 Mitch Denny`. Their package third-party notices identify [BouncyCastle.Cryptography 2.7.0](https://www.nuget.org/packages/BouncyCastle.Cryptography/2.7.0) (MIT, `Copyright (c) 2000-2026 The Legion of the Bouncy Castle Inc.`). Preserve its complete package `LICENSE.md`. This managed dependency replaces NSec and its native libsodium dependency; neither removed package remains in the release graph. The release notice file includes the Sigstore/Tuf MIT license and the complete BouncyCastle license.
 
 ## Test and development dependencies
 
@@ -87,7 +87,7 @@ Record Codex CLI as an external prerequisite, not as redistributed software. Its
 
 ## Notice-file assembly checklist
 
-For the current binary release, include the .NET Library License, one labeled copy of the shared .NET MIT license, the complete 10.0.13 Runtime, WinForms, and WPF third-party notice files, and the Sigstore, Tuf, NSec, and libsodium notices described above. The project embeds these texts in the executable, exposes them through the tray menu, and copies both legal files beside the executable. The release workflow uploads the sidecar files as separate release assets.
+For the current binary release, include the .NET Library License, one labeled copy of the shared .NET MIT license, the complete 10.0.13 Runtime, WinForms, and WPF third-party notice files, and the Sigstore, Tuf, and BouncyCastle licenses described above. The project embeds these texts in the executable, exposes them through the tray menu, and copies both legal files beside the executable. The release workflow uploads the sidecar files as separate release assets.
 
 For the repository-wide inventory, add the Microsoft Testing Platform, Microsoft Code Coverage, xUnit.net, and xUnit analyzer texts listed above. Include the full Apache License 2.0 once. Mark that section as test and development tooling.
 

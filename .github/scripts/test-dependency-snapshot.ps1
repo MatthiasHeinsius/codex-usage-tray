@@ -24,10 +24,9 @@ foreach ($manifest in $snapshot.manifests.Values) {
         $expectedRuntime = @(
             "Microsoft.NETCore.App.Runtime.win-x64/$runtimeVersion"
             "Microsoft.WindowsDesktop.App.Runtime.win-x64/$runtimeVersion"
-            'Sigstore/0.5.0'
-            'Tuf/0.5.0'
-            'NSec.Cryptography/25.4.0'
-            'libsodium/1.0.20.1'
+            'Sigstore/1.1.1'
+            'Tuf/1.1.1'
+            'BouncyCastle.Cryptography/2.7.0'
         )
         $actualRuntime = @($resolved.Keys | Where-Object { $resolved[$_].scope -eq 'runtime' })
         if (Compare-Object $expectedRuntime $actualRuntime) { throw "Unexpected runtime inventory in $($manifest.name)." }
