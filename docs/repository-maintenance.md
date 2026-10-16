@@ -4,7 +4,7 @@
 
 Dependabot checks NuGet packages, GitHub Actions, and the .NET SDK weekly. SDK updates change `global.json`; they do not update the separately pinned runtime in `src/CodexUsageTray/CodexUsageTray.csproj`.
 
-`global.json` permits the latest installed SDK patch in the 10.0.4xx feature band, starting at 10.0.401. CI installs the baseline version from that file. Keep locked-mode restore enabled when using a later SDK patch; a patch that changes implicit package requirements needs reviewed lock-file updates and a new SDK baseline before it can build.
+`global.json` permits the latest installed SDK patch in the 10.0.4xx feature band, starting at 10.0.402. CI installs the baseline version from that file. Keep locked-mode restore enabled when using a later SDK patch; a patch that changes implicit package requirements needs reviewed lock-file updates and a new SDK baseline before it can build.
 
 The application and test projects each have a `packages.lock.json` recording exact package versions and content hashes. The application lock includes the `win-x64` release graph and the ILLink build dependency used for single-file publishing. Ordinary restore keeps these versions when package requirements have not changed. CI and `build-release.ps1` require locked-mode restore.
 

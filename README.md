@@ -124,7 +124,7 @@ If Windows denies access to saved preferences, the app uses the first-launch def
 
 ## Build from source
 
-Install [.NET SDK](https://dotnet.microsoft.com/download) 10.0.401 or a later 10.0.4xx patch, as configured in [`global.json`](global.json). The SDK uses the latest installed patch in that feature band. The bundled runtime remains separately pinned in the application project. Then run:
+Install [.NET SDK](https://dotnet.microsoft.com/download) 10.0.402 or a later 10.0.4xx patch, as configured in [`global.json`](global.json). The SDK uses the latest installed patch in that feature band. The bundled runtime remains separately pinned in the application project. Then run:
 
 ```powershell
 dotnet build .\CodexUsageTray.slnx -c Release

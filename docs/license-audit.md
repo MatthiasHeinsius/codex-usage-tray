@@ -23,7 +23,7 @@ The screenshot generator has no external package references. It only references 
 
 ### .NET 10 Windows runtime and Windows Desktop Framework
 
-The self-contained runtime packs are pinned to 10.0.13 through `RuntimeFrameworkVersion` and `TargetLatestRuntimePatch` in the application project. The repository also requires SDK 10.0.401 or a later 10.0.4xx patch through `latestPatch` roll-forward. A dependency upgrade must update the notice inventory in the same change.
+The self-contained runtime packs are pinned to 10.0.13 through `RuntimeFrameworkVersion` and `TargetLatestRuntimePatch` in the application project. The repository also requires SDK 10.0.402 or a later 10.0.4xx patch through `latestPatch` roll-forward. A dependency upgrade must update the notice inventory in the same change.
 
 Microsoft states that self-contained and single-file applications embed .NET runtime parts. Its licensing guide also says that every .NET binary distribution must carry its license and third-party notice. See [.NET license information](https://github.com/dotnet/core/blob/main/license-information.md) and the [.NET asset licensing model](https://github.com/dotnet/runtime/blob/main/docs/project/licensing-assets.md).
 
