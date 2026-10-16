@@ -4,6 +4,8 @@
 
 Dependabot checks NuGet packages, GitHub Actions, and the .NET SDK weekly. SDK updates change `global.json`; they do not update the separately pinned runtime in `src/CodexUsageTray/CodexUsageTray.csproj`.
 
+`global.json` permits the latest installed SDK patch in the 10.0.4xx feature band, starting at 10.0.401. CI installs the baseline version from that file. Keep locked-mode restore enabled when using a later SDK patch; a patch that changes implicit package requirements needs reviewed lock-file updates and a new SDK baseline before it can build.
+
 The application and test projects each have a `packages.lock.json` recording exact package versions and content hashes. The application lock includes the `win-x64` release graph and the ILLink build dependency used for single-file publishing. Ordinary restore keeps these versions when package requirements have not changed. CI and `build-release.ps1` require locked-mode restore.
 
 After changing a package version or the runtime pin, run `dotnet restore .\CodexUsageTray.slnx` to update the affected lock files, then review and commit their diffs with the version change. Verify with the checks in `CONTRIBUTING.md` and `.\build-release.ps1`. `dotnet restore --force-evaluate` recalculates the graph from upstream requirements and can reset transitive-only updates to older minimum versions. Update the license inventory when its contents change.

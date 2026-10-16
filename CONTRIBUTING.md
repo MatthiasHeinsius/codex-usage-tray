@@ -7,8 +7,8 @@ in [SECURITY.md](SECURITY.md).
 
 ## Development
 
-Development requires 64-bit Windows and the .NET SDK version pinned in
-[`global.json`](global.json). See [Build from source](README.md#build-from-source)
+Development requires 64-bit Windows and .NET SDK 10.0.401 or a later 10.0.4xx
+patch, as configured in [`global.json`](global.json). See [Build from source](README.md#build-from-source)
 for the full build and release instructions.
 
 Before opening a pull request, run:
